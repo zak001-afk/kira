@@ -1,0 +1,9 @@
+ollama
+pyautogui
+pyttsx3
+SpeechRecognition
+sounddevice
+numpy
+pyperclip
+psutil
+vosk
