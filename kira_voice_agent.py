@@ -16,9 +16,10 @@ import kira_undo
 import kira_learning
 import kira_weather
 import kira_homeassist
+import kira_builder
 import re
 
-VERSION = "2.3.1"
+VERSION = "2.4.0"
 import subprocess
 import time
 import webbrowser
@@ -78,12 +79,23 @@ DEFAULT_CONFIG = {
     "offline_model_path": "",
     "app_aliases": {},
     "websites": {},
-    "require_confirmation": ["search", "mouse_move", "click", "lock_pc"],
+    "require_confirmation": [
+        "search",
+        "mouse_move",
+        "click",
+        "lock_pc",
+        "project_build",
+        "project_fix",
+    ],
     "personality": {"humor": "charming"},
     "monitor": {},
     "lab_passphrase": "",
     "home_assistant": {},
     "skill_promote_after": 10,
+    "projects_dir": "",
+    "builder_model": "",
+    "project_test_timeout": 180,
+    "project_max_attempts": 3,
     "shortcuts": {
         "work mode": [
             {"action": "open_app", "target": "vscode"},
@@ -328,12 +340,130 @@ _SUIT_REPLIES = {
         "fr": "Monsieur, je n'ai pas pu enregistrer cette routine dans la configuration.",
         "ar": "سيدي، تعذر حفظ هذه الحركة في الإعدادات.",
     },
+    "build_ok": {
+        "en": "Project '{name}' is built and its tests pass, sir — {count} files, "
+        "verified in {attempts} attempt(s). It's in {location}.",
+        "fr": "Le projet '{name}' est prêt et ses tests passent, monsieur — "
+        "{count} fichiers, vérifié en {attempts} tentative(s). Il se trouve dans {location}.",
+        "ar": "المشروع '{name}' جاهز واختباراته تنجح، سيدي — {count} ملفات، "
+        "تم التحقق في {attempts} محاولة. مكانه {location}.",
+    },
+    "build_failing": {
+        "en": "Sir, I built '{name}' but its tests still fail after {attempts} "
+        "attempt(s). I won't pretend it's finished — the details are in {location}. "
+        "Say 'fix the project' and I'll try again.",
+        "fr": "Monsieur, j'ai créé '{name}' mais ses tests échouent encore après "
+        "{attempts} tentative(s). Je ne prétendrai pas que c'est terminé — les détails "
+        "sont dans {location}. Dites 'répare le projet' et je réessaie.",
+        "ar": "سيدي، أنشأت '{name}' لكن اختباراته ما زالت تفشل بعد {attempts} محاولات. "
+        "لن أدّعي أنه مكتمل — التفاصيل في {location}. قل 'أصلح المشروع' وسأحاول مجدداً.",
+    },
+    "build_failed": {
+        "en": "Sir, I couldn't plan that project. Is Ollama running?",
+        "fr": "Monsieur, je n'ai pas pu planifier ce projet. Ollama est-il lancé ?",
+        "ar": "سيدي، لم أستطع تخطيط هذا المشروع. هل يعمل Ollama؟",
+    },
+    "no_projects": {
+        "en": "I haven't built any projects yet, sir.",
+        "fr": "Je n'ai encore créé aucun projet, monsieur.",
+        "ar": "لم أنشئ أي مشاريع بعد، سيدي.",
+    },
+    "no_project_to_fix": {
+        "en": "I couldn't find a project to repair, sir.",
+        "fr": "Je n'ai trouvé aucun projet à réparer, monsieur.",
+        "ar": "لم أجد مشروعاً لأصلحه، سيدي.",
+    },
 }
 
 
 def _suit_reply(key, language="en", **kwargs):
     template = _SUIT_REPLIES[key].get(language) or _SUIT_REPLIES[key]["en"]
     return template.format(**kwargs) if kwargs else template
+
+
+# ── project builder helpers ──────────────────────────────────────────────────
+
+def projects_directory():
+    """Where generated projects live (configurable, user-owned by default)."""
+    configured = str(CONFIG.get("projects_dir") or "").strip()
+    if configured:
+        return os.path.expanduser(configured)
+    return os.path.join(os.path.expanduser("~"), "KIRA Projects")
+
+
+def _builder_settings():
+    try:
+        timeout = int(CONFIG.get("project_test_timeout", 180))
+    except (TypeError, ValueError):
+        timeout = 180
+    try:
+        attempts = max(1, int(CONFIG.get("project_max_attempts", 3)))
+    except (TypeError, ValueError):
+        attempts = 3
+    return timeout, attempts
+
+
+def _build_progress(message: str) -> None:
+    """Progress lines go to the console/log — never spoken aloud."""
+    print(f"KIRA · build: {message}", flush=True)
+
+
+def build_project_for(idea: str, language: str = "en") -> str:
+    """Run the builder end-to-end and return a truthful spoken summary."""
+    timeout, attempts = _builder_settings()
+    try:
+        result = kira_builder.build_project(
+            idea,
+            chat_fn=call_builder_model,
+            projects_dir=projects_directory(),
+            max_attempts=attempts,
+            timeout=timeout,
+            on_progress=_build_progress,
+        )
+    except Exception as exc:
+        # the model or the disk failed — report it, never crash the agent
+        logging.exception("Project build failed")
+        print(f"KIRA · build: error: {exc}", flush=True)
+        return personalize_address(
+            _SUIT_REPLIES["build_failed"].get(
+                language, _SUIT_REPLIES["build_failed"]["en"]
+            )
+        )
+    # remember the very latest project for "fix the project"
+    if result.plan is not None:
+        CONFIG["last_project"] = result.project_dir
+
+    if result.plan is None:
+        return personalize_address(
+            _SUIT_REPLIES["build_failed"].get(language, _SUIT_REPLIES["build_failed"]["en"])
+        )
+    if result.ok:
+        return personalize_address(
+            _SUIT_REPLIES["build_ok"][language if language in _SUIT_REPLIES["build_ok"] else "en"].format(
+                name=result.plan.name,
+                count=len(result.files_written),
+                attempts=result.attempts,
+                location=result.project_dir,
+            )
+        )
+    return personalize_address(
+        _SUIT_REPLIES["build_failing"][
+            language if language in _SUIT_REPLIES["build_failing"] else "en"
+        ].format(
+            name=result.plan.name,
+            attempts=result.attempts,
+            location=result.project_dir,
+        )
+    )
+
+
+def last_project_directory():
+    """The most recently built project: config first, then newest folder."""
+    remembered = str(CONFIG.get("last_project") or "").strip()
+    if remembered and os.path.isdir(remembered):
+        return remembered
+    found = kira_builder.latest_project(projects_directory())
+    return str(found) if found else ""
 
 _CHAT_HISTORY = kira_memory.load_recent_messages(
     limit=max(4, int(CONFIG.get("chat_history_limit", 12)))
@@ -629,6 +759,25 @@ def call_ollama(messages, options):
     for attempt in range(3):
         try:
             return chat(model=MODEL, messages=messages, options=options)
+        except Exception as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(0.7)
+    raise last_error
+
+
+def call_builder_model(messages, options):
+    """Model call used for project planning and code generation.
+
+    Writing whole projects is far harder than routing commands, so a bigger
+    dedicated model can be configured with ``builder_model``; without it the
+    normal chat model is used.
+    """
+    model = str(CONFIG.get("builder_model") or "").strip() or MODEL
+    last_error = None
+    for attempt in range(3):
+        try:
+            return chat(model=model, messages=messages, options=options)
         except Exception as exc:
             last_error = exc
             if attempt < 2:
@@ -1455,6 +1604,25 @@ def parse_simple_command(command: str):
         "أضف الاختصار", "احفظه كاختصار",
     }:
         return {"action": "skill_promote", "language": mind_language}
+
+    # ── project builder: idea → code → real tests ────────────────────
+    if lower in {
+        "list my projects", "show my projects", "what projects did you build",
+        "mes projets", "liste mes projets", "مشاريعي", "اعرض المشاريع",
+    }:
+        return {"action": "projects_list", "language": mind_language}
+
+    if kira_builder.is_fix_command(text):
+        return {"action": "project_fix", "language": mind_language, "target": text}
+
+    if kira_builder.is_build_command(text):
+        idea = kira_builder.extract_idea(text)
+        if idea:
+            return {
+                "action": "project_build",
+                "idea": idea,
+                "language": mind_language,
+            }
 
     if lower in {
         "skip the shortcut", "don't add it", "do not add it",
@@ -3180,6 +3348,77 @@ def execute_action(action_data):
         kira_learning.clear_promotion()
         return personalize_address(kira_learning.say("promotion_skipped", alang))
 
+    if action == "project_build":
+        idea = str(action_data.get("idea") or "").strip()
+        if not idea:
+            return personalize_address(
+                _SUIT_REPLIES["build_failed"].get(alang, _SUIT_REPLIES["build_failed"]["en"])
+            )
+        return build_project_for(idea, alang)
+
+    if action == "project_fix":
+        directory = last_project_directory()
+        if not directory:
+            return personalize_address(
+                _SUIT_REPLIES["no_project_to_fix"].get(
+                    alang, _SUIT_REPLIES["no_project_to_fix"]["en"]
+                )
+            )
+        timeout, _attempts = _builder_settings()
+        try:
+            result = kira_builder.repair_project(
+                directory,
+                chat_fn=call_builder_model,
+                timeout=timeout,
+                on_progress=_build_progress,
+            )
+        except Exception as exc:
+            logging.exception("Project repair failed")
+            print(f"KIRA · build: error: {exc}", flush=True)
+            return personalize_address(
+                _SUIT_REPLIES["build_failed"].get(
+                    alang, _SUIT_REPLIES["build_failed"]["en"]
+                )
+            )
+        if result.ok:
+            return personalize_address(
+                _SUIT_REPLIES["build_ok"][
+                    alang if alang in _SUIT_REPLIES["build_ok"] else "en"
+                ].format(
+                    name=result.plan.name if result.plan else "project",
+                    count=len(result.files_written),
+                    attempts=result.attempts,
+                    location=result.project_dir,
+                )
+            )
+        return personalize_address(
+            _SUIT_REPLIES["build_failing"][
+                alang if alang in _SUIT_REPLIES["build_failing"] else "en"
+            ].format(
+                name=result.plan.name if result.plan else "project",
+                attempts=result.attempts,
+                location=result.project_dir,
+            )
+        )
+
+    if action == "projects_list":
+        root = projects_directory()
+        listing = []
+        if os.path.isdir(root):
+            listing = sorted(
+                entry for entry in os.listdir(root)
+                if os.path.isdir(os.path.join(root, entry))
+            )
+        if not listing:
+            return personalize_address(
+                _SUIT_REPLIES["no_projects"].get(alang, _SUIT_REPLIES["no_projects"]["en"])
+            )
+        return personalize_address(
+            f"You have {len(listing)} project{'s' if len(listing) != 1 else ''}, sir: "
+            + ", ".join(listing[:8])
+            + (f" and {len(listing) - 8} more." if len(listing) > 8 else ".")
+        )
+
     if action == "weather":
         city = str(action_data.get("target") or "")
         return personalize_address(kira_weather.report(city, alang))
@@ -3219,6 +3458,16 @@ def describe_action(action_data):
     if action == "search":
         query = str(action_data.get("query", "search")).strip() or "search"
         return f"search the web for {query}"
+
+    if action == "project_build":
+        idea = str(action_data.get("idea", "a project")).strip() or "a project"
+        return (
+            f"build a new project from this idea — '{idea}' — which writes code "
+            "to disk and runs its tests"
+        )
+
+    if action == "project_fix":
+        return "repair the last project by re-running its tests and fixing failures"
 
     if action == "mouse_move":
         x = action_data.get("x", 0)

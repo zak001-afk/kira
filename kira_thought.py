@@ -49,6 +49,7 @@ ALLOWED_ACTIONS = frozenset(
         "undo_last", "routine_start", "routine_stop", "routine_cancel",
         "routine_name", "correct_last", "skill_promote", "skill_skip",
         "weather", "home_control", "press_combo",
+        "project_build", "project_fix", "projects_list",
     }
 )
 

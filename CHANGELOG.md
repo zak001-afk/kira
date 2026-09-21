@@ -3,6 +3,39 @@
 All notable changes to KIRA are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.4.0] — 2026-09-21
+
+### Added — project builder (`kira_builder.py`)
+- **"build me a project that …"** turns an idea into a real project on disk:
+  the model plans a strict JSON spec (name, language, files, test command),
+  every file is generated, the tests run **for real**, and failures are
+  repaired by showing the model its own code plus the exact error output.
+- **It never claims success it did not verify**: the report distinguishes
+  "tests passing" from "TESTS FAILING" and adds a diagnosis (missing module,
+  syntax error, timeout, no tests collected) and the project location.
+- **Safety**: file paths are validated before writing (no absolute paths, no
+  `..` escapes, no drive letters); test commands are allow-listed to real
+  test runners and executed without a shell; builds ask for confirmation and
+  are never captured into macros.
+- **Robustness**: an empty model response never overwrites working files; a
+  tiny `conftest.py` bootstrap makes generated tests importable; bytecode
+  caches are cleared before each run so a same-size fix in the same second is
+  not masked by a stale `.pyc`; the repair loop stops early when the model has
+  nothing further to change; model/disk errors are reported, never crash the
+  agent.
+- Supporting commands: **"fix the project"** (re-test and repair an existing
+  project) and **"list my projects"**. New config: `projects_dir`,
+  `builder_model`, `project_test_timeout`, `project_max_attempts`.
+
+### Changed
+- `pytest` moved into `requirements.txt` — KIRA runs tests for the projects
+  it generates.
+
+### Tests
+- 79 new tests, including end-to-end builds that execute **real pytest** on
+  generated code, a self-repair scenario, an honest-failure scenario, and a
+  regression test for the stale-bytecode hazard. **580 passing.**
+
 ## [2.3.1] — 2026-09-21
 
 ### Changed

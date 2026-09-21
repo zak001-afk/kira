@@ -24,6 +24,9 @@ _META_ACTIONS = {
     "skill_promote", "skill_skip", "self_report", "self_review",
     "habit_hint", "conversation_on", "conversation_off", "chat_reset",
     "undo_last", "unlock_lab",
+    # building a project takes minutes and cannot replay from a macro
+    "project_build", "project_fix", "projects_list", "monitor_on",
+    "monitor_off", "secure_lab", "privacy_blur", "weather", "home_control",
 }
 
 _recording = False

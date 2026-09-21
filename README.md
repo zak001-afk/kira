@@ -69,6 +69,10 @@ Everything runs on your machine. No cloud APIs, no API keys, no telemetry.
 - **Optional bridges** — ask the weather (`wttr.in`, opt-in), or control
   Home Assistant devices by name ("turn on the desk lamp") — both are
   completely inert until configured.
+- **Builds projects and actually tests them** — give KIRA an idea
+  (*"build me a project that tracks my expenses"*) and it plans the project,
+  writes every file, runs the tests for real, and repairs its own failures
+  with the error output. It never claims success unless the tests passed.
 - **Screen vision with verification** — "find the save button and click it":
   KIRA screenshots, asks the vision model for coordinates, clicks at ≥70%
   confidence, then compares before/after screenshots to confirm it worked.
@@ -162,6 +166,9 @@ after the wake word is fine: *"kira, open chrome"*, *"kira: open chrome"*.
 | take that back / undo | annule ça | تراجع | reverse the last reversible action |
 | weather in <city> | météo à <ville> | الطقس في <مدينة> | opt-in weather report |
 | turn on / off <device> | allume / éteins <appareil> | اطفئ <جهاز> | Home Assistant (when configured) |
+| build me a project that … | crée un projet qui … | أنشئ مشروعا … | build, test and self-repair a real project from an idea |
+| fix the project | répare le projet | أصلح المشروع | re-run the last project's tests and repair failures |
+| list my projects | liste mes projets | اعرض المشاريع | show the projects KIRA has built |
 | calculate 2 to the power of 10 | calcule dix fois trois | كم يساوي ١٢ ضرب ٢ | safe local arithmetic (words & % work) |
 | open github / gmail / netflix | ouvrir netflix | — | known websites (extendable in config) |
 | remind me in 5 minutes to call mom | rappelle-moi dans 2 heures de … | ذكرني بعد 10 دقائق … | set a spoken reminder |
@@ -199,6 +206,8 @@ conversational chat mode with your stored memories as context.
     ]
   },
   "personality": { "humor": "charming" }, // charming | neutral | dry | formal
+  "builder_model": "",            // optional stronger model for project builds
+  "projects_dir": "",             // default: ~/KIRA Projects
   "skill_promote_after": 10,      // successes before KIRA offers a shortcut
   "lab_passphrase": "",           // optional passphrase for "unlock the lab"
   "monitor": {                    // proactive watchdog (all optional)
@@ -303,6 +312,62 @@ control:
 Startup is now a small boot sequence: a calibration-style banner with memory
 counts, then a spoken briefing (time, date, battery, pending reminders).
 
+## Building projects from an idea
+
+Say *"build me a project that tracks my expenses"* (or type it) and KIRA runs
+a real build pipeline in `kira_builder.py`:
+
+1. **Plan** — the model returns a strict JSON spec: name, language, file
+   list, and a test command. Paths are validated (no absolute paths, no
+   `..` escapes, no drive letters) before anything is written.
+2. **Generate** — one model call per planned file, written into
+   `projects_dir` (default `~/KIRA Projects`), plus a tiny `conftest.py`
+   bootstrap so generated tests can import the project's modules.
+3. **Test** — the test command runs **for real**, in the project directory,
+   through KIRA's own interpreter, with a timeout. Commands are allow-listed
+   (pytest / npm / cargo / go / dotnet …) and executed without a shell, so a
+   hallucinated `rm -rf` cannot run. Bytecode caches are cleared first: a
+   same-size fix written in the same second would otherwise be masked by a
+   stale `.pyc`.
+4. **Repair** — on failure the model is shown its own code *and* the exact
+   failure output, and returns corrected files. This repeats up to
+   `project_max_attempts` times, and stops early if the model has nothing
+   more to change.
+5. **Report** — the spoken summary states exactly what happened. Tests that
+   never pass are reported as failing, with the diagnosis (missing module,
+   syntax error, timeout, no tests collected) and the project location.
+
+```powershell
+> build me a project that tracks my expenses
+KIRA · build: planning the project...
+KIRA · build: scaffolding 'expense-tracker' in C:\Users\you\KIRA Projects\expense-tracker
+KIRA · build: writing 2 file(s) from scratch
+KIRA · build: added conftest.py so tests can import the project
+KIRA · build: running tests: python -m pytest -q
+KIRA · build: tests failed — repairing from the output
+KIRA · build: asking the model to correct the failing files
+KIRA: Project 'expense-tracker' is built and its tests pass, sir — 3 files,
+verified in 2 attempt(s). It's in C:\Users\you\KIRA Projects\expense-tracker.
+```
+
+Because building is slower, riskier and writes to disk, it asks for
+confirmation first (`require_confirmation`), never records itself into
+macros, and can use a stronger dedicated model:
+
+```jsonc
+"builder_model": "qwen2.5-coder:7b",  // used for planning + code generation
+"projects_dir": "",                    // default: ~/KIRA Projects
+"project_test_timeout": 180,           // seconds per test run
+"project_max_attempts": 3              // write once, then repair attempts
+```
+
+**Honest limits:** the builder guarantees the *process* — a real plan, real
+tests, real repairs, and a report that never overstates the result. It cannot
+guarantee the model writes perfect code. A 0.6B chat model is fine for routing
+commands but weak at whole-project generation; for real use set
+`builder_model` to a coding model (e.g. `qwen2.5-coder:7b` or larger) and
+expect the repair loop to do some of the work.
+
 ## Persistent memory
 
 KIRA keeps two kinds of memory in `kira_memory.db` (SQLite, local only,
@@ -336,6 +401,7 @@ kira/
 ├── main_window.py        # customtkinter UI (orb, state machine, chat panel)
 ├── kira_voice_agent.py   # backend: STT, parser, LLM routing, actions, vision, TTS
 ├── kira_thought.py       # the agent's mind: think → act → reflect, self-reports
+├── kira_builder.py       # idea → planned, generated, tested, self-repaired project
 ├── kira_calculator.py    # safe AST-whitelisted arithmetic (EN/FR/AR)
 ├── kira_reminders.py     # in-process spoken reminders with daemon timers
 ├── kira_personality.py   # humor levels, time-aware greetings, boot theater
@@ -363,7 +429,7 @@ kira/
 dev_mode.bat        # auto-restarts KIRA whenever a source file changes
 
 pip install -r requirements-dev.txt
-pytest              # 501 unit tests — no mic, display or Ollama needed
+pytest              # 580 unit tests — no mic, display or Ollama needed
 ruff check .        # lint
 python -m compileall dev.py kira_memory.py kira_thought.py kira_voice_agent.py main_window.py scripts tests
 ```

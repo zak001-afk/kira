@@ -21,3 +21,7 @@ vosk>=0.3.45
 
 # System information
 psutil>=6.0.0
+
+# Project builder: KIRA writes tests for the projects it generates and runs
+# them, so the test runner must be available in KIRA's own interpreter.
+pytest>=8.2.0
