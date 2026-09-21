@@ -635,20 +635,24 @@ def main(argv=None) -> int:
         return 1
 
     service = server.service
-    print("=" * 62)
-    print("KIRA // NEURAL INTERFACE")
-    print("=" * 62)
-    print(f"mode      : {service.mode}")
-    print(f"version   : {service.version}")
+    banner = [
+        "=" * 62,
+        "KIRA // NEURAL INTERFACE",
+        "=" * 62,
+        f"mode      : {service.mode}",
+        f"version   : {service.version}",
+    ]
     if service.backend is None and not service.simulate:
-        print(f"backend   : unavailable ({service.reason})")
-        print("            the interface will load, commands will explain why")
+        banner += [
+            f"backend   : unavailable ({service.reason})",
+            "            the interface will load, commands will explain why",
+        ]
     if not args.no_watchdog:
         service.start_background()
-    for url in local_addresses(server.server_address[1]):
-        print(f"open      : {url}")
-    print("press CTRL+C to stop")
-    print("=" * 62)
+    banner += [f"open      : {url}" for url in local_addresses(server.server_address[1])]
+    banner += ["press CTRL+C to stop", "=" * 62]
+    # flushed on purpose: users launch this from a shortcut with blocked stdout
+    print("\n".join(banner), flush=True)
 
     if args.open:
         threading.Thread(
