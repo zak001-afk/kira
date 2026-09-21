@@ -19,7 +19,7 @@ import kira_homeassist
 import kira_builder
 import re
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 import subprocess
 import time
 import webbrowser
@@ -83,6 +83,7 @@ DEFAULT_CONFIG = {
         "search",
         "mouse_move",
         "click",
+        "vision_click",
         "lock_pc",
         "project_build",
         "project_fix",
@@ -2187,6 +2188,45 @@ def is_vision_click_request(command: str) -> bool:
     return has_find and has_click and (has_screen or "and" in text or "et" in text)
 
 
+def plan_vision_command(command: str):
+    """Plan a screen request with the vision pipeline, or return None.
+
+    This is the bridge that used to be missing: the vision helpers existed but
+    nothing ever called them, so "what is on my screen" fell through to plain
+    chat. Every surface (the voice loop, the desktop HUD, the JSON API) now
+    goes through here.
+    """
+    text = str(command or "").strip()
+    if not text:
+        return None
+    if is_vision_click_request(text):
+        target = _extract_vision_target(text) or text
+        return {"action": "vision_click", "target": target}
+    if is_vision_request(text):
+        return {"action": "look_at_screen", "question": text}
+    return None
+
+
+def action_succeeded(result) -> bool:
+    """Whether an ``execute_action`` result means the task actually happened.
+
+    Actions answer with True/False, with a string when they speak for
+    themselves, or with a dict when the caller needs the details.
+    """
+    if isinstance(result, dict):
+        return bool(result.get("success"))
+    return bool(result)
+
+
+def outcome_message(result) -> str:
+    """The human-readable line carried by an ``execute_action`` result."""
+    if isinstance(result, str):
+        return result
+    if isinstance(result, dict):
+        return str(result.get("message") or "")
+    return ""
+
+
 def locate_on_screen(target: str):
     """Ask the local vision model for safe, approximate screen coordinates."""
     screenshot_path = None
@@ -3016,7 +3056,11 @@ def run_shortcut(name: str):
     if not isinstance(actions, list) or not actions:
         return False
     logging.info("Running shortcut: %s", name)
-    return all(execute_action(action) for action in actions if isinstance(action, dict))
+    return all(
+        action_succeeded(execute_action(action))
+        for action in actions
+        if isinstance(action, dict)
+    )
 
 
 def execute_action(action_data):
@@ -3053,7 +3097,7 @@ def execute_action(action_data):
                 if isinstance(step_result, str):
                     if step_result:
                         completed += 1
-                elif step_result:
+                elif action_succeeded(step_result):
                     completed += 1
                 else:
                     logging.warning("Sequence step %s failed: %s", index, step)
@@ -3067,6 +3111,17 @@ def execute_action(action_data):
             return "I could not execute the requested sequence, sir."
 
         return f"Completed {completed} action" f"{'s' if completed != 1 else ''}, sir."
+
+    # ---------------------------------------------------------
+    # VISION — when the task is "do it on the screen in front of you"
+    # ---------------------------------------------------------
+    if action == "look_at_screen":
+        question = str(action_data.get("question") or "").strip()
+        return analyze_screen(question) if question else analyze_screen()
+
+    if action == "vision_click":
+        target = str(action_data.get("target") or "").strip()
+        return vision_click(target)
 
     # ---------------------------------------------------------
     # NORMAL ACTIONS
@@ -3349,6 +3404,13 @@ def execute_action(action_data):
         kira_learning.clear_promotion()
         return personalize_address(kira_learning.say("promotion_skipped", alang))
 
+    if action == "look_at_screen":
+        return "capture the screen and read what is on it"
+
+    if action == "vision_click":
+        target = str(action_data.get("target", "")).strip() or "the target"
+        return f"look at the screen, find {target} and click it there"
+
     if action == "project_build":
         idea = str(action_data.get("idea") or "").strip()
         if not idea:
@@ -3460,6 +3522,13 @@ def describe_action(action_data):
         query = str(action_data.get("query", "search")).strip() or "search"
         return f"search the web for {query}"
 
+    if action == "look_at_screen":
+        return "capture the screen and read what is on it"
+
+    if action == "vision_click":
+        target = str(action_data.get("target", "")).strip() or "the target"
+        return f"look at the screen, find {target} and click it there"
+
     if action == "project_build":
         idea = str(action_data.get("idea", "a project")).strip() or "a project"
         return (
@@ -3549,7 +3618,9 @@ def requires_confirmation(action: str) -> bool:
     configured = CONFIG.get("require_confirmation")
     if isinstance(configured, list):
         return name in {str(item).strip().lower() for item in configured}
-    return name in {"search", "mouse_move", "click", "lock_pc"}
+    # A vision click moves the real mouse and clicks whatever the model
+    # believes is at those coordinates, so it belongs on this list.
+    return name in {"search", "mouse_move", "click", "lock_pc", "vision_click"}
 
 
 def should_process_command(command: str) -> bool:
@@ -3642,6 +3713,11 @@ def main():
 
             result = parse_simple_command(cleaned)
             planned_by = "parser"
+            if result is None:
+                # "what is on my screen" / "find the save button and click it"
+                result = plan_vision_command(cleaned)
+                if result is not None:
+                    planned_by = "vision"
             if result is None and is_chat_question(cleaned):
                 speak(ask_chat(cleaned))
                 continue
@@ -3697,23 +3773,26 @@ def main():
 
             lang = detect_language(cleaned)
             success = execute_action(result)
+            ok = action_succeeded(success)
             promotion_note = None
             if planned_by in {"llm", "memory"}:
                 # reflect: episodes + strengthen/demote the learning
                 _LAST_COMMAND, _LAST_ACTION = cleaned, result
                 promotion_note = learn_from(
-                    cleaned, result, planned_by, bool(success), language=lang
+                    cleaned, result, planned_by, ok, language=lang
                 )
-            if success:
+            if ok:
                 # suit bookkeeping: macro recording + undo stack
                 kira_learning.capture(result)
                 kira_undo.record(cleaned, result)
                 action_name = str(action).lower()
                 # Actions returning a string speak their own result
                 # (time, date, system info, clipboard, help, sequences,
-                # calculations, reminders).
-                if isinstance(success, str):
-                    speak(success)
+                # calculations, reminders); a dict carries its own message.
+                if isinstance(success, (str, dict)):
+                    message = outcome_message(success)
+                    if message:
+                        speak(message)
                 else:
                     target_text = ""
                     if action == "open_app":

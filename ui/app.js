@@ -31,6 +31,56 @@ const STATE_STYLE = {
   ERROR: { label: "FAULT", spin: 0.8, bloom: 1.9, energy: 0.3, key: "error" },
 };
 
+/* orb_quality (high | balanced | low) is the render budget the backend
+   reports: fewer rain columns, no bloom pass, and one device pixel per CSS
+   pixel on "low". The first telemetry poll sets it before the reactor is
+   built, and a later change is applied live. */
+const QUALITY = {
+  high: { matrixFont: 12, bloom: true, pixelRatio: 2 },
+  balanced: { matrixFont: 14, bloom: true, pixelRatio: 2 },
+  low: { matrixFont: 20, bloom: false, pixelRatio: 1 },
+};
+
+function qualitySettings() {
+  return QUALITY[appState.quality] || QUALITY.balanced;
+}
+
+/* The token KIRA needs when it is reachable beyond this machine. It arrives
+   once in the URL (?token=...), is remembered, rides along on every API call,
+   and is stripped from the address bar so a screenshot or a shared link does
+   not hand it out. On loopback there is no token and this does nothing. */
+function readToken() {
+  let stored = "";
+  try {
+    stored = localStorage.getItem("kira.token") || "";
+  } catch (error) {
+    stored = "";
+  }
+  let fromUrl = "";
+  let params = null;
+  try {
+    params = new URLSearchParams(window.location.search || "");
+    fromUrl = params.get("token") || "";
+  } catch (error) {
+    return stored;
+  }
+  if (!fromUrl) return stored;
+  try {
+    localStorage.setItem("kira.token", fromUrl);
+    params.delete("token");
+    const query = params.toString();
+    const clean = window.location.pathname + (query ? `?${query}` : "");
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, "", clean);
+    }
+  } catch (error) {
+    /* private mode: the token still works for this session */
+  }
+  return fromUrl;
+}
+
+const KIRA_TOKEN = readToken();
+
 const appState = {
   state: "READY",
   style: STATE_STYLE.READY,
@@ -40,6 +90,8 @@ const appState = {
   speak: localStorage.getItem("kira.speak") !== "off",
   busy: false,
   pendingConfirm: false,
+  confirmToken: "",
+  quality: "balanced",
 };
 
 /* =========================================================
@@ -68,10 +120,9 @@ const sidebarVersion = $("sidebar-version");
    ========================================================= */
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (KIRA_TOKEN) headers["X-KIRA-Token"] = KIRA_TOKEN;
+  const response = await fetch(path, { ...options, headers });
   if (!response.ok) {
     throw new Error(`${response.status} ${response.statusText}`);
   }
@@ -81,10 +132,10 @@ async function api(path, options = {}) {
 const apiState = () => api("/api/state");
 const apiHistory = (limit = 30) => api(`/api/history?limit=${limit}`);
 const apiReset = () => api("/api/reset", { method: "POST", body: "{}" });
-const apiCommand = (text, confirm = false) =>
+const apiCommand = (text, confirm = false, confirmToken = "") =>
   api("/api/command", {
     method: "POST",
-    body: JSON.stringify({ text, confirm }),
+    body: JSON.stringify({ text, confirm, confirm_token: confirmToken }),
   });
 
 /* =========================================================
@@ -263,6 +314,16 @@ function applyTelemetry(data) {
     $("battery").textContent = "—";
   }
 
+  if (data.quality && data.quality !== appState.quality) {
+    appState.quality = data.quality;
+    applyQuality();
+    // the attribute is only a debugging handle; losing it must not cost
+    // telemetry, which is what the panels are made of
+    if (document.documentElement) {
+      document.documentElement.dataset.quality = data.quality;
+    }
+  }
+
   const modelName = data.model && data.model !== "—" ? data.model : "LOCAL NEURAL ENGINE";
   $("model").textContent = modelName;
   if (modelChipText) modelChipText.textContent = modelName;
@@ -279,12 +340,30 @@ function applyTelemetry(data) {
   }
 }
 
+function applyQuality() {
+  resizeMatrix(); // the rain thins out or fills in for the new budget
+  if (reactorAPI && reactorAPI.setQuality) reactorAPI.setQuality(appState.quality);
+}
+
 async function poll() {
+  if (document.hidden) return; // nothing to redraw: nobody is looking
   try {
     applyTelemetry(await apiState());
   } catch (error) {
     setOnline(false, "offline", String(error.message || error));
   }
+}
+
+/* Polling is the only thing here that costs the machine anything (a psutil
+   sample each time). When the window is minimised or the tab is in the
+   background it is pure waste, so it stops — and the moment the HUD comes
+   back the state is refreshed before anything is drawn. Browsers already
+   park requestAnimationFrame for a hidden page, so this closes the last gap. */
+function watchVisibility() {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    poll();
+  });
 }
 
 /* =========================================================
@@ -307,6 +386,7 @@ function renderResult(data) {
   }
   if (data.needs_confirmation) {
     appState.pendingConfirm = true;
+    appState.confirmToken = data.confirm_token || "";
     confirmText.textContent = `Confirm: ${data.reply}`;
     confirmBar.hidden = false;
     setActivity("CONFIRM");
@@ -334,11 +414,13 @@ async function sendCommand(text) {
 }
 
 async function answerConfirmation(confirmed) {
+  const nonce = appState.confirmToken;
   confirmBar.hidden = true;
   appState.pendingConfirm = false;
+  appState.confirmToken = "";
   setBusy(true, "EXECUTING");
   try {
-    const data = await apiCommand("", confirmed);
+    const data = await apiCommand("", confirmed, nonce);
     renderResult({ ...data, needs_confirmation: false });
     addMessage("you", confirmed ? "confirmed" : "cancelled", "note");
   } catch (error) {
@@ -509,7 +591,7 @@ function resizeWaveform() {
   waveformContext.setTransform(ratio, 0, 0, ratio, 0, 0);
 }
 
-function drawWaveform() {
+function drawWaveform(frames = 1) {
   if (!waveformContext) return;
 
   const width = waveformCanvas.clientWidth || 420;
@@ -545,7 +627,7 @@ function drawWaveform() {
     waveformContext.stroke();
   }
 
-  wavePhase += 0.03 + strength * 0.0016;
+  wavePhase += (0.03 + strength * 0.0016) * frames;
 }
 
 /* =========================================================
@@ -583,13 +665,14 @@ const GLYPHS = "0123456789+-*/\\|=<>[]{}#$%&@?!:;^~";
 
 const matrixCanvas = $("matrix");
 const matrixContext = matrixCanvas.getContext("2d");
-const matrixFontSize = 14;
+let matrixFontSize = 14;
 
 let matrixColumns = [];
 let matrixWidth = 0;
 let matrixHeight = 0;
 
 function resizeMatrix() {
+  matrixFontSize = qualitySettings().matrixFont;
   matrixWidth = matrixCanvas.width = window.innerWidth;
   matrixHeight = matrixCanvas.height = window.innerHeight;
   const count = Math.floor(matrixWidth / matrixFontSize);
@@ -607,9 +690,10 @@ function glyphFor(index) {
   return GLYPHS[mixed % GLYPHS.length];
 }
 
-function drawMatrix() {
-  // translucent wipe leaves the classic fading trails
-  matrixContext.fillStyle = "rgba(1, 1, 1, 0.10)";
+function drawMatrix(frames = 1) {
+  // translucent wipe leaves the classic fading trails — the alpha is what one
+  // 60 Hz frame would use, raised to the power of the time actually elapsed
+  matrixContext.fillStyle = `rgba(1, 1, 1, ${1 - 0.9 ** frames})`;
   matrixContext.fillRect(0, 0, matrixWidth, matrixHeight);
   matrixContext.font = `${matrixFontSize}px Consolas, monospace`;
   matrixContext.textAlign = "center";
@@ -644,8 +728,11 @@ function drawMatrix() {
       );
     }
 
-    column.head += column.speed * boost;
-    if (headY > matrixHeight + column.length * matrixFontSize && Math.random() > 0.9) {
+    column.head += column.speed * boost * frames;
+    if (
+      headY > matrixHeight + column.length * matrixFontSize &&
+      Math.random() > 0.9 ** frames
+    ) {
       column.head = -Math.random() * 20;
       column.speed = 0.35 + Math.random() * 0.75;
       column.length = 6 + Math.floor(Math.random() * 12);
@@ -692,10 +779,11 @@ async function buildReactor() {
   );
   camera.position.set(0, 0, 15);
 
+  const budget = qualitySettings();
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, budget.pixelRatio));
   renderer.setSize(window.innerWidth, window.innerHeight);
   container.appendChild(renderer.domElement);
 
@@ -706,6 +794,8 @@ async function buildReactor() {
   redLight.position.set(0, 0, 2);
   scene.add(redLight);
 
+  // The bloom pass is the expensive half of a frame. "low" renders the scene
+  // straight to the canvas instead: the reactor loses its glow, not its job.
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
   const bloomPass = new UnrealBloomPass(
@@ -717,6 +807,7 @@ async function buildReactor() {
   bloomPass.threshold = 0.12;
   bloomPass.strength = 1.45;
   bloomPass.radius = 0.65;
+  bloomPass.enabled = budget.bloom;
   composer.addPass(bloomPass);
 
   /* ---------------------------------------------------------
@@ -1042,7 +1133,8 @@ async function buildReactor() {
 
     bloomPass.strength = style.bloom;
 
-    composer.render();
+    if (bloomPass.enabled) composer.render();
+    else renderer.render(scene, camera);
   }
 
   window.addEventListener("resize", () => {
@@ -1054,7 +1146,17 @@ async function buildReactor() {
   });
 
   animate();
-  reactorAPI = { scene, reactor };
+  reactorAPI = {
+    scene,
+    reactor,
+    setQuality(name) {
+      const settings = QUALITY[name] || QUALITY.balanced;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.pixelRatio));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+      bloomPass.enabled = settings.bloom;
+    },
+  };
 }
 
 /* =========================================================
@@ -1063,10 +1165,33 @@ async function buildReactor() {
 
 let lastClockMinute = -1;
 
-function hudLoop() {
+/* Nothing here is measured in frames on purpose. requestAnimationFrame fires
+   at whatever rate the display runs — 60 Hz, 144 Hz, 240 Hz — so a loop that
+   counts frames makes the rain fall four times faster on a gaming monitor and
+   spends four times the CPU for the same picture. Every motion below is driven
+   by elapsed time, and 35 fps is plenty for rain and a pulsing line. */
+const HUD_MIN_FRAME_MS = 1000 / 35;
+const SIXTY_HZ_MS = 1000 / 60;
+let lastHudDraw = 0;
+let lastHudTime = 0;
+
+function hudLoop(timestamp) {
   requestAnimationFrame(hudLoop);
-  drawMatrix();
-  drawWaveform();
+  if (document.hidden) return; // browsers park rAF; not every shell does
+
+  const time = typeof timestamp === "number" ? timestamp : performance.now();
+  if (time - lastHudDraw < HUD_MIN_FRAME_MS) return;
+  lastHudDraw = time;
+
+  // "frames" is one 60 Hz frame's worth of elapsed time: 1 at 60 fps, capped
+  // so a window that was hidden for a minute does not jump on the way back
+  const frames = lastHudTime
+    ? Math.min((time - lastHudTime) / SIXTY_HZ_MS, 3)
+    : 1;
+  lastHudTime = time;
+
+  drawMatrix(frames);
+  drawWaveform(frames);
 
   // the clock only needs redrawing when the minute changes
   const now = new Date();
@@ -1091,7 +1216,6 @@ async function boot() {
 
   // visual layers first so the interface is alive immediately
   hudLoop();
-  startReactor();
 
   // restore the conversation the server already knows about
   try {
@@ -1110,8 +1234,10 @@ async function boot() {
     /* no history yet — the greeting stands */
   }
 
-  await poll();
+  await poll(); // this is what says which render budget to use
+  startReactor();
   setInterval(poll, POLL_MS);
+  watchVisibility();
   commandInput.focus();
   console.info("KIRA neural interface ready");
 }

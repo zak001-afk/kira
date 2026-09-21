@@ -125,9 +125,25 @@ class FakeElement {
       font: "",
       textAlign: "",
       lineWidth: 1,
-      fillRect() {},
-      fillText() {},
-      clearRect() {},
+      fillRect() {
+        drawCalls.fillRect += 1;
+        const alpha = wipeAlphaOf(this.fillStyle);
+        if (alpha !== null) drawCalls.wipeAlpha.push(alpha);
+      },
+      fillText(_glyph, x, y) {
+        drawCalls.fillText += 1;
+        // the lowest glyph in a column is its head (heads fall, tails follow)
+        drawCalls.fontSizes.add(parseFloat(this.font));
+        const column = Math.round(x);
+        const previous = drawCalls.columnY.get(column);
+        if (previous === undefined || y > previous) {
+          drawCalls.columnY.set(column, y);
+          if (previous !== undefined && y > previous) drawCalls.fall += y - previous;
+        }
+      },
+      clearRect() {
+        drawCalls.clearRect += 1;
+      },
       beginPath() {},
       moveTo() {},
       lineTo() {},
@@ -143,6 +159,26 @@ class FakeElement {
   get clientHeight() {
     return this._clientHeight ?? 32;
   }
+}
+
+/* what the canvases were asked to draw, so the render loop can be measured.
+   The alpha of each matrix wipe is the trail: it is the one number that says
+   how fast the rain is falling, whatever the frame rate happens to be. */
+const drawCalls = {
+  fillRect: 0,
+  fillText: 0,
+  clearRect: 0,
+  wipeAlpha: [],
+  columnY: new Map(), // newest glyph position per column, for the fall speed
+  fall: 0,            // pixels every column travelled downward this sample
+  fontSizes: new Set(), // the rain's glyph size, which is its column density
+};
+
+function wipeAlphaOf(fillStyle) {
+  const match = /rgba\(\s*1\s*,\s*1\s*,\s*1\s*,\s*([0-9.eE+-]+)\s*\)/.exec(
+    String(fillStyle),
+  );
+  return match ? Number(match[1]) : null;
 }
 
 const elements = new Map();
@@ -214,7 +250,11 @@ const navButton = (name) => navItems.find((item) => item.dataset.nav === name);
 
 const body = new FakeElement("body");
 
+const documentElement = new FakeElement("html");
+documentElement.dataset = {};
+
 globalThis.document = {
+  documentElement,
   getElementById: (id) => element(id),
   createElement: (tag) => new FakeElement(tag),
   createElementNS: (_namespace, tag) => new FakeElement(tag),
@@ -228,7 +268,13 @@ globalThis.window = globalThis;
 globalThis.innerWidth = 1440;
 globalThis.innerHeight = 900;
 globalThis.devicePixelRatio = 1;
-globalThis.requestAnimationFrame = () => 0; // render loops run once, no spin
+// Frames are queued, not run: the smoke check drives them by hand with
+// controlled timestamps (see the render-loop checks at the end).
+const animationFrames = [];
+globalThis.requestAnimationFrame = (fn) => {
+  animationFrames.push(fn);
+  return animationFrames.length;
+};
 globalThis.addEventListener = () => {};
 globalThis.localStorage = {
   store: new Map(),
@@ -374,7 +420,15 @@ try {
   });
 }
 
-await import(pathToFileURL(path.join(UI_DIR, "app.js")).href);
+// A syntax error in app.js used to make this file exit 0 with no checks run:
+// the import rejection was never observed. It is a failure now.
+try {
+  await import(pathToFileURL(path.join(UI_DIR, "app.js")).href);
+} catch (error) {
+  console.log(`  FAIL  the interface loads at all — ${error.message}`);
+  console.log("\n1 check failed");
+  process.exit(1);
+}
 await tick();
 
 const conversation = element("conversation");
@@ -737,4 +791,121 @@ console.log(
     ? `\n${failures.length} UI check(s) failed:\n- ${failures.join("\n- ")}`
     : "\nall UI checks passed",
 );
+/* ── the render loop ─────────────────────────────────────
+   Everything about how this HUD moves is timing, and timing is exactly the
+   sort of thing that looks right on the machine it was written on and wrong
+   everywhere else. These checks pin it down: feed the loop a simulated
+   second at two very different refresh rates and compare the work it did. */
+
+let hudClock = 1_000_000;
+
+function resetDrawCalls() {
+  drawCalls.fillText = 0;
+  drawCalls.fillRect = 0;
+  drawCalls.wipeAlpha = [];
+  drawCalls.columnY = new Map();
+  drawCalls.fall = 0;
+  drawCalls.fontSizes = new Set();
+}
+
+function paint(ms, frames) {
+  const start = hudClock;
+  hudClock += ms + 100; // never walk the clock backwards between samples
+  resetDrawCalls();
+  for (let i = 0; i < frames; i += 1) {
+    const queued = animationFrames.splice(0, animationFrames.length);
+    assert.ok(queued.length > 0, "the render loop stopped asking for frames");
+    for (const callback of queued) callback(start + (i * ms) / frames);
+  }
+  // how much of the trail survived the second: one number, any frame rate
+  const surviving = drawCalls.wipeAlpha.reduce((left, alpha) => left * (1 - alpha), 1);
+  return {
+    glyphs: drawCalls.fillText,
+    font: Math.max(...drawCalls.fontSizes),
+    wipes: drawCalls.wipeAlpha.length,
+    surviving,
+    // average pixels a column fell in a second, wrapping columns excluded
+    fall: drawCalls.fall / Math.max(drawCalls.columnY.size, 1),
+  };
+}
+
+await check("the rain falls at the same speed on any display", () => {
+  // One simulated second at three very different refresh rates. The trail that
+  // survives must be the same fraction of the screen in all three — that is
+  // what "the same speed" means when the drawing is time-based. A loop that
+  // counts frames leaves a 240 Hz display with no trails at all.
+  const slow = paint(1000, 30);
+  const normal = paint(1000, 60);
+  const fast = paint(1000, 144);
+  const rapid = paint(1000, 240);
+  assert.ok(slow.glyphs > 0 && fast.wipes > 0, "nothing was drawn");
+  for (const sample of [slow, normal, fast, rapid]) {
+    assert.ok(
+      sample.surviving > 0.0005 && sample.surviving < 0.006,
+      `one second left ${sample.surviving.toFixed(4)} of the trail — the rain ` +
+        "is not falling at a constant speed",
+    );
+  }
+});
+
+await check("the rain falls at 60 frames' worth per second, whatever the rate", () => {
+  // The rain was tuned on a 60 Hz screen. Elapsed time is what makes it fall
+  // at that same speed later, on this panel: ~14 px glyphs at ~0.7 rows a
+  // frame is a bit over 600 px a second, and every rate must agree on it.
+  const rates = [30, 60, 144, 240];
+  const falls = rates.map((rate) => paint(1000, rate).fall);
+  for (let index = 0; index < rates.length; index += 1) {
+    assert.ok(
+      falls[index] > 250 && falls[index] < 450,
+      `${rates[index]} Hz fell ${falls[index].toFixed(0)} px/s — the rain has the ` +
+        "wrong speed",
+    );
+  }
+});
+
+await check("a fast display does not do more work", () => {
+  const sixty = paint(1000, 60);
+  const rapid = paint(1000, 240);
+  assert.ok(sixty.wipes > 0, "nothing was drawn");
+  const ratio = rapid.wipes / sixty.wipes;
+  assert.ok(
+    ratio > 0.7 && ratio < 1.4,
+    `240 Hz did ${ratio.toFixed(2)}x the drawing of 60 Hz — the loop is uncapped`,
+  );
+});
+
+await check("orb_quality lowers the render budget", async () => {
+  // The rain's glyph size is its column count: 14 px is the balanced budget,
+  // 20 px is a third fewer columns, 12 px is more. The server reports the
+  // budget, the HUD must follow it — and follow it when it changes.
+  const setQuality = async (quality) => {
+    statePayload = { ...statePayload, quality };
+    for (const interval of intervals) await interval.fn(); // the telemetry poll
+    return paint(1000, 60).font;
+  };
+  assert.equal(await setQuality("balanced"), 14, "the balanced budget was ignored");
+  assert.equal(await setQuality("low"), 20, "the low budget was ignored");
+  assert.equal(await setQuality("high"), 12, "the high budget was ignored");
+  assert.equal(await setQuality("nonsense"), 14, "an unknown budget was trusted");
+});
+
+await check("a hidden window stops drawing and stops polling", () => {
+  const visible = paint(1000, 60); // the window is on screen here
+  assert.ok(visible.glyphs > 0, "nothing was drawn while visible");
+
+  const saved = globalThis.document.hidden;
+  globalThis.document.hidden = true;
+  let hidden;
+  let polls;
+  try {
+    hidden = paint(1000, 60);
+    polls = calls.length;
+    for (const interval of intervals) interval.fn(); // the telemetry timer
+  } finally {
+    globalThis.document.hidden = saved;
+  }
+  assert.equal(hidden.glyphs, 0, "a hidden window kept drawing the rain");
+  assert.equal(calls.length, polls, "a hidden window kept polling the API");
+});
+
 process.exit(failures.length ? 1 : 0);

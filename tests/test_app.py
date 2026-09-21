@@ -356,11 +356,54 @@ def test_importing_the_app_pulls_in_no_desktop_stack():
         assert module not in sys.modules, f"kira_app imported {module} eagerly"
 
 
+def fake_service(**overrides):
+    fields = {
+        "mode": "live",
+        "version": "2.7.0",
+        "backend": None,
+        "simulate": False,
+        "reason": "ImportError: pyautogui",
+        "token": "",
+        "trust_proxy": False,
+    }
+    fields.update(overrides)
+    return types.SimpleNamespace(**fields)
+
+
 def test_the_banner_says_what_is_actually_running():
-    service = types.SimpleNamespace(mode="live", version="2.7.0", backend=None,
-                                    simulate=False, reason="ImportError: pyautogui")
-    text = kira_app.banner(service, "http://127.0.0.1:8788", watching=False)
+    text = kira_app.banner(fake_service(), "http://127.0.0.1:8788", watching=False)
     assert "mode      : live" in text
     assert "unavailable" in text
     assert "ImportError: pyautogui" in text
     assert "watchdog  : off" in text
+    assert "access" not in text, "a loopback bind needs no token talk"
+
+
+def test_the_banner_advertises_the_access_token():
+    service = fake_service(token="s3cret")
+    text = kira_app.banner(service, "http://192.168.1.5:8788?token=s3cret", watching=True)
+    assert "access    : a token is required" in text
+    assert "token=s3cret" in text
+
+
+def test_the_banner_warns_when_the_guards_are_off():
+    """--trust-proxy disables a real defence and must never be silent."""
+    text = kira_app.banner(fake_service(trust_proxy=True), "http://x:1", watching=False)
+    assert "trust-proxy" in text
+    assert "Host/Origin" in text
+
+
+def test_reachable_url_points_at_something_browsable():
+    """0.0.0.0 and :: mean every interface, not a destination."""
+    assert kira_app.reachable_url("0.0.0.0", 8788) == "http://127.0.0.1:8788"
+    assert kira_app.reachable_url("::", 8788) == "http://127.0.0.1:8788"
+    assert kira_app.reachable_url("", 8788) == "http://127.0.0.1:8788"
+    assert kira_app.reachable_url("localhost", 8788) == "http://localhost:8788"
+    assert kira_app.reachable_url("192.168.1.5", 8788) == "http://192.168.1.5:8788"
+    assert kira_app.reachable_url("fd00::1", 8788) == "http://[fd00::1]:8788"
+
+
+def test_reachable_url_carries_the_token_into_the_window():
+    """The window has no console to read a token from, so the link carries it."""
+    url = kira_app.reachable_url("0.0.0.0", 8788, "abc123")
+    assert url == "http://127.0.0.1:8788?token=abc123"

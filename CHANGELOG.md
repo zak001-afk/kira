@@ -3,6 +3,68 @@
 All notable changes to KIRA are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.8.0] — 2026-09-21
+
+### Added — the screen pipeline is finally reachable
+- **Vision was dead code.** `analyze_screen`, `vision_click`,
+  `is_vision_request` and `locate_on_screen` existed and were tested, but
+  nothing ever called them: *"what is on my screen"* fell through to the chat
+  model, which answered from imagination. There is now one bridge —
+  `plan_vision_command()` — used by the voice loop, the HUD and the JSON API.
+  *"what is on my screen"* reads the screen; *"find the save button and click
+  it"* locates, clicks and verifies.
+- Two actions join the whitelist so a plan can be *about* the screen:
+  `look_at_screen` (read-only) and `vision_click` (mouse input, confirmed
+  first). Both are in the planner prompt, so the model can propose them.
+- `execute_action` may now answer with a dict outcome (`{"success", "message"}`)
+  instead of a bare bool, and every caller — voice loop, HUD, API — reads the
+  verdict from it. A failed screen click is reported as the failure it is, not
+  as a success because it happened to return a sentence.
+
+### Fixed — confirmation was asymmetric
+- The HUD confirmed only actions its *own parser* planned. A `search`, `click`
+  or `lock_pc` planned by the local model ran immediately, with no prompt,
+  because the check was `requires_confirmation(action) and planned_by ==
+  "parser"`. The rule is now the config's rule and nothing else: if
+  `require_confirmation` names an action, KIRA asks, whoever planned it.
+- A confirmation is no longer a bare `{"confirm": true}`. The server hands out
+  a nonce with every prompt and refuses any confirmation that does not carry
+  it, so a page that never saw the prompt cannot answer it.
+
+### Security — the API can drive your machine, so it is guarded
+- **No more `Access-Control-Allow-Origin: *`.** The HUD is same-origin; the
+  header was there for nothing but to let any website you visit read KIRA's
+  API responses. It is gone, along with the preflight grant.
+- **Host and Origin are checked.** A request whose `Host` is not this machine
+  (DNS rebinding) or whose `Origin` is another site is refused — before the
+  agent sees it. `--allow-host NAME` adds a name on purpose.
+- **A token is required off loopback.** Binding to `0.0.0.0` (or a LAN
+  address) generates one and demands it on every `/api` call; the URLs KIRA
+  prints, and the link the desktop window opens, carry it. Loopback bindings
+  stay ceremony-free.
+- **`--trust-proxy` is explicit and loud.** For a preview pane or a reverse
+  proxy in front of KIRA: it disables the Host/Origin checks and says so in the
+  banner. It also stops KIRA inventing a token, because a proxy that talks to
+  the browser itself could never hand one over. It never turns itself on, and
+  an explicit `--token` is still enforced.
+
+### Changed — resource efficiency
+- Telemetry is sampled at most once a second and shared by every poller
+  (three browser tabs no longer mean three psutil samples per second), and the
+  orb quality mode is reported with it.
+- A hidden HUD — minimised, background tab, covered window — stops drawing and
+  stops polling; it refreshes the moment it is looked at again.
+- The render loop is driven by elapsed time instead of frame count, so the
+  rain falls at the same speed and the same cost on a 60 Hz laptop and a
+  240 Hz monitor, and it is capped at 35 fps. `scripts/check_ui.mjs` proves it
+  by running the loop at 30/60/144/240 Hz and comparing the work done.
+- `orb_quality` finally means something in the HUD: `low` thins the rain,
+  drops the bloom pass and renders at one device pixel per CSS pixel; `high`
+  spends more for a denser rain. It is read before the reactor starts and
+  applied live when it changes.
+- The vendored Three.js build is served `immutable` — it is 330 KB that never
+  changes between releases — while the HUD's own files stay `no-store`.
+
 ## [2.7.0] — 2026-09-21
 
 ### Changed — the desktop app is now the browser interface

@@ -154,9 +154,34 @@ def launch_app_window(browser: "tuple[str, str]", url: str) -> subprocess.Popen:
     )
 
 
-def start_server(host: str, port: int, simulate: bool):
+def reachable_url(host: str, port: int, token: str = "") -> str:
+    """The address the window should open.
+
+    ``0.0.0.0`` means "every interface", not a place you can browse to, and an
+    IPv6 wildcard needs brackets — so the address shown is the loopback one.
+    When the server demanded a token it rides in the link: the HUD reads it
+    once, remembers it, and strips it from the address bar.
+    """
+    name = str(host or "").strip()
+    if name in {"", "0.0.0.0", "::", "[::]"}:
+        name = "127.0.0.1"
+    elif ":" in name and not name.startswith("["):
+        name = f"[{name}]"
+    suffix = f"?token={token}" if token else ""
+    return f"http://{name}:{int(port)}{suffix}"
+
+
+def start_server(host: str, port: int, simulate: bool, token: str = "",
+                 allowed_hosts=(), trust_proxy: bool = False):
     """Start KIRA's web service on a background thread and return it."""
-    server = kira_server.create_server(host, port, simulate=simulate)
+    server = kira_server.create_server(
+        host,
+        port,
+        simulate=simulate,
+        token=token,
+        allowed_hosts=allowed_hosts,
+        trust_proxy=trust_proxy,
+    )
     thread = threading.Thread(
         target=server.serve_forever, kwargs={"poll_interval": 0.4}, daemon=True
     )
@@ -176,6 +201,15 @@ def banner(service, url: str, watching: bool) -> str:
         lines += [
             f"backend   : unavailable ({service.reason})",
             "            the interface will load, commands will explain why",
+        ]
+    if service.token:
+        lines += [
+            "access    : a token is required on API calls",
+            "            it is in the link below — the window keeps it",
+        ]
+    if service.trust_proxy:
+        lines += [
+            "proxy     : --trust-proxy is ON — Host/Origin checks are disabled",
         ]
     lines += [
         f"open      : {url}",
@@ -198,6 +232,14 @@ def main(argv=None) -> int:
                         help="skip the native window and open the browser")
     parser.add_argument("--no-watchdog", action="store_true",
                         help="do not start the proactive system watchdog")
+    parser.add_argument("--token", default="",
+                        help="require this token on /api calls (auto-generated "
+                             "when binding beyond loopback)")
+    parser.add_argument("--allow-host", action="append", default=[], metavar="NAME",
+                        help="extra Host name to answer to (reverse proxy)")
+    parser.add_argument("--trust-proxy", action="store_true",
+                        help="accept any Host/Origin: only for a preview pane or "
+                             "a reverse proxy you control")
     args = parser.parse_args(argv)
 
     if not (UI_DIR / "index.html").is_file():
@@ -205,7 +247,14 @@ def main(argv=None) -> int:
         return 2
 
     try:
-        server = start_server(args.host, args.port, args.simulate)
+        server = start_server(
+            args.host,
+            args.port,
+            args.simulate,
+            token=args.token,
+            allowed_hosts=args.allow_host,
+            trust_proxy=args.trust_proxy,
+        )
     except OSError as exc:
         print(
             f"Could not bind {args.host}:{args.port} — {exc}",
@@ -216,7 +265,7 @@ def main(argv=None) -> int:
     service = server.service
     if not args.no_watchdog:
         service.start_background()
-    url = f"http://{args.host}:{server.server_address[1]}"
+    url = reachable_url(args.host, server.server_address[1], service.token)
     print(banner(service, url, service.watchdog_running), flush=True)
 
     shown = False

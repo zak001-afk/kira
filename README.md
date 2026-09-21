@@ -362,7 +362,11 @@ python scripts/render_orb_preview.py --filmstrip           # all four states
 
 Render cost is bounded: `orb_quality` (`high` / `balanced` / `low`, default
 `balanced`) scales the sphere, rain and wireframe budgets, and the counts
-also shrink automatically on small canvases.
+also shrink automatically on small canvases. The HUD honours the same
+setting live: `low` thins the rain out, drops the expensive bloom pass and
+renders at one device pixel per CSS pixel; `high` spends more for a denser
+rain. Change it in `kira_config.json` and the next poll picks it up — no
+restart, no reload.
 
 ## The interface
 
@@ -374,6 +378,7 @@ python kira_app.py                # native window (pywebview → Edge WebView2)
 python kira_app.py --simulate     # labelled demo, no agent, no hardware
 python kira_app.py --browser      # skip the native window on purpose
 python kira_app.py --port 8788    # a fixed port instead of an ephemeral one
+python kira_app.py --host 0.0.0.0  # show it on your phone (token included in the link)
 ```
 
 `kira_app.py` starts `kira_server` on `127.0.0.1` with a port the OS hands it,
@@ -397,7 +402,14 @@ python kira_server.py            # http://127.0.0.1:8788
 python kira_server.py --open     # ...and open the browser
 python kira_server.py --simulate # labelled demo, no agent, no hardware
 python kira_server.py --host 0.0.0.0   # reachable from your phone on the LAN
+python kira_server.py --token my-secret # demand your own token on /api calls
+python kira_server.py --allow-host kira.home   # answer to one more name (proxy)
+python kira_server.py --trust-proxy     # disable the Host/Origin checks on purpose
 ```
+
+Binding beyond loopback generates an access token and prints the URLs that
+carry it; `--trust-proxy` and `--allow-host` are for a reverse proxy or a
+preview pane you control. See **Security and remote access** below.
 
 Nothing is faked in the HUD:
 
@@ -405,7 +417,7 @@ Nothing is faked in the HUD:
 |---|---|
 | Reactor | A Three.js scene (bloom, armour, orbits, 450 particles) whose spin, bloom and energy follow KIRA's real state: STANDBY / LISTENING / THINKING / AWAITING CONFIRM / EXECUTING / SPEAKING / FAULT |
 | Conversation | KIRA's replies, your lines, its **inner monologue** (the thinking layer's thoughts, labelled `INNER MONOLOGUE` and never spoken), failures, and unprompted watchdog alerts |
-| Telemetry | Live CPU / memory / disk / battery (via `psutil`), the active model, learned skills, operation count and uptime — polled every 1.5 s |
+| Telemetry | Live CPU / memory / disk / battery (via `psutil`), the active model, learned skills, operation count and uptime — polled every 1.5 s, sampled at most once a second however many windows are open |
 | Command bar | Real commands. Sensitive ones come back as *"Shall I…?"* with a CONFIRM / CANCEL bar instead of running |
 | MIC | KIRA's own offline speech recognition on the server — the browser asks, the mic is read by the agent |
 | Voice | Replies are spoken with the browser's Web Speech API, so they work on any OS; toggle with **VOICE: ON/OFF** |
@@ -426,9 +438,15 @@ Design notes:
   command answers with the real import error instead of a fake reply.
   `--simulate` is the *only* mode that invents answers, and it says so in
   the header and in each reply.
-- **Local by default.** It binds `127.0.0.1`. `--host 0.0.0.0` is fine on a
-  home network, but understand what you are exposing: the API can drive your
-  computer — keep it off public networks and off port-forwarding.
+- **Guarded by default.** It binds `127.0.0.1`, and even then it checks the
+  `Host` and `Origin` of every request, so a website you visit cannot drive
+  KIRA through your browser. `--host 0.0.0.0` is fine on a home network — KIRA
+  generates an access token for it — but understand what you are exposing: the
+  API can drive your computer, so keep it off public networks and off
+  port-forwarding. Details in **Security and remote access**.
+- **Light while idle.** Telemetry is sampled at most once a second however many
+  windows are open, the vendored Three.js build is cached immutably, and a HUD
+  that is minimised or in a background tab stops drawing and stops polling.
 - **Watchdog alerts reach the page.** The proactive monitor runs on the
   server, so battery/CPU warnings appear in the conversation (and are spoken)
   whichever way the interface is being shown.
@@ -513,7 +531,46 @@ The vision pipeline never clicks blind:
    expected change isn't visible, KIRA tells you rather than claiming success.
 
 Temporary screenshots live in the system temp dir and are deleted after use.
-Plain *"click"* and mouse moves always ask for voice confirmation.
+Plain *"click"*, mouse moves and every **screen click** always ask for
+confirmation first: KIRA names the element it is about to click and waits.
+
+Say any of these and the request goes straight to the pipeline — no chat
+model, no guessing:
+
+| You say | What KIRA does |
+| --- | --- |
+| *what is on my screen* / *analyse mon écran* | captures the desktop and describes it |
+| *find the save button and click it* | locates it, clicks it, verifies the screen changed |
+| *find the export button on my screen* | locates and reports where it is, without clicking |
+
+A click is only sent when the model's confidence clears
+`vision_click_confidence`, and the verification step means "done" is never
+said unless the screen really changed.
+
+## Security and remote access
+
+KIRA can click, type, lock your PC and read your screen, so the HTTP API is
+guarded even though it normally never leaves `127.0.0.1`:
+
+- **Host and Origin are validated.** A page on another site, a sandboxed
+  frame, or a hostname that resolves to this machine (DNS rebinding) is
+  refused before the agent sees the request. No CORS headers are sent at all,
+  so no other page can even read a response.
+- **Loopback needs nothing.** `python kira_app.py` and the default server bind
+  `127.0.0.1`: no token, no flags, no prompts.
+- **Anything else needs a token.** Bind beyond loopback
+  (`--host 0.0.0.0`) and KIRA generates one, prints it in the URLs, and
+  requires it on every `/api` call. Opening the printed link is enough — the
+  HUD reads the token once, remembers it, and strips it out of the address bar
+  so a screenshot or a shared link does not leak it. Use `--token` to pick
+  your own.
+- **`--trust-proxy`** disables the Host/Origin checks for a preview pane or a
+  reverse proxy you control (and stops KIRA inventing a token, since a proxy
+  that talks to the browser could never pass one on). It is off by default, it
+  says so in the banner, and `--allow-host NAME` is the narrower alternative —
+  use that one when only the *name* is unusual.
+- **Confirmations cannot be forged.** Every prompt carries a one-time nonce
+  and the server refuses a confirmation that does not match it.
 
 ## Project structure
 
@@ -555,7 +612,7 @@ kira/
 dev_mode.bat        # auto-restarts KIRA whenever a source file changes
 
 pip install -r requirements-dev.txt
-pytest              # 730 tests — no mic, display or Ollama needed
+pytest              # 787 tests — no mic, display or Ollama needed
 ruff check .        # lint
 python -m compileall dev.py kira_memory.py kira_thought.py kira_voice_agent.py kira_server.py kira_app.py scripts tests
 ```
@@ -565,7 +622,8 @@ needed) — it runs the real `ui/app.js` against a fake DOM and a fake API,
 then against the vendored Three.js build:
 
 ```powershell
-node scripts/check_ui.mjs    # 38 UI checks: boot, commands, thoughts, confirm, mic, alerts, modules, fallback
+node scripts/check_ui.mjs    # 43 UI checks: boot, commands, thoughts, confirm, mic,
+                             # alerts, modules, fallback, render-loop timing
 ```
 
 Tests stub the hardware-facing modules (`pyautogui`, audio, Ollama, …) in

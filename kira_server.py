@@ -29,11 +29,14 @@ microphone button still uses KIRA's own offline recognition on the server.
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import mimetypes
 import os
 import queue
 import re
+import secrets
+import socket
 import sys
 import threading
 import time
@@ -41,6 +44,7 @@ import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parent
 UI_DIR = ROOT / "ui"
@@ -59,6 +63,30 @@ STATIC_EXTENSIONS = {
 STATIC_NAMES = {"LICENSE", "LICENSE.txt", "NOTICE", "NOTICE.txt"}
 
 MAX_BODY_BYTES = 64 * 1024
+
+# Names a browser may use to reach this machine, and the only ones a request
+# is allowed to name in its Host header (a rebinding attack resolves an
+# attacker's domain to 127.0.0.1 and then calls it by *its* name).
+LOOPBACK_NAMES = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
+
+TELEMETRY_TTL = 1.0  # seconds; the HUD polls every 1.5 s from every window
+
+
+def host_name(header: str) -> str:
+    """The bare host out of a Host header or an Origin URL ('[::1]:80' → '::1')."""
+    value = (header or "").strip().lower()
+    if value.startswith("["):
+        end = value.find("]")
+        return value[1:end] if end != -1 else value
+    return value.split(":", 1)[0]
+
+
+def is_loopback(name: str) -> bool:
+    return name in LOOPBACK_NAMES
+
+
+def generate_token() -> str:
+    return secrets.token_urlsafe(24)
 
 _VERSION_FROM_FILE = ""
 
@@ -101,14 +129,26 @@ SIMULATED = {
 class KiraService:
     """Backend-facing half of the web UI: routing, telemetry, no HTTP."""
 
-    def __init__(self, simulate: bool = False, ui_dir: "Path | None" = None):
+    def __init__(self, simulate: bool = False, ui_dir: "Path | None" = None,
+                 token: "str | None" = None, allowed_hosts=(), trust_proxy: bool = False):
         self.ui_dir = Path(ui_dir) if ui_dir else UI_DIR
         self.simulate = bool(simulate)
         self.backend = None
         self.reason = ""
         self.state = "READY"
         self.started_at = time.time()
+        # ── who may talk to this service ─────────────────────────────────
+        # `token` is required on every /api call when set (KIRA generates one
+        # automatically whenever it binds beyond loopback).
+        self.token = str(token or "")
+        # extra Host names a reverse proxy or preview pane may use
+        self.allowed_hosts = {str(name).strip().lower() for name in allowed_hosts if name}
+        # --trust-proxy hands both checks to whatever is in front of KIRA:
+        # a proxy's Host and Origin are its own, not this machine's
+        self.trust_proxy = bool(trust_proxy)
         self._lock = threading.Lock()
+        self._metrics_lock = threading.Lock()
+        self._metrics_cache: "tuple[float, dict] | None" = None
         self._pending = None          # command awaiting confirmation
         self._proactive: "queue.Queue" = queue.Queue()
         self._history: list = []
@@ -218,15 +258,24 @@ class KiraService:
 
     # ── commands ─────────────────────────────────────────────────────────
 
-    def handle_command(self, text: str, confirm: bool = False) -> dict:
+    def handle_command(self, text: str, confirm: bool = False,
+                       confirm_token: str = "") -> dict:
         """Route one command exactly like the CLI and desktop UI do."""
         text = str(text or "").strip()
 
         # A confirmation arrives as {text: "", confirm: true} — the pending
-        # action, not this (empty) text, is what runs.
+        # action, not this (empty) text, is what runs. The nonce proves the
+        # confirmation comes from the prompt that was actually shown.
         pending = None
         if confirm and self._pending is not None:
-            pending, self._pending = self._pending, None
+            offered = self._pending
+            if not hmac.compare_digest(str(confirm_token), str(offered["nonce"])):
+                return {
+                    "reply": "",
+                    "kind": "error",
+                    "error": "confirmation did not match the pending action",
+                }
+            pending, self._pending = offered, None
             text = pending["text"]
 
         if not text:
@@ -283,6 +332,13 @@ class KiraService:
         planned_by = "parser"
         thought = None
 
+        if result is None:
+            # "what is on my screen" / "find the save button and click it"
+            # reach the vision pipeline here instead of falling through to chat
+            result = backend.plan_vision_command(cleaned)
+            if result is not None:
+                planned_by = "vision"
+
         if result is None and backend.is_chat_question(cleaned):
             return {"reply": backend.ask_chat(cleaned), "kind": "chat"}
 
@@ -296,13 +352,23 @@ class KiraService:
         if action == "none":
             return {"reply": backend.ask_chat(cleaned), "kind": "chat"}
 
-        if backend.requires_confirmation(action) and planned_by == "parser":
+        # Anything the config calls dangerous is confirmed, whoever planned it.
+        # The model used to be trusted with search/click/lock_pc simply because
+        # a human wrote those actions into the parser; that was an asymmetry,
+        # not a decision. One rule now: if it needs a yes, it asks for one.
+        if backend.requires_confirmation(action):
             # the browser cannot answer KIRA's voice prompt — ask the page
-            self._pending = {"text": cleaned, "action": result, "source": planned_by}
+            self._pending = {
+                "text": cleaned,
+                "action": result,
+                "source": planned_by,
+                "nonce": secrets.token_urlsafe(16),
+            }
             return {
                 "reply": backend.describe_action(result),
                 "kind": "confirm",
                 "needs_confirmation": True,
+                "confirm_token": self._pending["nonce"],
                 "action_name": action,
                 "state": "CONFIRM",
             }
@@ -320,19 +386,25 @@ class KiraService:
         language = backend.detect_language(pending["text"])
 
         success = backend.execute_action(result)
+        ok = backend.action_succeeded(success)
         promotion = None
         if source in {"llm", "memory"}:
             backend._LAST_COMMAND = pending["text"]
             backend._LAST_ACTION = result
             promotion = backend.learn_from(
-                pending["text"], result, source, bool(success), language=language
+                pending["text"], result, source, ok, language=language
             )
-        if success:
+        if ok:
             backend.kira_learning.capture(result)
             backend.kira_undo.record(pending["text"], result)
 
         if isinstance(success, str):
             reply = success
+        elif isinstance(success, dict):
+            # a screen action says exactly what it saw and did
+            reply = backend.outcome_message(success) or backend.build_reply(
+                language, "none"
+            )
         elif not success:
             reply = backend.build_reply(language, "none")
         else:
@@ -348,9 +420,9 @@ class KiraService:
 
         payload = {
             "reply": reply,
-            "kind": "action",
+            "kind": "action" if ok else "error",
             "action": action,
-            "ok": bool(success),
+            "ok": ok,
         }
         if thought is not None and getattr(thought, "text", ""):
             payload["thought"] = thought.text
@@ -398,6 +470,72 @@ class KiraService:
 
     # ── telemetry ────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _copy_metrics(metrics: dict) -> dict:
+        """A sample the caller may scribble on without touching the cache."""
+        copy = dict(metrics)
+        if isinstance(copy.get("battery"), dict):
+            copy["battery"] = dict(copy["battery"])
+        return copy
+
+    def _cached_metrics(self) -> dict:
+        """psutil + SQLite sampling, reused across callers for a second.
+
+        Several windows (and every phone) poll this endpoint; without the
+        cache each one pays for a battery read, a disk stat and three SQLite
+        queries, several times a second.
+        """
+        now = time.monotonic()
+        with self._metrics_lock:
+            if self._metrics_cache and now - self._metrics_cache[0] < TELEMETRY_TTL:
+                return self._copy_metrics(self._metrics_cache[1])
+        metrics = self._sample_metrics()
+        with self._metrics_lock:
+            self._metrics_cache = (now, metrics)
+        return self._copy_metrics(metrics)
+
+    def _sample_metrics(self) -> dict:
+        metrics = {"cpu": None, "memory": None, "disk": None, "battery": None,
+                   "model": "—", "skills": None, "episodes": None, "memory_db": "—"}
+        if self.backend is not None:
+            metrics["model"] = str(getattr(self.backend, "MODEL", "—"))
+            try:
+                memory = self.backend.kira_memory
+                metrics["skills"] = memory.learnings_summary()["count"]
+                metrics["episodes"] = memory.episode_counts()["total"]
+                metrics["memory_db"] = f"{len(memory.load_memories())} facts"
+            except Exception:
+                pass
+        try:  # psutil is optional; the panel shows "—" without it
+            import psutil
+
+            metrics["cpu"] = round(float(psutil.cpu_percent(interval=None)), 1)
+            metrics["memory"] = round(float(psutil.virtual_memory().percent), 1)
+            try:
+                usage = psutil.disk_usage(os.path.abspath(os.sep))
+                metrics["disk"] = round(usage.percent, 1)
+            except Exception:
+                pass
+            battery = psutil.sensors_battery()
+            if battery is not None:
+                metrics["battery"] = {
+                    "percent": round(float(battery.percent), 1),
+                    "plugged": bool(battery.power_plugged),
+                }
+        except Exception:
+            pass
+        return metrics
+
+    def quality(self) -> str:
+        """The render budget the interface should use (high/balanced/low)."""
+        if self.backend is None:
+            return "balanced"
+        try:
+            setting = str(self.backend.CONFIG.get("orb_quality", "balanced")).lower()
+        except Exception:
+            return "balanced"
+        return setting if setting in {"high", "balanced", "low"} else "balanced"
+
     def telemetry(self) -> dict:
         data = {
             "online": self.online,
@@ -414,39 +552,10 @@ class KiraService:
             "episodes": None,
             "memory_db": "—",
             "uptime": int(time.time() - self.started_at),
+            "quality": self.quality(),
             "queue": self.drain_proactive(),
         }
-
-        if self.backend is not None:
-            data["model"] = str(getattr(self.backend, "MODEL", "—"))
-            try:
-                memory = self.backend.kira_memory
-                data["skills"] = memory.learnings_summary()["count"]
-                data["episodes"] = memory.episode_counts()["total"]
-                facts = memory.load_memories()
-                data["memory_db"] = f"{len(facts)} facts"
-            except Exception:
-                pass
-
-        try:  # psutil is optional; the panel shows "—" without it
-            import psutil
-
-            data["cpu"] = round(float(psutil.cpu_percent(interval=None)), 1)
-            data["memory"] = round(float(psutil.virtual_memory().percent), 1)
-            try:
-                usage = psutil.disk_usage(os.path.abspath(os.sep))
-                data["disk"] = round(usage.percent, 1)
-            except Exception:
-                pass
-            battery = psutil.sensors_battery()
-            if battery is not None:
-                data["battery"] = {
-                    "percent": round(float(battery.percent), 1),
-                    "plugged": bool(battery.power_plugged),
-                }
-        except Exception:
-            pass
-
+        data.update(self._cached_metrics())
         return data
 
 
@@ -454,7 +563,22 @@ class KiraService:
 
 
 class KiraRequestHandler(BaseHTTPRequestHandler):
-    """JSON API + static files. Never validates Host, so previews work."""
+    """JSON API + static files, behind a Host / Origin / token guard.
+
+    A local-only agent still has to assume a browser can reach it: any page
+    you visit can POST to ``127.0.0.1``. Three cheap checks close that door,
+    and none of them need a framework:
+
+    * **Host** must name a loopback alias (or a host this server was told to
+      answer to) — that is what defeats DNS rebinding.
+    * **Origin**, when a browser sends one, must match the Host: a page on
+      another site is refused before it can read or run anything.
+    * **token** is required on every ``/api`` call once KIRA is bound beyond
+      loopback, so a LAN neighbour without the link cannot drive the agent.
+
+    No CORS headers are sent at all: the HUD is same-origin, so nothing needs
+    them, and their absence keeps a hostile page from reading any response.
+    """
 
     server_version = "KiraWeb"
     protocol_version = "HTTP/1.1"
@@ -467,15 +591,55 @@ class KiraRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # keep the console readable
         return
 
+    # ── access control ───────────────────────────────────────────────────
+
+    def _host_allowed(self) -> bool:
+        name = host_name(self.headers.get("Host", ""))
+        return bool(name) and (
+            is_loopback(name) or name in self.service.allowed_hosts
+        )
+
+    def _origin_allowed(self) -> bool:
+        """No other site may call this API from a browser."""
+        origin = (self.headers.get("Origin") or "").strip()
+        if not origin:
+            return True  # curl, the test suite, KIRA's own desktop shell
+        if origin == "null":
+            return False  # a sandboxed frame or a file:// page
+        return host_name(urlsplit(origin).netloc) == host_name(
+            self.headers.get("Host", "")
+        )
+
+    def _token_ok(self) -> bool:
+        if not self.service.token:
+            return True
+        supplied = self.headers.get("X-KIRA-Token") or ""
+        if not supplied:
+            supplied = parse_qs(urlsplit(self.path).query).get("token", [""])[0]
+        return hmac.compare_digest(str(supplied), self.service.token)
+
+    def _guard(self, api: bool = True) -> bool:
+        """True when the request may proceed; otherwise it was answered here."""
+        if not self.service.trust_proxy:
+            if not self._host_allowed():
+                self._error(403, "host not allowed — reach KIRA by 127.0.0.1 or its own address")
+                return False
+            if not self._origin_allowed():
+                self._error(403, "cross-origin request refused")
+                return False
+        if api and not self._token_ok():
+            self._error(401, "this KIRA needs its access token (printed in the console)")
+            return False
+        return True
+
     def _send(self, status: int, body: bytes, content_type: str,
-              extra: "dict | None" = None) -> None:
+              extra: "dict | None" = None, cache: str = "no-store") -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Cache-Control", "no-store")
+        # deliberately no Access-Control-Allow-* : the HUD is same-origin, and
+        # without them no other page can read a single byte of this response
+        self.send_header("Cache-Control", cache)
         # never send X-Frame-Options: the UI is embedded in preview panes
         for key, value in (extra or {}).items():
             self.send_header(key, value)
@@ -539,18 +703,27 @@ class KiraRequestHandler(BaseHTTPRequestHandler):
             content_type = "text/plain" if candidate.name in STATIC_NAMES else "application/octet-stream"
         if content_type.startswith("text/") or content_type.endswith("javascript"):
             content_type += "; charset=utf-8"
-        self._send(200, candidate.read_bytes(), content_type)
+        # The vendored runtime (three.js) never changes between releases and is
+        # by far the biggest thing the HUD loads, so it is cached for good. The
+        # HUD's own files stay no-store: they are what gets edited.
+        cache = "no-store"
+        if "vendor" in candidate.relative_to(root).parts:
+            cache = "public, max-age=31536000, immutable"
+        self._send(200, candidate.read_bytes(), content_type, cache=cache)
 
     # ── routing ──────────────────────────────────────────────────────────
 
     def do_OPTIONS(self):  # noqa: N802 (http.server naming)
-        self._send(204, b"", "text/plain")
+        # no CORS headers: a preflight from another origin fails here on purpose
+        self._send(204, b"", "text/plain", {"Allow": "GET, POST, OPTIONS, HEAD"})
 
     def do_HEAD(self):  # noqa: N802
         self.do_GET()
 
     def do_GET(self):  # noqa: N802
         path = self.path.split("?", 1)[0]
+        if not self._guard(api=path.startswith("/api/")):
+            return
         if path == "/api/state":
             self._json(self.service.telemetry())
             return
@@ -583,11 +756,15 @@ class KiraRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         path = self.path.split("?", 1)[0]
+        if not self._guard(api=path.startswith("/api/")):
+            return
         payload = self._read_json()
         if path == "/api/command":
             text = payload.get("text", "")
             confirm = bool(payload.get("confirm"))
-            result = self.service.handle_command(text, confirm=confirm)
+            result = self.service.handle_command(
+                text, confirm=confirm, confirm_token=payload.get("confirm_token", "")
+            )
             self._json(result)
             return
         if path == "/api/listen":
@@ -614,24 +791,61 @@ class KiraWebServer(ThreadingHTTPServer):
         super().__init__(address, handler)
 
 
+def machine_host_names() -> set:
+    """Every name and address that is actually this machine."""
+    names = set(LOOPBACK_NAMES)
+    try:
+        names.add(socket.gethostname().lower())
+        names.add(socket.getfqdn().lower())
+        for info in socket.getaddrinfo(socket.gethostname(), None):
+            names.add(str(info[4][0]).lower())
+    except Exception:
+        pass
+    return names
+
+
+def binding_is_exposed(host: str) -> bool:
+    """True when this bind address reaches beyond this machine."""
+    return host_name(str(host)) not in {"127.0.0.1", "localhost", "::1"}
+
+
 def create_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
-                  simulate: bool = False, ui_dir=None) -> KiraWebServer:
-    service = KiraService(simulate=simulate, ui_dir=ui_dir)
+                  simulate: bool = False, ui_dir=None, token: "str | None" = None,
+                  allowed_hosts=(), trust_proxy: bool = False) -> KiraWebServer:
+    """Build the server, deciding what it must defend itself against.
+
+    Bound to loopback, the Host/Origin guards are enough. Bound anywhere
+    else the API is reachable from the network, so a token is required —
+    generated here and printed by whichever entry point started the server.
+
+    A reverse proxy is the one case where a generated token cannot work: the
+    proxy is what talks to the browser, so nothing would ever carry the token
+    it was never told about. ``trust_proxy`` therefore means "the proxy in
+    front of me is the boundary", and the banner says so out loud. Pass an
+    explicit token and it is still enforced.
+    """
+    hosts = {str(name).strip().lower() for name in allowed_hosts if name}
+    if binding_is_exposed(str(host)):
+        hosts |= machine_host_names()
+    token = str(token or "")
+    if not token and binding_is_exposed(str(host)) and not trust_proxy:
+        token = generate_token()
+    service = KiraService(simulate=simulate, ui_dir=ui_dir, token=token or None,
+                          allowed_hosts=hosts, trust_proxy=trust_proxy)
     return KiraWebServer((host, int(port)), service)
 
 
-def local_addresses(port: int) -> list:
+def local_addresses(port: int, token: str = "") -> list:
     """Best-effort list of URLs this server can be reached at."""
-    urls = [f"http://127.0.0.1:{port}"]
+    suffix = f"?token={token}" if token else ""
+    urls = [f"http://127.0.0.1:{port}{suffix}"]
     try:
-        import socket
-
         hostname = socket.gethostname()
         for info in socket.getaddrinfo(hostname, None):
             address = info[4][0]
             if ":" in address or address.startswith("127."):
                 continue
-            url = f"http://{address}:{port}"
+            url = f"http://{address}:{port}{suffix}"
             if url not in urls:
                 urls.append(url)
     except Exception:
@@ -651,6 +865,14 @@ def main(argv=None) -> int:
     parser.add_argument("--open", action="store_true", help="open a browser")
     parser.add_argument("--no-watchdog", action="store_true",
                         help="do not start the proactive system watchdog")
+    parser.add_argument("--token", default="",
+                        help="require this token on /api calls (auto-generated "
+                             "when binding beyond loopback)")
+    parser.add_argument("--allow-host", action="append", default=[], metavar="NAME",
+                        help="extra Host name to answer to (reverse proxy)")
+    parser.add_argument("--trust-proxy", action="store_true",
+                        help="accept any Host/Origin: only for a preview pane or "
+                             "a reverse proxy you control")
     args = parser.parse_args(argv)
 
     if not (UI_DIR / "index.html").is_file():
@@ -658,7 +880,14 @@ def main(argv=None) -> int:
         return 2
 
     try:
-        server = create_server(args.host, args.port, simulate=args.simulate)
+        server = create_server(
+            args.host,
+            args.port,
+            simulate=args.simulate,
+            token=args.token,
+            allowed_hosts=args.allow_host,
+            trust_proxy=args.trust_proxy,
+        )
     except OSError as exc:
         print(f"Could not bind {args.host}:{args.port} — {exc}", file=sys.stderr)
         return 1
@@ -678,7 +907,18 @@ def main(argv=None) -> int:
         ]
     if not args.no_watchdog:
         service.start_background()
-    banner += [f"open      : {url}" for url in local_addresses(server.server_address[1])]
+    if service.token:
+        banner += [
+            "token     : required on every API call (it is in the URLs below)",
+        ]
+    if service.trust_proxy:
+        banner += [
+            "proxy     : --trust-proxy is ON — Host/Origin checks are disabled",
+        ]
+    banner += [
+        f"open      : {url}"
+        for url in local_addresses(server.server_address[1], service.token)
+    ]
     banner += ["press CTRL+C to stop", "=" * 62]
     # flushed on purpose: users launch this from a shortcut with blocked stdout
     print("\n".join(banner), flush=True)

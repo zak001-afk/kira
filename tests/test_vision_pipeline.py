@@ -140,3 +140,62 @@ class TestVerifyClick:
         result = backend.verify_click("b.png", "a.png", "target")
         assert result["verified"] is False
         assert "Invalid verification" in result["reason"]
+
+
+class TestVisionBridge:
+    """The wiring that turns a spoken request into a screen action.
+
+    The helpers above were always correct; nothing called them, so "what is
+    on my screen" was answered by the chat model instead of by looking.
+    """
+
+    def test_a_screen_question_becomes_a_look_action(self, backend):
+        plan = backend.plan_vision_command("what is on my screen")
+        assert plan["action"] == "look_at_screen"
+        assert plan["question"] == "what is on my screen"
+
+    def test_a_find_and_click_request_becomes_a_vision_click(self, backend):
+        plan = backend.plan_vision_command("find the save button and click it")
+        assert plan == {"action": "vision_click", "target": "save button"}
+
+    def test_an_ordinary_command_plans_nothing(self, backend):
+        assert backend.plan_vision_command("open chrome") is None
+        assert backend.plan_vision_command("") is None
+
+    def test_the_action_runs_the_real_helper(self, backend, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            backend, "vision_click", lambda target: calls.append(target) or {"success": True, "message": "clicked"}
+        )
+        outcome = backend.execute_action({"action": "vision_click", "target": "the save button"})
+        assert calls == ["the save button"]
+        assert outcome["success"] is True
+
+    def test_look_at_screen_runs_the_real_helper(self, backend, monkeypatch):
+        monkeypatch.setattr(backend, "analyze_screen", lambda question="": f"looked: {question}")
+        answer = backend.execute_action({"action": "look_at_screen", "question": "what is open?"})
+        assert answer == "looked: what is open?"
+
+    def test_a_screen_click_needs_a_confirmation(self, backend):
+        assert backend.requires_confirmation("vision_click")
+
+    def test_the_planner_may_propose_screen_actions(self, backend):
+        assert backend.kira_thought.validate_action({"action": "vision_click", "target": "x"})
+        assert backend.kira_thought.validate_action({"action": "look_at_screen", "question": "x"})
+
+    def test_describing_a_screen_click_names_the_target(self, backend):
+        described = backend.describe_action({"action": "vision_click", "target": "the save button"})
+        assert "save button" in described
+        assert "click" in described
+
+    def test_a_dict_outcome_is_judged_by_its_success_flag(self, backend):
+        assert backend.action_succeeded({"success": True, "message": "done"}) is True
+        assert backend.action_succeeded({"success": False, "message": "nope"}) is False
+        assert backend.action_succeeded("spoken result") is True
+        assert backend.action_succeeded("") is False
+        assert backend.action_succeeded(False) is False
+
+    def test_a_dict_outcome_carries_its_message(self, backend):
+        assert backend.outcome_message({"success": True, "message": "Clicked it."}) == "Clicked it."
+        assert backend.outcome_message("plain") == "plain"
+        assert backend.outcome_message(True) == ""

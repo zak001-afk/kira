@@ -94,6 +94,7 @@ class FakeBackend(SimpleNamespace):
         self.think_result = None
         self.confirm_actions = {"open_app", "search"}
         self.execute_result = True
+        self.vision_result = None
 
         for key, value in overrides.items():
             setattr(self, key, value)
@@ -122,6 +123,23 @@ class FakeBackend(SimpleNamespace):
 
     def requires_confirmation(self, action):
         return action in self.confirm_actions
+
+    def plan_vision_command(self, text):
+        self.calls.append(("vision", text))
+        return self.vision_result
+
+    def action_succeeded(self, result):
+        """The real backend answers True/False, a string, or a dict."""
+        if isinstance(result, dict):
+            return bool(result.get("success"))
+        return bool(result)
+
+    def outcome_message(self, result):
+        if isinstance(result, str):
+            return result
+        if isinstance(result, dict):
+            return str(result.get("message") or "")
+        return ""
 
     def describe_action(self, result):
         return f"Shall I {result.get('action')} {result.get('target', '')}?".strip()
@@ -340,21 +358,36 @@ class TestConfirmation:
         service, backend = service_with_backend(
             simple_result={"action": "open_app", "target": "chrome"},
         )
-        service.handle_command("open chrome")
-        result = service.handle_command("", confirm=True)
+        pending = service.handle_command("open chrome")
+        result = service.handle_command(
+            "", confirm=True, confirm_token=pending["confirm_token"]
+        )
         assert result["kind"] == "action"
         assert result["ok"] is True
         assert backend.executed == [{"action": "open_app", "target": "chrome"}]
         assert service.state == "READY"
 
-    def test_a_pending_action_only_fires_once(self):
+    def test_a_guessed_confirmation_is_refused(self):
+        """A page that never saw the prompt cannot answer it."""
         service, backend = service_with_backend(
             simple_result={"action": "open_app", "target": "chrome"},
         )
         service.handle_command("open chrome")
-        service.handle_command("", confirm=True)
+        result = service.handle_command("", confirm=True, confirm_token="not-the-nonce")
+        assert result["kind"] == "error"
+        assert backend.executed == [], "a forged confirmation ran the action"
+        # the action is still pending and can be confirmed properly
+        assert service._pending is not None
+
+    def test_a_pending_action_only_fires_once(self):
+        service, backend = service_with_backend(
+            simple_result={"action": "open_app", "target": "chrome"},
+        )
+        pending = service.handle_command("open chrome")
+        nonce = pending["confirm_token"]
+        service.handle_command("", confirm=True, confirm_token=nonce)
         # a second confirm has nothing pending and must not re-run anything
-        service.handle_command("", confirm=True)
+        service.handle_command("", confirm=True, confirm_token=nonce)
         assert len(backend.executed) == 1
 
     def test_confirm_without_pending_is_harmless(self):
@@ -363,15 +396,160 @@ class TestConfirmation:
         assert result["kind"] == "empty"
         assert backend.executed == []
 
-    def test_llm_plans_are_not_double_confirmed(self):
-        """Confirmation is the parser's job; the model's plan already ran."""
+    def test_llm_plans_are_confirmed_exactly_once(self):
+        """The model used to run dangerous plans unasked. It no longer may.
+
+        "Exactly once" is the whole point: the plan is held, the page asks,
+        and the confirmation runs *that* plan — it is never re-planned and
+        never confirmed twice.
+        """
+        plan = {"action": "open_app", "target": "vscode"}
         service, backend = service_with_backend(
             simple_result=None,
-            think_result=FakeClock({"action": "open_app", "target": "vscode"}, source="llm"),
+            think_result=FakeClock(plan, source="llm"),
         )
         result = service.handle_command("open my editor")
+        assert result["needs_confirmation"] is True
+        assert result["action_name"] == "open_app"
+        assert result["confirm_token"]
+        assert backend.executed == [], "the model's plan ran before the user said yes"
+        assert backend.learned == [], "nothing may be learned from an unapproved plan"
+
+        done = service.handle_command(
+            "", confirm=True, confirm_token=result["confirm_token"]
+        )
+        assert done["ok"] is True
+        assert backend.executed == [plan], "the plan did not run exactly once"
+
+    def test_memory_recall_is_confirmed_too(self):
+        """A recalled routine is still a click on your machine."""
+        service, backend = service_with_backend(
+            simple_result=None,
+            think_result=FakeClock({"action": "click", "target": "submit"}, source="memory"),
+            confirm_actions={"click"},
+        )
+        result = service.handle_command("do the thing i taught you")
+        assert result["needs_confirmation"] is True
+        assert backend.executed == []
+
+    def test_a_chat_question_is_never_held_for_confirmation(self):
+        service, backend = service_with_backend(simple_result=None, chat_question=True)
+        result = service.handle_command("why is the sky blue")
+        assert result["kind"] == "chat"
         assert "needs_confirmation" not in result
-        assert backend.executed == [{"action": "open_app", "target": "vscode"}]
+
+
+class TestTelemetryCost:
+    """Polling is what a dashboard does most; it must not be what costs most."""
+
+    def test_many_pollers_share_one_sample(self, monkeypatch):
+        service, _ = service_with_backend()
+        sampled = []
+        original = service._sample_metrics
+
+        def counting():
+            sampled.append(1)
+            return original()
+
+        monkeypatch.setattr(service, "_sample_metrics", counting)
+        for _ in range(25):
+            service.telemetry()
+        assert len(sampled) == 1, f"25 polls cost {len(sampled)} samples"
+
+    def test_the_sample_refreshes_once_it_has_expired(self, monkeypatch):
+        service, _ = service_with_backend()
+        sampled = []
+        original = service._sample_metrics
+
+        def counting():
+            sampled.append(1)
+            return original()
+
+        monkeypatch.setattr(service, "_sample_metrics", counting)
+        clock = [1000.0]
+        monkeypatch.setattr(kira_server.time, "monotonic", lambda: clock[0])
+        service.telemetry()
+        clock[0] += kira_server.TELEMETRY_TTL / 2
+        service.telemetry()
+        assert len(sampled) == 1, "a fresh sample was thrown away"
+        clock[0] += kira_server.TELEMETRY_TTL
+        service.telemetry()
+        assert len(sampled) == 2, "a stale sample was served"
+
+    def test_every_caller_gets_its_own_dict(self):
+        """A caller must not be able to scribble on the cached sample."""
+        service, _ = service_with_backend()
+        first = service.telemetry()
+        first["cpu"] = "vandalised"
+        if isinstance(first.get("battery"), dict):
+            first["battery"]["percent"] = 0
+        second = service.telemetry()
+        assert second.get("cpu") != "vandalised"
+        if isinstance(second.get("battery"), dict):
+            assert second["battery"]["percent"] != 0
+
+    def test_the_hud_quality_knob_is_reported(self, monkeypatch):
+        service, backend = service_with_backend()
+        monkeypatch.setitem(backend.CONFIG, "orb_quality", "low")
+        assert service.telemetry()["quality"] == "low"
+
+
+class TestVisionRouting:
+    """The screen pipeline existed but nothing ever called it."""
+
+    def test_a_screen_question_reaches_the_vision_pipeline(self):
+        service, backend = service_with_backend(
+            simple_result=None,
+            vision_result={"action": "look_at_screen", "question": "what is on my screen"},
+            execute_result="You have two browser windows open, sir.",
+        )
+        result = service.handle_command("what is on my screen")
+        assert ("vision", "what is on my screen") in backend.calls
+        assert result["reply"] == "You have two browser windows open, sir."
+        assert result["action"] == "look_at_screen"
+
+    def test_a_screen_question_never_falls_through_to_chat(self):
+        service, backend = service_with_backend(
+            simple_result=None,
+            vision_result={"action": "look_at_screen", "question": "what is on my screen"},
+            chat_question=True,
+        )
+        service.handle_command("what is on my screen")
+        assert not any(call[0] == "chat" for call in backend.calls)
+
+    def test_a_vision_click_asks_before_touching_the_mouse(self):
+        service, backend = service_with_backend(
+            simple_result=None,
+            vision_result={"action": "vision_click", "target": "the save button"},
+            confirm_actions={"vision_click"},
+            execute_result={"success": True, "message": "Clicked the save button."},
+        )
+        result = service.handle_command("find the save button and click it")
+        assert result["needs_confirmation"] is True
+        assert backend.executed == []
+        done = service.handle_command(
+            "", confirm=True, confirm_token=result["confirm_token"]
+        )
+        assert done["ok"] is True
+        assert done["reply"] == "Clicked the save button."
+
+    def test_a_failed_screen_click_is_reported_as_a_failure(self):
+        service, backend = service_with_backend(
+            simple_result=None,
+            confirm_actions=set(),
+            vision_result={"action": "vision_click", "target": "a hidden button"},
+            execute_result={"success": False, "message": "I could not find it on screen."},
+        )
+        result = service.handle_command("find the hidden button and click it")
+        assert result["ok"] is False
+        assert result["kind"] == "error"
+        assert result["reply"] == "I could not find it on screen."
+        assert backend.executed == [{"action": "vision_click", "target": "a hidden button"}]
+
+    def test_an_ordinary_command_skips_the_vision_pipeline(self):
+        service, backend = service_with_backend(simple_result={"action": "volume_up"})
+        service.handle_command("volume up")
+        assert not any(call[0] == "vision" for call in backend.calls)
 
 
 class TestHistory:
@@ -544,11 +722,11 @@ def web(ui_dir):
         thread.join(timeout=5)
 
 
-def request(web, method: str, path: str, payload=None) -> tuple:
+def request(web, method: str, path: str, payload=None, extra_headers=None) -> tuple:
     """Returns (status, headers, body-bytes)."""
     connection = http.client.HTTPConnection(web.host, web.port, timeout=5)
     body = None
-    headers = {}
+    headers = dict(extra_headers or {})
     if payload is not None:
         body = json.dumps(payload)
         headers["Content-Type"] = "application/json"
@@ -560,9 +738,33 @@ def request(web, method: str, path: str, payload=None) -> tuple:
         connection.close()
 
 
-def request_json(web, method: str, path: str, payload=None) -> tuple:
-    status, headers, body = request(web, method, path, payload)
+def request_json(web, method: str, path: str, payload=None, extra_headers=None) -> tuple:
+    status, headers, body = request(web, method, path, payload, extra_headers)
     return status, json.loads(body.decode("utf-8") or "null")
+
+
+@pytest.fixture()
+def guarded(ui_dir):
+    """A server with a token required, so the LAN case can be exercised."""
+    service = kira_server.KiraService(
+        simulate=False, ui_dir=ui_dir, token="s3cret-token",
+        allowed_hosts={"kira.local"},
+    )
+    backend = FakeBackend(simple_result={"action": "volume_up"}, confirm_actions=set())
+    service.backend = backend
+    service.reason = ""
+    server = kira_server.KiraWebServer(("127.0.0.1", 0), service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield SimpleNamespace(
+            host=host, port=port, service=service, backend=backend, server=server
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def raw_request(web, target: str) -> int:
@@ -602,8 +804,17 @@ class TestHttpApi:
         _, pending = request_json(web, "POST", "/api/command", {"text": "open chrome"})
         assert pending["needs_confirmation"] is True
 
-        _, done = request_json(
+        _, refused = request_json(
             web, "POST", "/api/command", {"text": "", "confirm": True}
+        )
+        assert refused["kind"] == "error", "a bare confirm must be refused"
+        assert web.backend.executed == []
+
+        _, done = request_json(
+            web,
+            "POST",
+            "/api/command",
+            {"text": "", "confirm": True, "confirm_token": pending["confirm_token"]},
         )
         assert done["ok"] is True
         assert web.backend.executed == [{"action": "open_app", "target": "chrome"}]
@@ -709,10 +920,225 @@ class TestStaticFiles:
     def test_preview_headers(self, web):
         """The UI must be embeddable and never cached by the preview pane."""
         _, headers, _ = request(web, "GET", "/")
-        assert headers.get("Access-Control-Allow-Origin") == "*"
         assert headers.get("Cache-Control") == "no-store"
         assert "X-Frame-Options" not in headers
 
+    def test_vendored_runtime_is_cached_for_good(self, web, ui_dir):
+        """three.js is ~330 KB and never edited in place: do not re-send it."""
+        (ui_dir / "vendor").mkdir(exist_ok=True)
+        (ui_dir / "vendor" / "three.module.min.js").write_text(
+            "// three\n", encoding="utf-8"
+        )
+        status, headers, _ = request(web, "GET", "/vendor/three.module.min.js")
+        assert status == 200
+        assert "immutable" in headers.get("Cache-Control", "")
+        assert "immutable" not in request(web, "GET", "/app.js")[1].get("Cache-Control", "")
+
+    def test_the_huds_own_files_are_never_cached(self, web):
+        for path in ("/", "/app.js", "/style.css"):
+            _, headers, _ = request(web, "GET", path)
+            assert headers.get("Cache-Control") == "no-store", path
+
+    def test_no_cors_headers_are_sent(self, web):
+        """No Access-Control-Allow-* means no other page can read a response."""
+        for path in ("/", "/api/state"):
+            _, headers, _ = request(web, "GET", path)
+            leaked = [key for key in headers if key.lower().startswith("access-control")]
+            assert leaked == [], f"{path} advertises {leaked}"
+
+
+
+class TestAccessControl:
+    """A local agent is still reachable from every page you visit.
+
+    The API can click, type and lock the machine, so these tests are the
+    difference between "a neat local tool" and "a remote control for
+    anything you browse past".
+    """
+
+    def test_a_site_cannot_drive_the_api(self, web):
+        status, body = request_json(
+            web, "POST", "/api/command",
+            {"text": "open chrome"},
+            extra_headers={"Origin": "https://evil.example"},
+        )
+        assert status == 403
+        assert web.backend.executed == [], "a hostile page ran a command"
+
+    def test_a_site_cannot_read_telemetry(self, web):
+        status, _ = request_json(
+            web, "GET", "/api/state",
+            extra_headers={"Origin": "https://evil.example"},
+        )
+        assert status == 403
+
+    def test_a_site_cannot_listen_through_the_microphone(self, web):
+        status, _ = request_json(
+            web, "POST", "/api/listen", {},
+            extra_headers={"Origin": "https://evil.example"},
+        )
+        assert status == 403
+
+    def test_a_rebound_hostname_is_refused(self, web):
+        """DNS rebinding names this machine with the attacker's domain."""
+        status, body = request_json(
+            web, "GET", "/api/state",
+            extra_headers={"Host": "evil.example", "Origin": "http://evil.example"},
+        )
+        assert status == 403
+        assert b"host" in body["error"].encode() or "host" in body["error"]
+
+    def test_the_hud_talking_to_itself_is_allowed(self, web):
+        origin = f"http://127.0.0.1:{web.port}"
+        status, data = request_json(
+            web, "GET", "/api/state", extra_headers={"Origin": origin}
+        )
+        assert status == 200 and data["mode"] != ""
+
+    def test_localhost_and_other_loopback_names_work(self, web):
+        for name in ("localhost", "127.0.0.1"):
+            status, _ = request_json(
+                web, "GET", "/api/state",
+                extra_headers={"Host": f"{name}:{web.port}"},
+            )
+            assert status == 200, f"{name} was refused"
+
+    def test_command_line_clients_without_an_origin_work(self, web):
+        status, data = request_json(web, "POST", "/api/command", {"text": "volume up"})
+        assert status == 200 and data["ok"] is True
+
+    def test_a_null_origin_is_refused(self, web):
+        """A sandboxed frame or a file:// page reports Origin: null."""
+        status, _ = request_json(
+            web, "GET", "/api/state", extra_headers={"Origin": "null"}
+        )
+        assert status == 403
+
+    def test_preflight_gives_a_foreign_origin_nothing(self, web):
+        status, headers, _ = request(
+            web, "OPTIONS", "/api/command",
+            extra_headers={
+                "Origin": "https://evil.example",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+        assert status == 204
+        assert not any(k.lower().startswith("access-control") for k in headers)
+
+    def test_an_extra_host_can_be_allowed_on_purpose(self, guarded):
+        """A reverse proxy may be told which name it will use."""
+        status, _ = request_json(
+            guarded, "GET", "/api/state",
+            extra_headers={"Host": "kira.local", "X-KIRA-Token": "s3cret-token"},
+        )
+        assert status == 200
+        status, _ = request_json(
+            guarded, "GET", "/api/state",
+            extra_headers={"Host": "something.else", "X-KIRA-Token": "s3cret-token"},
+        )
+        assert status == 403
+
+
+class TestToken:
+    def test_a_lan_bind_generates_a_token(self):
+        server = kira_server.create_server("0.0.0.0", 0, simulate=True)
+        try:
+            assert server.service.token, "a LAN bind left the API open"
+            assert is_loopback_or_local(server, "127.0.0.1")
+        finally:
+            server.server_close()
+
+    def test_a_loopback_bind_needs_no_token(self):
+        """No ceremony for the normal case: the app on this machine."""
+        server = kira_server.create_server("127.0.0.1", 0, simulate=True)
+        try:
+            assert server.service.token == ""
+        finally:
+            server.server_close()
+
+    def test_the_token_is_enforced(self, guarded):
+        assert request_json(guarded, "GET", "/api/state")[0] == 401
+        assert request_json(
+            guarded, "GET", "/api/state",
+            extra_headers={"X-KIRA-Token": "wrong"},
+        )[0] == 401
+        assert request_json(
+            guarded, "GET", "/api/state",
+            extra_headers={"X-KIRA-Token": "s3cret-token"},
+        )[0] == 200
+        assert request_json(guarded, "GET", "/api/state?token=s3cret-token")[0] == 200
+
+    def test_the_token_cannot_be_guessed_from_a_foreign_origin(self, guarded):
+        status, _ = request_json(
+            guarded, "POST", "/api/command", {"text": "open chrome"},
+            extra_headers={"Origin": "https://evil.example", "X-KIRA-Token": "s3cret-token"},
+        )
+        assert status == 403, "the origin check must come first"
+
+    def test_static_files_never_need_the_token(self, guarded):
+        """The page has to load before it can present a token."""
+        assert request(guarded, "GET", "/")[0] == 200
+        assert request(guarded, "GET", "/app.js")[0] == 200
+
+    def test_addresses_include_the_token_so_the_link_just_works(self):
+        urls = kira_server.local_addresses(8788, "abc123")
+        assert urls and all(url.endswith("?token=abc123") for url in urls)
+        assert kira_server.local_addresses(8788) == ["http://127.0.0.1:8788"]
+
+    def test_a_proxy_is_the_boundary_so_no_token_is_invented(self):
+        """A generated token could never reach a browser behind a proxy."""
+        server = kira_server.create_server("0.0.0.0", 0, simulate=True, trust_proxy=True)
+        try:
+            assert server.service.token == ""
+            assert server.service.trust_proxy is True
+        finally:
+            server.server_close()
+
+    def test_an_explicit_token_is_still_enforced_behind_a_proxy(self):
+        server = kira_server.create_server(
+            "0.0.0.0", 0, simulate=True, trust_proxy=True, token="mine"
+        )
+        try:
+            assert server.service.token == "mine"
+        finally:
+            server.server_close()
+
+    def test_a_chosen_token_is_kept(self):
+        server = kira_server.create_server("0.0.0.0", 0, simulate=True, token="mine")
+        try:
+            assert server.service.token == "mine"
+        finally:
+            server.server_close()
+
+
+class TestProxyMode:
+    """--trust-proxy is for preview panes; it must be explicit and labelled."""
+
+    def test_it_is_off_by_default(self, web):
+        assert web.service.trust_proxy is False
+
+    def test_it_accepts_a_forwarded_host_when_asked(self, ui_dir):
+        server = kira_server.create_server(
+            "127.0.0.1", 0, simulate=True, ui_dir=ui_dir, trust_proxy=True
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        host, port = server.server_address
+        try:
+            status, _ = request_json(
+                SimpleNamespace(host=host, port=port), "GET", "/api/state",
+                extra_headers={"Host": "preview.example", "Origin": "https://preview.example"},
+            )
+            assert status == 200, "a preview pane would have been locked out"
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+
+def is_loopback_or_local(server, name):
+    """The bound server answers to the machine's own names, never others."""
+    return kira_server.is_loopback(name) or name in server.service.allowed_hosts
 
 class TestClientAborts:
     """Browsers abandon requests all the time (reloads, cancelled polls)."""
@@ -902,6 +1328,60 @@ class TestUiCommandsReachTheAgent:
             f"the interface offers commands nothing handles: "
             f"{offered - set(self.KNOWN) - {'what is on my screen'}}"
         )
+
+
+class TestTheHudSpeaksTheSecurityContract:
+    """The browser side of the guards, pinned against the server's rules."""
+
+    def test_the_hud_sends_the_token_when_it_has_one(self):
+        js = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
+        assert "X-KIRA-Token" in js, "the HUD never sends the token"
+        assert "kira.token" in js, "the token is not remembered between reloads"
+
+    def test_the_hud_takes_the_token_out_of_the_address_bar(self):
+        """A link with a token in it must not stay in the URL or the screen."""
+        js = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
+        assert "replaceState" in js
+        assert 'params.delete("token")' in js
+
+    def test_the_hud_echoes_the_confirmation_token(self):
+        """The server refuses a bare confirm; the page must carry the nonce."""
+        js = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
+        assert "confirm_token" in js
+        assert "confirmToken" in js
+
+    def test_the_hud_goes_quiet_when_it_is_not_being_looked_at(self):
+        js = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
+        assert 'addEventListener("visibilitychange"' in js
+        assert "if (document.hidden) return" in js
+
+    def test_the_hud_honours_the_render_budget(self):
+        """orb_quality is the user's answer to "make it lighter"."""
+        js = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
+        assert "qualitySettings" in js
+        assert "setQuality" in js
+        assert "bloomPass.enabled" in js, "the bloom pass is not part of the budget"
+        for name in ("low", "balanced", "high"):
+            assert f"{name}:" in js, f"no {name} budget"
+
+    def test_the_hud_animates_from_elapsed_time(self):
+        """Motion must not depend on the display's refresh rate."""
+        js = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
+        assert "HUD_MIN_FRAME_MS" in js, "the render loop is uncapped"
+        assert "performance.now" in js or "timestamp" in js
+        assert "0.9 ** frames" in js, "the trails fade by frame count"
+
+    def test_the_harness_proves_the_render_loop_behaviour(self):
+        """The loop's timing is checked by running it, in scripts/check_ui.mjs."""
+        harness = (ROOT / "scripts" / "check_ui.mjs").read_text(encoding="utf-8")
+        for name in (
+            "the rain falls at the same speed on any display",
+            "the rain falls at 60 frames' worth per second, whatever the rate",
+            "a fast display does not do more work",
+            "a hidden window stops drawing and stops polling",
+            "orb_quality lowers the render budget",
+        ):
+            assert name in harness, f"the harness never checks: {name}"
 
 
 class TestVendoredThree:

@@ -49,6 +49,7 @@ ALLOWED_ACTIONS = frozenset(
         "undo_last", "routine_start", "routine_stop", "routine_cancel",
         "routine_name", "correct_last", "skill_promote", "skill_skip",
         "weather", "home_control", "press_combo",
+        "look_at_screen", "vision_click",
         "project_build", "project_fix", "projects_list",
     }
 )
@@ -74,12 +75,17 @@ is your turn. Respond with EXACTLY ONE JSON object of the form:
   media_play_pause {}  media_next {}   media_previous {}
   lock_pc {}       show_desktop {}     copy {}  paste {}  read_clipboard {}
   system_info {}   none {}
+  look_at_screen {"question":"what is on my screen?"}
+  vision_click {"target":"the save button"}
   sequence {"steps":[{...},{...}]}
 
 Rules:
 - Valid JSON only. No markdown, no commentary, no extra keys.
 - Never invent actions that are not in the allowed list.
 - Use "sequence" only for a few directly related steps.
+- Use the vision actions when the task has to be done by looking at the
+  screen: "look_at_screen" to read it, "vision_click" to click something on
+  it. vision_click moves the real mouse, so KIRA asks the user first.
 - If the request cannot be mapped to a computer action, use {"action":"none"}
   and put the reason in "thought".
 """
