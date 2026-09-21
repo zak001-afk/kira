@@ -18,9 +18,32 @@ from functools import partial
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-# Import KIRA backend modules
-import kira_api
-import kira_voice_agent as backend
+# Import KIRA backend modules with error handling
+backend = None
+BACKEND_ERROR = None
+
+try:
+    import kira_api
+    print("[OK] kira_api loaded")
+except Exception as e:
+    print(f"[ERROR] Failed to import kira_api: {e}")
+    kira_api = None
+
+try:
+    import kira_voice_agent as backend
+    print("[OK] kira_voice_agent loaded")
+except Exception as e:
+    print(f"[WARNING] Failed to import kira_voice_agent: {e}")
+    print("         Some features may not work (voice, actions, chat)")
+    BACKEND_ERROR = str(e)
+    backend = None
+
+try:
+    import kira_tasks
+    print("[OK] kira_tasks loaded")
+except Exception as e:
+    print(f"[WARNING] Failed to import kira_tasks: {e}")
+    kira_tasks = None
 
 # Try to import webview
 try:
@@ -75,6 +98,8 @@ class KiraAPI:
     
     def send_command(self, text):
         """Process a command through the backend."""
+        if backend is None:
+            return {"error": f"Backend not available: {BACKEND_ERROR}"}
         try:
             cleaned = backend.normalize_command(text)
             if not cleaned:
@@ -148,17 +173,43 @@ def main():
     print("=" * 60)
     print()
     
+    if kira_api is None:
+        print("[ERROR] kira_api module not available. Cannot start API server.")
+        print("        Please ensure all dependencies are installed:")
+        print("        pip install -r requirements.txt")
+        input("\nPress Enter to exit...")
+        sys.exit(1)
+    
     # 1. Set up the API backend
     print("[1/4] Initializing KIRA backend...")
-    kira_api.set_backend(backend)
+    if backend is not None:
+        kira_api.set_backend(backend)
+        print("       Backend ready")
+    else:
+        print(f"       Backend unavailable: {BACKEND_ERROR}")
+        print("       Chat and actions will not work, but UI will load")
     
     # 2. Start the API server
     print(f"[2/4] Starting API server on http://{HOST}:{API_PORT}")
-    api_server = kira_api.start_server(host=HOST, port=API_PORT, daemon=True)
+    try:
+        api_server = kira_api.start_server(host=HOST, port=API_PORT, daemon=True)
+        time.sleep(0.5)  # Give server time to start
+        print("       API server started")
+    except Exception as e:
+        print(f"       [ERROR] Failed to start API server: {e}")
+        api_server = None
     
     # 3. Start the UI server
     print(f"[3/4] Starting UI server on http://{HOST}:{UI_PORT}")
-    ui_server = start_ui_server()
+    try:
+        ui_server = start_ui_server()
+        time.sleep(0.3)  # Give server time to start
+        print("       UI server started")
+    except Exception as e:
+        print(f"       [ERROR] Failed to start UI server: {e}")
+        print(f"       Port {UI_PORT} may be in use. Try closing other apps.")
+        input("\nPress Enter to exit...")
+        sys.exit(1)
     
     # 4. Create native window
     print("[4/4] Creating native window...")

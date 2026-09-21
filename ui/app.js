@@ -483,7 +483,7 @@ window.addEventListener("resize", () => {
 
 // Detect if running in pywebview (native app) or browser
 const IS_NATIVE = typeof window.pywebview !== "undefined";
-const API_BASE = window.location.origin;
+const API_BASE = window.location.protocol + "//" + window.location.hostname + ":8765";
 
 // Set boot time
 document.getElementById("boot-time").textContent = new Date().toTimeString().slice(0, 5);
@@ -539,21 +539,40 @@ async function sendCommand(text) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       data = await response.json();
     }
     
-    if (data.response) {
+    if (data.error) {
+      addMessage("SYSTEM", `Error: ${data.error}`);
+    } else if (data.response) {
       addMessage("KIRA", data.response);
     } else if (data.action && data.success) {
       addMessage("KIRA", `Action completed: ${data.action}`);
-    } else if (data.error) {
-      addMessage("SYSTEM", `Error: ${data.error}`);
+    } else if (data.action) {
+      addMessage("KIRA", `Action executed: ${data.action}`);
+    } else {
+      addMessage("KIRA", "Done.");
     }
     
     setActivity("READY");
   } catch (error) {
-    addMessage("SYSTEM", "Failed to connect to KIRA backend");
+    console.error("Command failed:", error);
+    
+    if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
+      addMessage("SYSTEM", "Cannot connect to KIRA backend. Is the API server running on port 8765?");
+    } else {
+      addMessage("SYSTEM", `Connection error: ${error.message}`);
+    }
+    
     setActivity("ERROR");
+    
+    // Retry connection after 3 seconds
+    setTimeout(() => setActivity("READY"), 3000);
   }
 }
 
