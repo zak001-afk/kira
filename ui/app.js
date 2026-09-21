@@ -566,13 +566,15 @@ async function speak(text) {
     
     if (data.error) {
       console.error("[KIRA] TTS error:", data.error);
-      setActivity("READY");
+      console.log("[KIRA] Falling back to browser TTS...");
+      fallbackSpeak(cleanText);
       return;
     }
     
     if (!data.audio) {
       console.error("[KIRA] No audio data received");
-      setActivity("READY");
+      console.log("[KIRA] Falling back to browser TTS...");
+      fallbackSpeak(cleanText);
       return;
     }
     
@@ -595,7 +597,8 @@ async function speak(text) {
     
     currentAudio.onerror = (event) => {
       console.error("[KIRA] Audio playback error:", event);
-      setActivity("READY");
+      console.log("[KIRA] Falling back to browser TTS...");
+      fallbackSpeak(cleanText);
       URL.revokeObjectURL(audioUrl);
       currentAudio = null;
     };
@@ -604,8 +607,52 @@ async function speak(text) {
     
   } catch (error) {
     console.error("[KIRA] TTS failed:", error);
-    setActivity("READY");
+    console.log("[KIRA] Falling back to browser TTS...");
+    fallbackSpeak(cleanText);
   }
+}
+
+// Fallback to browser Web Speech API if neural TTS fails
+function fallbackSpeak(text) {
+  if (!window.speechSynthesis) {
+    console.error("[KIRA] No TTS available");
+    setActivity("READY");
+    return;
+  }
+  
+  const utterance = new SpeechSynthesisUtterance(text);
+  
+  // Configure voice - fluent female
+  utterance.rate = 0.95;
+  utterance.pitch = 1.1;
+  utterance.volume = 1.0;
+  
+  // Find the best female voice
+  const voices = window.speechSynthesis.getVoices();
+  const preferredVoice = voices.find(v => 
+    v.lang.startsWith('en') && 
+    (v.name.includes('Female') || v.name.includes('Samantha') || v.name.includes('Zira'))
+  ) || voices.find(v => v.lang.startsWith('en'));
+  
+  if (preferredVoice) {
+    utterance.voice = preferredVoice;
+  }
+  
+  utterance.onstart = () => {
+    setActivity("SPEAKING");
+    console.log("[KIRA] Speaking (browser fallback)...");
+  };
+  
+  utterance.onend = () => {
+    setActivity("READY");
+  };
+  
+  utterance.onerror = (event) => {
+    console.error("[KIRA] Browser TTS error:", event.error);
+    setActivity("READY");
+  };
+  
+  window.speechSynthesis.speak(utterance);
 }
 
 function stopSpeaking() {
