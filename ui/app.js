@@ -73,99 +73,181 @@ bloomPass.radius = 0.65;
 composer.addPass(bloomPass);
 
 // ============================================================
-// KIRA CINEMATIC NEURAL REACTOR
+// KIRA CINEMATIC NEURAL REACTOR — ENHANCED
 // ============================================================
 
 const reactor = new THREE.Group();
 scene.add(reactor);
 reactor.scale.setScalar(1.05);
 
-// OUTER DARK METALLIC SHELL
-const shellGeometry = new THREE.SphereGeometry(2.25, 96, 96);
+// --- OUTER DARK METALLIC SHELL ---
+const shellGeometry = new THREE.IcosahedronGeometry(2.3, 3);
 const shellMaterial = new THREE.MeshStandardMaterial({
   color: 0x050505,
   metalness: 0.95,
-  roughness: 0.28,
+  roughness: 0.25,
   emissive: 0x180000,
-  emissiveIntensity: 0.18,
+  emissiveIntensity: 0.2,
   transparent: true,
-  opacity: 0.22,
+  opacity: 0.18,
   depthWrite: false,
 });
 const shell = new THREE.Mesh(shellGeometry, shellMaterial);
 reactor.add(shell);
 
-// RED HOLOGRAPHIC WIRE SHELL
-const wireGeometry = new THREE.SphereGeometry(2.29, 48, 48);
+// --- RED HOLOGRAPHIC WIRE SHELL ---
+const wireGeometry = new THREE.IcosahedronGeometry(2.35, 2);
 const wireMaterial = new THREE.MeshBasicMaterial({
   color: 0xff1515,
   wireframe: true,
   transparent: true,
-  opacity: 0.035,
+  opacity: 0.04,
 });
 const wireShell = new THREE.Mesh(wireGeometry, wireMaterial);
 reactor.add(wireShell);
 
-// SEGMENTED REACTOR ARMOR
+// --- HEXAGONAL ARMOR PLATES ---
 const armorGroup = new THREE.Group();
 reactor.add(armorGroup);
 
 const armorMaterial = new THREE.MeshStandardMaterial({
   color: 0x090909,
   metalness: 1.0,
-  roughness: 0.18,
+  roughness: 0.15,
   emissive: 0x250000,
-  emissiveIntensity: 0.45,
+  emissiveIntensity: 0.5,
 });
 
 const armorEdgeMaterial = new THREE.MeshBasicMaterial({
   color: 0xff1515,
   transparent: true,
-  opacity: 0.55,
+  opacity: 0.6,
 });
 
-for (let i = 0; i < 12; i++) {
-  const angle = (i / 12) * Math.PI * 2;
-  const plateGeometry = new THREE.BoxGeometry(0.95, 0.12, 0.38);
-  const plate = new THREE.Mesh(plateGeometry, armorMaterial);
-  plate.position.set(Math.cos(angle) * 1.72, Math.sin(angle) * 1.72, 0);
-  plate.rotation.z = angle;
-  armorGroup.add(plate);
+// Create hexagonal plates around the equator
+for (let i = 0; i < 16; i++) {
+  const angle = (i / 16) * Math.PI * 2;
+  const hexShape = new THREE.Shape();
+  const hexRadius = 0.35;
+  for (let j = 0; j < 6; j++) {
+    const a = (j / 6) * Math.PI * 2 - Math.PI / 6;
+    const x = Math.cos(a) * hexRadius;
+    const y = Math.sin(a) * hexRadius;
+    if (j === 0) hexShape.moveTo(x, y);
+    else hexShape.lineTo(x, y);
+  }
+  hexShape.closePath();
 
-  const edgeGeometry = new THREE.BoxGeometry(0.98, 0.025, 0.4);
-  const edge = new THREE.Mesh(edgeGeometry, armorEdgeMaterial);
-  edge.position.copy(plate.position);
-  edge.rotation.copy(plate.rotation);
-  edge.position.z += 0.24;
-  armorGroup.add(edge);
+  const hexGeo = new THREE.ExtrudeGeometry(hexShape, { depth: 0.08, bevelEnabled: false });
+  const hex = new THREE.Mesh(hexGeo, armorMaterial);
+  hex.position.set(Math.cos(angle) * 1.75, Math.sin(angle) * 1.75, 0);
+  hex.rotation.z = angle;
+  hex.lookAt(0, 0, 0);
+  armorGroup.add(hex);
+
+  // Edge glow
+  const edgeGeo = new THREE.EdgesGeometry(hexGeo);
+  const edgeMat = new THREE.LineBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.7 });
+  const edgeLine = new THREE.LineSegments(edgeGeo, edgeMat);
+  edgeLine.position.copy(hex.position);
+  edgeLine.rotation.copy(hex.rotation);
+  armorGroup.add(edgeLine);
 }
 
+// Vertical armor fins
 const verticalArmor = new THREE.Group();
 reactor.add(verticalArmor);
 
-for (let i = 0; i < 8; i++) {
-  const angle = (i / 8) * Math.PI * 2;
-  const plateGeometry = new THREE.BoxGeometry(0.32, 1.15, 0.1);
-  const plate = new THREE.Mesh(plateGeometry, armorMaterial);
-  plate.position.set(Math.cos(angle) * 1.95, 0, Math.sin(angle) * 1.95);
-  plate.rotation.y = -angle;
-  verticalArmor.add(plate);
+for (let i = 0; i < 10; i++) {
+  const angle = (i / 10) * Math.PI * 2;
+  const finGeo = new THREE.BoxGeometry(0.06, 1.4, 0.25);
+  const fin = new THREE.Mesh(finGeo, armorMaterial);
+  fin.position.set(Math.cos(angle) * 2.0, 0, Math.sin(angle) * 2.0);
+  fin.rotation.y = -angle;
+  verticalArmor.add(fin);
 }
 
-// INNER ENERGY SPHERE
+// --- INNER ENERGY SPHERE ---
 const energyGeometry = new THREE.SphereGeometry(1.55, 64, 64);
 const energyMaterial = new THREE.MeshBasicMaterial({
   color: 0xff0808,
   transparent: true,
-  opacity: 0.2,
+  opacity: 0.18,
   blending: THREE.AdditiveBlending,
   depthWrite: false,
 });
 const energySphere = new THREE.Mesh(energyGeometry, energyMaterial);
 reactor.add(energySphere);
 
-// CORE
-const coreGeometry = new THREE.SphereGeometry(0.42, 64, 64);
+// --- NEURAL NETWORK NODES ---
+const neuralNodes = [];
+const neuralConnections = [];
+const nodeGroup = new THREE.Group();
+reactor.add(nodeGroup);
+
+const nodeMaterial = new THREE.MeshBasicMaterial({
+  color: 0xff3030,
+  transparent: true,
+  opacity: 0.9,
+  blending: THREE.AdditiveBlending,
+});
+
+const nodeGlowMaterial = new THREE.MeshBasicMaterial({
+  color: 0xff2020,
+  transparent: true,
+  opacity: 0.3,
+  blending: THREE.AdditiveBlending,
+});
+
+// Create neural nodes at various positions
+const nodePositions = [];
+for (let i = 0; i < 24; i++) {
+  const radius = 1.2 + Math.random() * 0.8;
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  const pos = new THREE.Vector3(
+    radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.sin(phi) * Math.sin(theta),
+    radius * Math.cos(phi)
+  );
+  nodePositions.push(pos);
+
+  const nodeGeo = new THREE.SphereGeometry(0.06, 12, 12);
+  const node = new THREE.Mesh(nodeGeo, nodeMaterial.clone());
+  node.position.copy(pos);
+  nodeGroup.add(node);
+  neuralNodes.push(node);
+
+  // Node glow
+  const glowGeo = new THREE.SphereGeometry(0.12, 8, 8);
+  const glow = new THREE.Mesh(glowGeo, nodeGlowMaterial.clone());
+  glow.position.copy(pos);
+  nodeGroup.add(glow);
+  node.userData.glow = glow;
+}
+
+// Connect nearby nodes with energy lines
+const lineMaterial = new THREE.LineBasicMaterial({
+  color: 0xff1818,
+  transparent: true,
+  opacity: 0.25,
+  blending: THREE.AdditiveBlending,
+});
+
+for (let i = 0; i < nodePositions.length; i++) {
+  for (let j = i + 1; j < nodePositions.length; j++) {
+    const dist = nodePositions[i].distanceTo(nodePositions[j]);
+    if (dist < 1.5) {
+      const lineGeo = new THREE.BufferGeometry().setFromPoints([nodePositions[i], nodePositions[j]]);
+      const line = new THREE.Line(lineGeo, lineMaterial.clone());
+      nodeGroup.add(line);
+      neuralConnections.push({ line, dist, i, j });
+    }
+  }
+}
+
+// --- CORE ---
+const coreGeometry = new THREE.SphereGeometry(0.45, 64, 64);
 const coreMaterial = new THREE.MeshBasicMaterial({
   color: 0xffffff,
   toneMapped: false,
@@ -173,12 +255,12 @@ const coreMaterial = new THREE.MeshBasicMaterial({
 const core = new THREE.Mesh(coreGeometry, coreMaterial);
 reactor.add(core);
 
-// CORE RED GLOW
-const glowGeometry = new THREE.SphereGeometry(0.78, 64, 64);
+// --- CORE RED GLOW ---
+const glowGeometry = new THREE.SphereGeometry(0.82, 64, 64);
 const glowMaterial = new THREE.MeshBasicMaterial({
   color: 0xff1515,
   transparent: true,
-  opacity: 0.42,
+  opacity: 0.45,
   blending: THREE.AdditiveBlending,
   depthWrite: false,
   toneMapped: false,
@@ -186,12 +268,12 @@ const glowMaterial = new THREE.MeshBasicMaterial({
 const coreGlow = new THREE.Mesh(glowGeometry, glowMaterial);
 reactor.add(coreGlow);
 
-// WHITE HOT CORE AURA
-const whiteGlowGeometry = new THREE.SphereGeometry(0.62, 64, 64);
+// --- WHITE HOT CORE AURA ---
+const whiteGlowGeometry = new THREE.SphereGeometry(0.65, 64, 64);
 const whiteGlowMaterial = new THREE.MeshBasicMaterial({
   color: 0xffdddd,
   transparent: true,
-  opacity: 0.28,
+  opacity: 0.3,
   blending: THREE.AdditiveBlending,
   depthWrite: false,
   toneMapped: false,
@@ -199,11 +281,11 @@ const whiteGlowMaterial = new THREE.MeshBasicMaterial({
 const whiteGlow = new THREE.Mesh(whiteGlowGeometry, whiteGlowMaterial);
 reactor.add(whiteGlow);
 
-// CENTRAL NEURAL PROCESSOR
+// --- CENTRAL NEURAL PROCESSOR ---
 const neuralCore = new THREE.Group();
 reactor.add(neuralCore);
 
-const innerRingGeometry = new THREE.TorusGeometry(0.62, 0.035, 12, 96);
+const innerRingGeometry = new THREE.TorusGeometry(0.65, 0.04, 16, 96);
 const innerRingMaterial = new THREE.MeshBasicMaterial({
   color: 0xff2020,
   transparent: true,
@@ -214,7 +296,7 @@ const innerRing = new THREE.Mesh(innerRingGeometry, innerRingMaterial);
 innerRing.rotation.x = Math.PI / 2;
 neuralCore.add(innerRing);
 
-const secondRingGeometry = new THREE.TorusGeometry(0.92, 0.018, 12, 128);
+const secondRingGeometry = new THREE.TorusGeometry(0.95, 0.02, 16, 128);
 const secondRingMaterial = new THREE.MeshBasicMaterial({
   color: 0xff3030,
   transparent: true,
@@ -225,19 +307,32 @@ const secondRing = new THREE.Mesh(secondRingGeometry, secondRingMaterial);
 secondRing.rotation.x = Math.PI / 2;
 neuralCore.add(secondRing);
 
-const frameGeometry = new THREE.CylinderGeometry(0.48, 0.48, 0.16, 32);
+// Third ring (tilted)
+const thirdRingGeometry = new THREE.TorusGeometry(0.8, 0.015, 12, 96);
+const thirdRingMaterial = new THREE.MeshBasicMaterial({
+  color: 0xff4040,
+  transparent: true,
+  opacity: 0.5,
+  blending: THREE.AdditiveBlending,
+});
+const thirdRing = new THREE.Mesh(thirdRingGeometry, thirdRingMaterial);
+thirdRing.rotation.x = Math.PI / 3;
+thirdRing.rotation.y = Math.PI / 4;
+neuralCore.add(thirdRing);
+
+const frameGeometry = new THREE.CylinderGeometry(0.5, 0.5, 0.18, 32);
 const frameMaterial = new THREE.MeshStandardMaterial({
   color: 0x090909,
   metalness: 1,
-  roughness: 0.2,
+  roughness: 0.15,
   emissive: 0x220000,
-  emissiveIntensity: 0.3,
+  emissiveIntensity: 0.35,
 });
 const coreFrame = new THREE.Mesh(frameGeometry, frameMaterial);
 coreFrame.rotation.x = Math.PI / 2;
 neuralCore.add(coreFrame);
 
-const discGeometry = new THREE.CylinderGeometry(0.34, 0.34, 0.18, 64);
+const discGeometry = new THREE.CylinderGeometry(0.36, 0.36, 0.2, 64);
 const discMaterial = new THREE.MeshBasicMaterial({
   color: 0xff0808,
   transparent: true,
@@ -246,16 +341,18 @@ const discMaterial = new THREE.MeshBasicMaterial({
 });
 const energyDisc = new THREE.Mesh(discGeometry, discMaterial);
 energyDisc.rotation.x = Math.PI / 2;
-energyDisc.position.z = 0.11;
+energyDisc.position.z = 0.12;
 neuralCore.add(energyDisc);
 
-// ROTATING NEURAL RINGS
+// --- ROTATING NEURAL ORBITS ---
 const neuralOrbit1 = new THREE.Group();
 const neuralOrbit2 = new THREE.Group();
+const neuralOrbit3 = new THREE.Group();
 neuralCore.add(neuralOrbit1);
 neuralCore.add(neuralOrbit2);
+neuralCore.add(neuralOrbit3);
 
-const neuralOrbitGeometry = new THREE.TorusGeometry(1.15, 0.012, 8, 128);
+const neuralOrbitGeometry = new THREE.TorusGeometry(1.2, 0.014, 8, 128);
 const neuralOrbitMaterial = new THREE.MeshBasicMaterial({
   color: 0xff1818,
   transparent: true,
@@ -271,28 +368,33 @@ neuralOrbit2.add(neuralOrbitRing2);
 neuralOrbitRing2.rotation.x = Math.PI / 2;
 neuralOrbitRing2.rotation.z = Math.PI / 3;
 
-// NEURAL ENERGY BEAMS
+const neuralOrbitRing3 = new THREE.Mesh(neuralOrbitGeometry, neuralOrbitMaterial.clone());
+neuralOrbit3.add(neuralOrbitRing3);
+neuralOrbitRing3.rotation.x = Math.PI / 4;
+neuralOrbitRing3.rotation.y = Math.PI / 2;
+
+// --- ENERGY BEAMS ---
 const beamGroup = new THREE.Group();
 reactor.add(beamGroup);
 
 const beamMaterial = new THREE.MeshBasicMaterial({
   color: 0xff2020,
   transparent: true,
-  opacity: 0.45,
+  opacity: 0.5,
   blending: THREE.AdditiveBlending,
 });
 
-for (let i = 0; i < 8; i++) {
-  const angle = (i / 8) * Math.PI * 2;
-  const beamGeometry = new THREE.BoxGeometry(0.025, 1.7, 0.025);
-  const beam = new THREE.Mesh(beamGeometry, beamMaterial);
+for (let i = 0; i < 12; i++) {
+  const angle = (i / 12) * Math.PI * 2;
+  const beamGeometry = new THREE.BoxGeometry(0.02, 1.8, 0.02);
+  const beam = new THREE.Mesh(beamGeometry, beamMaterial.clone());
   beam.position.set(Math.cos(angle) * 0.95, Math.sin(angle) * 0.95, 0);
   beam.rotation.z = angle;
   beamGroup.add(beam);
 }
 
-// ENERGY HALO
-const haloGeometry = new THREE.RingGeometry(0.62, 0.82, 96);
+// --- ENERGY HALO ---
+const haloGeometry = new THREE.RingGeometry(0.65, 0.88, 96);
 const haloMaterial = new THREE.MeshBasicMaterial({
   color: 0xff2020,
   transparent: true,
@@ -305,16 +407,59 @@ const halo = new THREE.Mesh(haloGeometry, haloMaterial);
 halo.rotation.x = Math.PI / 2;
 reactor.add(halo);
 
-// POINT LIGHT
-const reactorLight = new THREE.PointLight(0xff1010, 11, 8);
+// --- ENERGY ARCS (lightning-like connections) ---
+const arcGroup = new THREE.Group();
+reactor.add(arcGroup);
+
+function createArc(start, end, segments = 20) {
+  const points = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const x = start.x + (end.x - start.x) * t + (Math.random() - 0.5) * 0.3;
+    const y = start.y + (end.y - start.y) * t + (Math.random() - 0.5) * 0.3;
+    const z = start.z + (end.z - start.z) * t + (Math.random() - 0.5) * 0.3;
+    points.push(new THREE.Vector3(x, y, z));
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  const mat = new THREE.LineBasicMaterial({
+    color: 0xff4040,
+    transparent: true,
+    opacity: 0.6,
+    blending: THREE.AdditiveBlending,
+  });
+  return new THREE.Line(geo, mat);
+}
+
+const arcs = [];
+for (let i = 0; i < 6; i++) {
+  const angle1 = Math.random() * Math.PI * 2;
+  const angle2 = angle1 + Math.PI * (0.5 + Math.random());
+  const r = 1.5;
+  const start = new THREE.Vector3(Math.cos(angle1) * r, Math.sin(angle1) * r, (Math.random() - 0.5) * 0.5);
+  const end = new THREE.Vector3(Math.cos(angle2) * r, Math.sin(angle2) * r, (Math.random() - 0.5) * 0.5);
+  const arc = createArc(start, end);
+  arcGroup.add(arc);
+  arcs.push({ mesh: arc, start, end, phase: Math.random() * Math.PI * 2 });
+}
+
+// --- POINT LIGHTS ---
+const reactorLight = new THREE.PointLight(0xff1010, 12, 10);
 reactorLight.position.set(0, 0, 0);
 reactor.add(reactorLight);
 
-// ORBITAL RINGS
+const accentLight1 = new THREE.PointLight(0xff4040, 4, 8);
+accentLight1.position.set(3, 2, 2);
+reactor.add(accentLight1);
+
+const accentLight2 = new THREE.PointLight(0xff0000, 3, 8);
+accentLight2.position.set(-3, -2, 2);
+reactor.add(accentLight2);
+
+// --- ORBITAL RINGS ---
 const ringMaterials = [];
 
 function createReactorRing(radius, tube, rotation, opacity) {
-  const geometry = new THREE.TorusGeometry(radius, tube, 12, 180);
+  const geometry = new THREE.TorusGeometry(radius, tube, 16, 200);
   const material = new THREE.MeshBasicMaterial({
     color: 0xff1010,
     transparent: true,
@@ -327,34 +472,80 @@ function createReactorRing(radius, tube, rotation, opacity) {
   return ring;
 }
 
-const ring1 = createReactorRing(3.05, 0.012, new THREE.Euler(1.1, 0.15, 0.25), 0.28);
-const ring2 = createReactorRing(2.75, 0.018, new THREE.Euler(0.25, 1.15, 0.5), 0.2);
-const ring3 = createReactorRing(3.35, 0.009, new THREE.Euler(1.55, 0.55, 0.2), 0.14);
-const ring4 = createReactorRing(2.45, 0.008, new THREE.Euler(0.4, 0.8, 1.2), 0.14);
+const ring1 = createReactorRing(3.1, 0.014, new THREE.Euler(1.1, 0.15, 0.25), 0.3);
+const ring2 = createReactorRing(2.8, 0.02, new THREE.Euler(0.25, 1.15, 0.5), 0.22);
+const ring3 = createReactorRing(3.4, 0.01, new THREE.Euler(1.55, 0.55, 0.2), 0.16);
+const ring4 = createReactorRing(2.5, 0.009, new THREE.Euler(0.4, 0.8, 1.2), 0.16);
+const ring5 = createReactorRing(3.7, 0.007, new THREE.Euler(0.8, 0.3, 0.9), 0.1);
+const ring6 = createReactorRing(2.2, 0.012, new THREE.Euler(1.3, 0.6, 0.4), 0.18);
 
-// REACTOR ENERGY PARTICLES
-const particleCount = 450;
+// --- HOLOGRAPHIC DATA RING ---
+const dataRingGroup = new THREE.Group();
+reactor.add(dataRingGroup);
+
+const dataRingGeo = new THREE.TorusGeometry(3.8, 0.005, 8, 256);
+const dataRingMat = new THREE.MeshBasicMaterial({
+  color: 0xff3030,
+  transparent: true,
+  opacity: 0.2,
+});
+const dataRing = new THREE.Mesh(dataRingGeo, dataRingMat);
+dataRing.rotation.x = Math.PI / 2.2;
+dataRingGroup.add(dataRing);
+
+// Small data markers on the ring
+for (let i = 0; i < 32; i++) {
+  const angle = (i / 32) * Math.PI * 2;
+  const markerGeo = new THREE.BoxGeometry(0.08, 0.08, 0.02);
+  const markerMat = new THREE.MeshBasicMaterial({
+    color: 0xff2020,
+    transparent: true,
+    opacity: 0.4 + Math.random() * 0.3,
+    blending: THREE.AdditiveBlending,
+  });
+  const marker = new THREE.Mesh(markerGeo, markerMat);
+  marker.position.set(Math.cos(angle) * 3.8, Math.sin(angle) * 3.8, 0);
+  marker.rotation.z = angle;
+  dataRingGroup.add(marker);
+}
+
+// --- ENERGY PARTICLES (flowing toward core) ---
+const particleCount = 800;
 const particlePositions = new Float32Array(particleCount * 3);
-const particleSizes = new Float32Array(particleCount);
+const particleVelocities = new Float32Array(particleCount * 3);
+const particleColors = new Float32Array(particleCount * 3);
 
 for (let i = 0; i < particleCount; i++) {
-  const radius = 2.4 + Math.random() * 2.2;
+  const radius = 2.5 + Math.random() * 3.0;
   const theta = Math.random() * Math.PI * 2;
   const phi = Math.acos(2 * Math.random() - 1);
   particlePositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
   particlePositions[i * 3 + 1] = radius * Math.cos(phi);
   particlePositions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
-  particleSizes[i] = 0.02 + Math.random() * 0.045;
+
+  // Velocity toward center with some randomness
+  const speed = 0.005 + Math.random() * 0.01;
+  particleVelocities[i * 3] = -particlePositions[i * 3] * speed;
+  particleVelocities[i * 3 + 1] = -particlePositions[i * 3 + 1] * speed;
+  particleVelocities[i * 3 + 2] = -particlePositions[i * 3 + 2] * speed;
+
+  // Color variation (red to orange)
+  const hue = 0.0 + Math.random() * 0.05;
+  const color = new THREE.Color().setHSL(hue, 1, 0.5);
+  particleColors[i * 3] = color.r;
+  particleColors[i * 3 + 1] = color.g;
+  particleColors[i * 3 + 2] = color.b;
 }
 
 const particleGeometry = new THREE.BufferGeometry();
 particleGeometry.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
+particleGeometry.setAttribute("color", new THREE.BufferAttribute(particleColors, 3));
 
 const particleMaterial = new THREE.PointsMaterial({
-  color: 0xff2020,
-  size: 0.025,
+  size: 0.035,
+  vertexColors: true,
   transparent: true,
-  opacity: 0.38,
+  opacity: 0.5,
   blending: THREE.AdditiveBlending,
   depthWrite: false,
 });
@@ -362,51 +553,121 @@ const particleMaterial = new THREE.PointsMaterial({
 const reactorParticles = new THREE.Points(particleGeometry, particleMaterial);
 reactor.add(reactorParticles);
 
+// --- OUTER DUST FIELD ---
+const dustCount = 300;
+const dustPositions = new Float32Array(dustCount * 3);
+const dustColors = new Float32Array(dustCount * 3);
+
+for (let i = 0; i < dustCount; i++) {
+  const radius = 4 + Math.random() * 4;
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  dustPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+  dustPositions[i * 3 + 1] = radius * Math.cos(phi);
+  dustPositions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+
+  const c = new THREE.Color().setHSL(0, 0.8, 0.3 + Math.random() * 0.2);
+  dustColors[i * 3] = c.r;
+  dustColors[i * 3 + 1] = c.g;
+  dustColors[i * 3 + 2] = c.b;
+}
+
+const dustGeo = new THREE.BufferGeometry();
+dustGeo.setAttribute("position", new THREE.BufferAttribute(dustPositions, 3));
+dustGeo.setAttribute("color", new THREE.BufferAttribute(dustColors, 3));
+
+const dustMat = new THREE.PointsMaterial({
+  size: 0.02,
+  vertexColors: true,
+  transparent: true,
+  opacity: 0.3,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+
+const dustField = new THREE.Points(dustGeo, dustMat);
+reactor.add(dustField);
+
 /* =========================================================
-   MATRIX
+   MATRIX RAIN — ENHANCED
    ========================================================= */
 
 const matrixCanvas = document.getElementById("matrix");
 const matrixContext = matrixCanvas.getContext("2d");
 let matrixWidth = 0;
 let matrixHeight = 0;
+
+const matrixFontSize = 14;
+const matrixChars = "01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF<>{}[]|/\\=+-*&^%$#@!?";
+
 let matrixColumns = [];
-const matrixFontSize = 12;
+let matrixSpeeds = [];
+let matrixBrightness = [];
+let matrixTrails = [];
 
 function resizeMatrix() {
   matrixWidth = matrixCanvas.width = window.innerWidth;
   matrixHeight = matrixCanvas.height = window.innerHeight;
   const columns = Math.floor(matrixWidth / matrixFontSize);
-  matrixColumns = new Array(columns)
-    .fill(0)
-    .map(() => (Math.random() * matrixHeight) / matrixFontSize);
+  
+  matrixColumns = new Array(columns).fill(0).map(() => Math.random() * matrixHeight / matrixFontSize);
+  matrixSpeeds = new Array(columns).fill(0).map(() => 0.5 + Math.random() * 1.5);
+  matrixBrightness = new Array(columns).fill(0).map(() => Math.random());
+  matrixTrails = new Array(columns).fill(0).map(() => 5 + Math.floor(Math.random() * 15));
 }
 
 function drawMatrix() {
-  matrixContext.fillStyle = "rgba(0, 0, 0, 0.075)";
+  // Fade effect (creates trails)
+  matrixContext.fillStyle = "rgba(0, 0, 0, 0.06)";
   matrixContext.fillRect(0, 0, matrixWidth, matrixHeight);
-  matrixContext.font = `${matrixFontSize}px Consolas`;
+  
+  matrixContext.font = `${matrixFontSize}px 'Courier New', monospace`;
 
   for (let i = 0; i < matrixColumns.length; i++) {
-    const char = Math.random() > 0.5 ? "1" : "0";
     const x = i * matrixFontSize;
     const y = matrixColumns[i] * matrixFontSize;
-    const brightness = Math.random();
-
-    if (brightness > 0.85) {
-      matrixContext.fillStyle = "#ff5555";
-    } else if (brightness > 0.45) {
+    
+    // Random character
+    const char = matrixChars[Math.floor(Math.random() * matrixChars.length)];
+    
+    // Brightness variation
+    const brightness = matrixBrightness[i];
+    
+    // Leading character (brightest)
+    if (brightness > 0.9) {
+      matrixContext.fillStyle = "#ffffff";
+      matrixContext.shadowBlur = 15;
+      matrixContext.shadowColor = "#ff4040";
+    } else if (brightness > 0.7) {
+      matrixContext.fillStyle = "#ff6060";
+      matrixContext.shadowBlur = 10;
+      matrixContext.shadowColor = "#ff2020";
+    } else if (brightness > 0.4) {
       matrixContext.fillStyle = "#d51b1b";
+      matrixContext.shadowBlur = 5;
+      matrixContext.shadowColor = "#ff1010";
     } else {
       matrixContext.fillStyle = "#8b1010";
+      matrixContext.shadowBlur = 0;
     }
-
+    
     matrixContext.fillText(char, x, y);
-
-    if (y > matrixHeight && Math.random() > 0.975) {
+    matrixContext.shadowBlur = 0;
+    
+    // Occasional glitch effect
+    if (Math.random() < 0.001) {
+      matrixContext.fillStyle = "#ff8080";
+      matrixContext.fillRect(x, y - matrixFontSize, matrixFontSize, matrixFontSize * 3);
+    }
+    
+    // Move down
+    if (y > matrixHeight && Math.random() > 0.96) {
       matrixColumns[i] = 0;
+      matrixBrightness[i] = Math.random();
+      matrixSpeeds[i] = 0.5 + Math.random() * 1.5;
+      matrixTrails[i] = 5 + Math.floor(Math.random() * 15);
     } else {
-      matrixColumns[i] += 0.75;
+      matrixColumns[i] += matrixSpeeds[i];
     }
   }
 }
@@ -416,53 +677,173 @@ function drawMatrix() {
    ========================================================= */
 
 const clock = new THREE.Clock();
+let lastArcUpdate = 0;
 
 function animate() {
   requestAnimationFrame(animate);
   const time = performance.now() * 0.001;
 
-  reactor.rotation.y = time * 0.12;
-  reactor.rotation.x = Math.sin(time * 0.18) * 0.08;
-  armorGroup.rotation.y = -time * 0.08;
-  verticalArmor.rotation.y = time * 0.05;
-  halo.rotation.z = time * 1.8;
-  neuralCore.rotation.z = time * 0.35;
-  innerRing.rotation.z = time * 1.2;
-  secondRing.rotation.z = -time * 0.8;
-  neuralOrbit1.rotation.x = time * 0.7;
-  neuralOrbit1.rotation.y = time * 0.4;
-  neuralOrbit2.rotation.x = -time * 0.5;
-  neuralOrbit2.rotation.z = time * 0.8;
-  energyDisc.scale.setScalar(1 + Math.sin(time * 4) * 0.08);
-  beamGroup.rotation.z = -time * 0.25;
-
-  ring1.rotation.z += 0.0025;
-  ring1.rotation.x += 0.001;
-  ring2.rotation.y += 0.003;
-  ring2.rotation.z -= 0.0012;
-  ring3.rotation.x -= 0.0015;
-  ring3.rotation.y += 0.0018;
-  ring4.rotation.z += 0.0035;
-
-  const energyPulse = 1 + Math.sin(time * 2.8) * 0.055;
+  // --- REACTOR ROTATION ---
+  reactor.rotation.y = time * 0.1;
+  reactor.rotation.x = Math.sin(time * 0.15) * 0.06;
+  
+  armorGroup.rotation.y = -time * 0.06;
+  verticalArmor.rotation.y = time * 0.04;
+  
+  // --- HALO ---
+  halo.rotation.z = time * 1.5;
+  
+  // --- NEURAL CORE ---
+  neuralCore.rotation.z = time * 0.3;
+  innerRing.rotation.z = time * 1.0;
+  secondRing.rotation.z = -time * 0.7;
+  thirdRing.rotation.x = time * 0.5;
+  thirdRing.rotation.y = time * 0.3;
+  
+  // --- NEURAL ORBITS ---
+  neuralOrbit1.rotation.x = time * 0.6;
+  neuralOrbit1.rotation.y = time * 0.35;
+  neuralOrbit2.rotation.x = -time * 0.45;
+  neuralOrbit2.rotation.z = time * 0.7;
+  neuralOrbit3.rotation.y = time * 0.55;
+  neuralOrbit3.rotation.z = -time * 0.4;
+  
+  // --- ENERGY DISC ---
+  energyDisc.scale.setScalar(1 + Math.sin(time * 3.5) * 0.1);
+  
+  // --- BEAMS ---
+  beamGroup.rotation.z = -time * 0.2;
+  beamGroup.children.forEach((beam, i) => {
+    beam.material.opacity = 0.3 + Math.sin(time * 2 + i * 0.5) * 0.2;
+  });
+  
+  // --- NEURAL NODES (pulsing) ---
+  neuralNodes.forEach((node, i) => {
+    const pulse = 0.8 + Math.sin(time * 3 + i * 0.3) * 0.2;
+    node.scale.setScalar(pulse);
+    node.material.opacity = 0.7 + Math.sin(time * 2.5 + i * 0.4) * 0.3;
+    if (node.userData.glow) {
+      node.userData.glow.scale.setScalar(pulse * 1.5);
+      node.userData.glow.material.opacity = 0.2 + Math.sin(time * 2 + i * 0.5) * 0.15;
+    }
+  });
+  
+  // --- NEURAL CONNECTIONS (pulsing opacity) ---
+  neuralConnections.forEach((conn, i) => {
+    conn.line.material.opacity = 0.15 + Math.sin(time * 2 + i * 0.2) * 0.1;
+  });
+  
+  // --- ENERGY ARCS (regenerate periodically) ---
+  if (time - lastArcUpdate > 2) {
+    lastArcUpdate = time;
+    arcGroup.children.forEach((arc, i) => {
+      const angle1 = Math.random() * Math.PI * 2;
+      const angle2 = angle1 + Math.PI * (0.5 + Math.random());
+      const r = 1.5;
+      const start = new THREE.Vector3(Math.cos(angle1) * r, Math.sin(angle1) * r, (Math.random() - 0.5) * 0.5);
+      const end = new THREE.Vector3(Math.cos(angle2) * r, Math.sin(angle2) * r, (Math.random() - 0.5) * 0.5);
+      
+      const points = [];
+      for (let j = 0; j <= 20; j++) {
+        const t = j / 20;
+        const x = start.x + (end.x - start.x) * t + (Math.random() - 0.5) * 0.3;
+        const y = start.y + (end.y - start.y) * t + (Math.random() - 0.5) * 0.3;
+        const z = start.z + (end.z - start.z) * t + (Math.random() - 0.5) * 0.3;
+        points.push(new THREE.Vector3(x, y, z));
+      }
+      
+      arc.geometry.dispose();
+      arc.geometry = new THREE.BufferGeometry().setFromPoints(points);
+    });
+  }
+  
+  // Arc opacity pulsing
+  arcGroup.children.forEach((arc, i) => {
+    arc.material.opacity = 0.3 + Math.sin(time * 4 + i) * 0.3;
+  });
+  
+  // --- DATA RING ---
+  dataRingGroup.rotation.z = time * 0.15;
+  dataRingGroup.children.forEach((child, i) => {
+    if (i > 0) { // Skip the ring itself, only animate markers
+      child.material.opacity = 0.3 + Math.sin(time * 3 + i * 0.5) * 0.3;
+    }
+  });
+  
+  // --- ORBITAL RINGS ---
+  ring1.rotation.z += 0.002;
+  ring1.rotation.x += 0.0008;
+  ring2.rotation.y += 0.0025;
+  ring2.rotation.z -= 0.001;
+  ring3.rotation.x -= 0.0012;
+  ring3.rotation.y += 0.0015;
+  ring4.rotation.z += 0.003;
+  ring5.rotation.x += 0.001;
+  ring5.rotation.y += 0.002;
+  ring6.rotation.z -= 0.0025;
+  
+  // --- PULSING EFFECTS ---
+  const energyPulse = 1 + Math.sin(time * 2.5) * 0.06;
   energySphere.scale.setScalar(energyPulse);
-
-  const corePulse = 1 + Math.sin(time * 4.5) * 0.12;
+  
+  const corePulse = 1 + Math.sin(time * 4) * 0.15;
   core.scale.setScalar(corePulse);
-
-  const glowPulse = 1 + Math.sin(time * 3.2) * 0.16;
+  
+  const glowPulse = 1 + Math.sin(time * 3) * 0.18;
   coreGlow.scale.setScalar(glowPulse);
-
-  const whitePulse = 1 + Math.sin(time * 4.5) * 0.1;
+  
+  const whitePulse = 1 + Math.sin(time * 4) * 0.12;
   whiteGlow.scale.setScalar(whitePulse);
-  whiteGlowMaterial.opacity = 0.22 + Math.sin(time * 4.5) * 0.06;
-
-  reactorLight.intensity = 9 + Math.sin(time * 4.5) * 3;
-
-  reactorParticles.rotation.y = time * 0.025;
-  reactorParticles.rotation.x = Math.sin(time * 0.15) * 0.15;
-
+  whiteGlowMaterial.opacity = 0.25 + Math.sin(time * 4) * 0.08;
+  
+  // --- LIGHTS ---
+  reactorLight.intensity = 10 + Math.sin(time * 4) * 3;
+  accentLight1.intensity = 3 + Math.sin(time * 2.5) * 1.5;
+  accentLight2.intensity = 2.5 + Math.sin(time * 3) * 1.2;
+  
+  // --- FLOWING PARTICLES ---
+  const positions = reactorParticles.geometry.attributes.position.array;
+  for (let i = 0; i < particleCount; i++) {
+    positions[i * 3] += particleVelocities[i * 3];
+    positions[i * 3 + 1] += particleVelocities[i * 3 + 1];
+    positions[i * 3 + 2] += particleVelocities[i * 3 + 2];
+    
+    // Reset when too close to center
+    const dist = Math.sqrt(
+      positions[i * 3] ** 2 + 
+      positions[i * 3 + 1] ** 2 + 
+      positions[i * 3 + 2] ** 2
+    );
+    
+    if (dist < 0.5) {
+      const radius = 2.5 + Math.random() * 3.0;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = radius * Math.cos(phi);
+      positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+      
+      const speed = 0.005 + Math.random() * 0.01;
+      particleVelocities[i * 3] = -positions[i * 3] * speed;
+      particleVelocities[i * 3 + 1] = -positions[i * 3 + 1] * speed;
+      particleVelocities[i * 3 + 2] = -positions[i * 3 + 2] * speed;
+    }
+  }
+  reactorParticles.geometry.attributes.position.needsUpdate = true;
+  
+  // --- DUST FIELD ---
+  dustField.rotation.y = time * 0.02;
+  dustField.rotation.x = Math.sin(time * 0.1) * 0.1;
+  
+  // --- CAMERA PARALLAX ---
+  camera.position.x = Math.sin(time * 0.1) * 0.5;
+  camera.position.y = Math.cos(time * 0.08) * 0.3;
+  camera.lookAt(0, 0, 0);
+  
+  // --- MATRIX RAIN ---
   drawMatrix();
+  
+  // --- RENDER ---
   composer.render();
 }
 
