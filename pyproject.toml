@@ -1,0 +1,26 @@
+[project]
+name = "kira-assistant"
+version = "2.0.0"
+description = "KIRA — a fully local, voice-controlled AI computer agent for Windows (Ollama + Vosk + vision)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "zak001-afk" }]
+keywords = ["voice-assistant", "ollama", "automation", "jarvis", "local-ai"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+# Pyflakes + pycodestyle errors that indicate real problems.
+# Legacy files predate strict linting, so style-only rules stay off for now.
+select = ["E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["F401", "F811"]

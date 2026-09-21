@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: pytest (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      # Only the test tooling is installed: heavy runtime deps
+      # (audio, display, ollama) are stubbed by tests/conftest.py.
+      - run: python -m pip install --upgrade pip && pip install pytest ruff
+      - name: Ruff
+        run: ruff check .
+      - name: Compile check
+        run: python -m compileall dev.py kira_memory.py kira_voice_agent.py main_window.py scripts tests
+      - name: Tests
+        run: pytest
+
+  deps:
+    name: requirements resolution (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --dry-run -r requirements.txt

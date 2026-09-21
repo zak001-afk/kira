@@ -12,12 +12,21 @@ env/
 build/
 dist/
 
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
 # KIRA local data
 kira_memory.db
 *.db
 
-# Logs
+# KIRA runtime artifacts
 *.log
+kira_screenshot.png
+kira_vision_*.png
+models/
 
 # Environment / secrets
 .env

@@ -1,0 +1,9 @@
+# ── KIRA development dependencies ───────────────────────────────────────────
+# The heavy runtime dependencies are stubbed in tests (no audio/display needed),
+# so the dev environment only needs the tools below. Install the runtime
+# dependencies on a real Windows machine with:  pip install -r requirements.txt
+-r requirements.txt
+
+pytest>=8.2.0
+ruff>=0.6.0
+pyinstaller>=6.10.0
