@@ -101,32 +101,60 @@ def _try_builtin_response(text):
     }
     
     if lower in greetings:
-        return "Hello sir. How can I help you?"
+        # Vary the greeting to sound more natural
+        import random
+        greetings_list = [
+            "Hello sir.",
+            "Hi there.",
+            "Hey, good to see you.",
+            "Hello.",
+            "Hi sir, what's on your mind?"
+        ]
+        return random.choice(greetings_list)
     
     if lower in {"who are you", "what are you", "what is kira"}:
-        return "I am KIRA, your local AI computer agent. I can control your computer, answer questions, manage tasks, and much more."
+        return "I'm KIRA - your local AI assistant. I can help with your computer, search the web, manage tasks, answer questions, and learn new things over time."
     
     if lower in {"what can you do", "help", "commands"}:
         return (
-            "I can open applications, search the web, control your computer, "
-            "manage files, set reminders and timers, take screenshots, "
-            "analyze your screen, control volume and media, "
-            "and answer questions using my local AI engine."
+            "I can do quite a bit actually. I control your computer - open apps, manage files, take screenshots. "
+            "I search the web and learn from it, so I get smarter over time. I handle tasks and reminders, "
+            "control media and volume, and I'm always ready for a conversation or to answer questions."
         )
     
     if lower in {"what time is it", "time", "current time"}:
         from datetime import datetime
-        return f"The current time is {datetime.now().strftime('%H:%M')}."
+        current_time = datetime.now().strftime('%H:%M')
+        return f"It's {current_time}."
     
     if lower in {"what is the date", "today's date", "date", "what day is it"}:
         from datetime import datetime
-        return f"Today is {datetime.now().strftime('%A, %B %d, %Y')}."
+        current_date = datetime.now().strftime('%A, %B %d, %Y')
+        return f"Today is {current_date}."
     
     if lower in {"thank you", "thanks", "merci"}:
-        return "You're welcome, sir."
+        # Vary the response
+        import random
+        thanks_list = [
+            "You're welcome.",
+            "No problem.",
+            "Anytime.",
+            "Happy to help.",
+            "Of course."
+        ]
+        return random.choice(thanks_list)
     
-        if lower in {"goodbye", "bye", "see you", "exit", "quit"}:
-            return "Goodbye, sir. I'll be here when you need me."
+    if lower in {"goodbye", "bye", "see you", "exit", "quit"}:
+        # Vary the farewell
+        import random
+        farewell_list = [
+            "Goodbye, sir.",
+            "See you later.",
+            "Take care.",
+            "Until next time.",
+            "Goodbye."
+        ]
+        return random.choice(farewell_list)
         
         # Check if it's a web search request
         search_keywords = ["search for", "search", "look up", "find", "google", "what is", "who is", "where is", "when did", "how to", "latest", "news about", "current", "recent"]
