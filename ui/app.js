@@ -106,7 +106,9 @@ function addMessage(role, text, kind = "message") {
     minute: "2-digit",
   });
   meta.innerHTML = `${ROLE_LABEL[role] || "KIRA"}&nbsp; // &nbsp;<span class="msg-time">${time}</span>`;
-  if (kind === "mind") meta.innerHTML = `KIRA&nbsp;//&nbsp;INNER MONOLOGUE&nbsp;//&nbsp;<span class="msg-time">${time}</span>`;
+  if (kind === "mind" && role === "kira") {
+    meta.innerHTML = `KIRA&nbsp;//&nbsp;INNER MONOLOGUE&nbsp;//&nbsp;<span class="msg-time">${time}</span>`;
+  }
 
   const body = document.createElement("div");
   body.className = "msg-text";
@@ -323,7 +325,7 @@ async function answerConfirmation(confirmed) {
   try {
     const data = await apiCommand("", confirmed);
     renderResult({ ...data, needs_confirmation: false });
-    addMessage("you", confirmed ? "confirmed" : "cancelled", "mind");
+    addMessage("you", confirmed ? "confirmed" : "cancelled", "note");
   } catch (error) {
     addMessage("kira", `The confirmation failed, sir — ${error}`, "failed");
   } finally {
