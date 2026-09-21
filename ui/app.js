@@ -1,215 +1,178 @@
-/* ═══════════════════════════════════════════════════════════════
-   KIRA — Holographic Interface
-   Main Application Logic
-   ═══════════════════════════════════════════════════════════════ */
-
 // ═══════════════════════════════════════════════════════════════
-// Particle Background Animation
+// KIRA 3D Neural Interface - Application Logic
 // ═══════════════════════════════════════════════════════════════
 
-const canvas = document.getElementById('particles');
-const ctx = canvas.getContext('2d');
+const API_BASE = 'http://localhost:8765';
+let currentAudio = null;
+let isMuted = false;
 
-let particles = [];
-const particleCount = 80;
+// ═══════════════════════════════════════════════════════════════
+// Initialization
+// ═══════════════════════════════════════════════════════════════
 
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+document.addEventListener('DOMContentLoaded', () => {
+  initClock();
+  initEventListeners();
+  startSystemMonitoring();
+  updateTasks();
+  
+  // Set boot time
+  const bootTime = document.getElementById('boot-time');
+  if (bootTime) {
+    bootTime.textContent = new Date().toLocaleTimeString('en-US', { 
+      hour12: false, 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit' 
+    });
+  }
+  
+  console.log('[KIRA] 3D Neural Interface initialized');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Clock
+// ═══════════════════════════════════════════════════════════════
+
+function initClock() {
+  function updateClock() {
+    const now = new Date();
+    const timeEl = document.getElementById('time');
+    const dateEl = document.getElementById('date');
+    
+    if (timeEl) {
+      timeEl.textContent = now.toLocaleTimeString('en-US', { hour12: false });
+    }
+    
+    if (dateEl) {
+      dateEl.textContent = now.toLocaleDateString('en-US', { 
+        weekday: 'short', 
+        month: 'short', 
+        day: 'numeric',
+        year: 'numeric'
+      });
+    }
+  }
+  
+  updateClock();
+  setInterval(updateClock, 1000);
 }
 
-class Particle {
-  constructor() {
-    this.reset();
+// ═══════════════════════════════════════════════════════════════
+// Event Listeners
+// ═══════════════════════════════════════════════════════════════
+
+function initEventListeners() {
+  // Send button
+  const sendBtn = document.getElementById('send');
+  if (sendBtn) {
+    sendBtn.addEventListener('click', sendCommand);
   }
-
-  reset() {
-    this.x = Math.random() * canvas.width;
-    this.y = Math.random() * canvas.height;
-    this.size = Math.random() * 2 + 0.5;
-    this.speedX = (Math.random() - 0.5) * 0.5;
-    this.speedY = (Math.random() - 0.5) * 0.5;
-    this.opacity = Math.random() * 0.5 + 0.2;
-  }
-
-  update() {
-    this.x += this.speedX;
-    this.y += this.speedY;
-
-    if (this.x < 0 || this.x > canvas.width) this.speedX *= -1;
-    if (this.y < 0 || this.y > canvas.height) this.speedY *= -1;
-  }
-
-  draw() {
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(0, 212, 255, ${this.opacity})`;
-    ctx.fill();
-  }
-}
-
-function initParticles() {
-  particles = [];
-  for (let i = 0; i < particleCount; i++) {
-    particles.push(new Particle());
-  }
-}
-
-function connectParticles() {
-  for (let i = 0; i < particles.length; i++) {
-    for (let j = i + 1; j < particles.length; j++) {
-      const dx = particles[i].x - particles[j].x;
-      const dy = particles[i].y - particles[j].y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance < 150) {
-        const opacity = (1 - distance / 150) * 0.2;
-        ctx.beginPath();
-        ctx.strokeStyle = `rgba(0, 212, 255, ${opacity})`;
-        ctx.lineWidth = 0.5;
-        ctx.moveTo(particles[i].x, particles[i].y);
-        ctx.lineTo(particles[j].x, particles[j].y);
-        ctx.stroke();
+  
+  // Enter key
+  const commandInput = document.getElementById('command');
+  if (commandInput) {
+    commandInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        sendCommand();
       }
-    }
+    });
+  }
+  
+  // Clear chat
+  const clearBtn = document.getElementById('clear-chat');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', clearConversation);
+  }
+  
+  // Mute button
+  const muteBtn = document.getElementById('mute');
+  if (muteBtn) {
+    muteBtn.addEventListener('click', toggleMute);
+  }
+  
+  // Microphone button
+  const micBtn = document.getElementById('mic');
+  if (micBtn) {
+    micBtn.addEventListener('click', toggleVoiceInput);
   }
 }
 
-function animateParticles() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+// ═══════════════════════════════════════════════════════════════
+// Command Processing
+// ═══════════════════════════════════════════════════════════════
+
+async function sendCommand() {
+  const input = document.getElementById('command');
+  const text = input.value.trim();
   
-  particles.forEach(particle => {
-    particle.update();
-    particle.draw();
-  });
+  if (!text) return;
   
-  connectParticles();
-  requestAnimationFrame(animateParticles);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Clock & Date Display
-// ═══════════════════════════════════════════════════════════════
-
-function updateClock() {
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
-  const dateStr = now.toLocaleDateString('en-US', { 
-    weekday: 'short', 
-    month: 'short', 
-    day: 'numeric' 
-  });
+  addMessage('USER', text, true);
+  input.value = '';
   
-  document.getElementById('time').textContent = timeStr;
-  document.getElementById('date').textContent = dateStr;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Boot Time Display
-// ═══════════════════════════════════════════════════════════════
-
-function setBootTime() {
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString('en-US', { 
-    hour: '2-digit', 
-    minute: '2-digit',
-    hour12: false 
-  });
-  document.getElementById('boot-time').textContent = timeStr;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// System Telemetry
-// ═══════════════════════════════════════════════════════════════
-
-async function updateSystemTelemetry() {
+  setActivity('thinking');
+  
   try {
-    const response = await fetch('http://localhost:8765/api/system');
+    const response = await fetch(`${API_BASE}/api/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    
     const data = await response.json();
     
-    if (data.cpu !== undefined) {
-      document.getElementById('cpu').textContent = `${data.cpu}%`;
-      document.getElementById('cpu-bar').style.width = `${data.cpu}%`;
+    if (data.error) {
+      addMessage('KIRA', `Error: ${data.error}`);
+    } else if (data.response) {
+      addMessage('KIRA', data.response);
+      if (!isMuted) {
+        speakText(data.response);
+      }
+    } else if (data.action) {
+      addMessage('KIRA', `Action executed: ${data.action}`);
     }
     
-    if (data.memory !== undefined) {
-      document.getElementById('memory').textContent = `${data.memory}%`;
-      document.getElementById('memory-bar').style.width = `${data.memory}%`;
+    setActivity('active');
+    
+    // Refresh tasks if needed
+    if (text.toLowerCase().includes('task') || text.toLowerCase().includes('remind')) {
+      setTimeout(updateTasks, 500);
     }
     
-    if (data.gpu) {
-      document.getElementById('gpu').textContent = data.gpu;
-    }
   } catch (error) {
-    console.error('Failed to fetch system telemetry:', error);
+    console.error('[KIRA] Command error:', error);
+    addMessage('KIRA', 'I apologize, sir. I encountered an error processing your request.');
+    setActivity('active');
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Task Management
+// Quick Commands
 // ═══════════════════════════════════════════════════════════════
 
-async function updateTasks() {
-  try {
-    const response = await fetch('http://localhost:8765/api/tasks');
-    const data = await response.json();
-    
-    const tasksList = document.getElementById('tasks-list');
-    
-    if (data.tasks && data.tasks.length > 0) {
-      tasksList.innerHTML = data.tasks.map(task => `
-        <div class="task-item">
-          <div class="task-bullet"></div>
-          <span>${task}</span>
-        </div>
-      `).join('');
-    } else {
-      tasksList.innerHTML = '<div class="task-empty">No pending tasks</div>';
-    }
-  } catch (error) {
-    console.error('Failed to fetch tasks:', error);
+function quickCmd(cmd) {
+  const input = document.getElementById('command');
+  if (input) {
+    input.value = cmd;
+    sendCommand();
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Activity Indicator
-// ═══════════════════════════════════════════════════════════════
-
-function setActivity(state) {
-  const dot = document.getElementById('activity-dot');
-  const label = document.getElementById('activity');
-  
-  dot.className = 'indicator-dot';
-  
-  switch(state) {
-    case 'thinking':
-      dot.classList.add('thinking');
-      label.textContent = 'Thinking';
-      break;
-    case 'speaking':
-      dot.classList.add('speaking');
-      label.textContent = 'Speaking';
-      break;
-    case 'active':
-      dot.classList.add('active');
-      label.textContent = 'Active';
-      break;
-    default:
-      label.textContent = 'Standby';
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Conversation Management
+// Conversation
 // ═══════════════════════════════════════════════════════════════
 
 function addMessage(sender, text, isUser = false) {
   const conversation = document.getElementById('conversation');
+  if (!conversation) return;
+  
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-US', { 
+    hour12: false, 
     hour: '2-digit', 
-    minute: '2-digit',
-    hour12: false 
+    minute: '2-digit', 
+    second: '2-digit' 
   });
   
   const messageBlock = document.createElement('div');
@@ -228,116 +191,62 @@ function addMessage(sender, text, isUser = false) {
 
 function clearConversation() {
   const conversation = document.getElementById('conversation');
-  conversation.innerHTML = '';
-  addMessage('KIRA', 'Conversation cleared, sir. How may I assist you?');
+  if (conversation) {
+    conversation.innerHTML = '';
+    addMessage('KIRA', 'Conversation cleared, sir. How may I assist you?');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Command Processing
+// Activity Indicator
 // ═══════════════════════════════════════════════════════════════
 
-let speechEnabled = true;
-let recognition = null;
-let currentAudio = null;
-
-async function sendCommand() {
-  const input = document.getElementById('command');
-  const text = input.value.trim();
+function setActivity(state) {
+  const indicator = document.getElementById('activity-indicator');
+  const activityText = document.getElementById('activity');
   
-  if (!text) return;
+  if (!indicator || !activityText) return;
   
-  addMessage('You', text, true);
-  input.value = '';
+  indicator.className = 'activity-indicator';
   
-  setActivity('thinking');
-  
-  try {
-    const response = await fetch('http://localhost:8765/api/command', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
-    });
-    
-    const data = await response.json();
-    
-    if (data.response) {
-      addMessage('KIRA', data.response);
-      
-      if (speechEnabled && data.response) {
-        speakText(data.response);
+  switch(state) {
+    case 'thinking':
+      indicator.classList.add('thinking');
+      activityText.textContent = 'PROCESSING';
+      if (typeof setSceneActivity === 'function') {
+        setSceneActivity('thinking');
       }
-    }
-    
-    setActivity('standby');
-    
-    // Refresh tasks if command might have affected them
-    if (text.toLowerCase().includes('task') || text.toLowerCase().includes('remind')) {
-      setTimeout(updateTasks, 500);
-    }
-  } catch (error) {
-    console.error('Command failed:', error);
-    addMessage('KIRA', 'I apologize, sir. I encountered an error processing your request.');
-    setActivity('standby');
+      break;
+    case 'speaking':
+      indicator.classList.add('speaking');
+      activityText.textContent = 'SPEAKING';
+      if (typeof setSceneActivity === 'function') {
+        setSceneActivity('speaking');
+      }
+      break;
+    case 'active':
+      indicator.classList.add('active');
+      activityText.textContent = 'ACTIVE';
+      if (typeof setSceneActivity === 'function') {
+        setSceneActivity('active');
+      }
+      break;
+    default:
+      activityText.textContent = 'STANDBY';
+      if (typeof setSceneActivity === 'function') {
+        setSceneActivity('standby');
+      }
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Voice Input (Speech Recognition)
-// ═══════════════════════════════════════════════════════════════
-
-function initSpeechRecognition() {
-  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
-    
-    recognition.onstart = () => {
-      document.getElementById('mic').classList.add('listening');
-      setActivity('active');
-    };
-    
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      document.getElementById('command').value = transcript;
-      sendCommand();
-    };
-    
-    recognition.onerror = (event) => {
-      console.error('Speech recognition error:', event.error);
-      document.getElementById('mic').classList.remove('listening');
-      setActivity('standby');
-    };
-    
-    recognition.onend = () => {
-      document.getElementById('mic').classList.remove('listening');
-      setActivity('standby');
-    };
-  }
-}
-
-function toggleMicrophone() {
-  if (!recognition) {
-    addMessage('KIRA', 'I apologize, sir. Voice input is not supported in your browser.');
-    return;
-  }
-  
-  if (document.getElementById('mic').classList.contains('listening')) {
-    recognition.stop();
-  } else {
-    recognition.start();
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Voice Output (Text-to-Speech)
+// Text-to-Speech
 // ═══════════════════════════════════════════════════════════════
 
 async function speakText(text) {
-  if (!speechEnabled) return;
+  if (isMuted || !text) return;
   
-  // Stop any current speech
+  // Stop current audio
   if (currentAudio) {
     currentAudio.pause();
     currentAudio = null;
@@ -346,7 +255,7 @@ async function speakText(text) {
   setActivity('speaking');
   
   try {
-    const response = await fetch('http://localhost:8765/api/tts', {
+    const response = await fetch(`${API_BASE}/api/tts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text })
@@ -355,125 +264,192 @@ async function speakText(text) {
     const data = await response.json();
     
     if (data.audio) {
-      const audioBlob = new Blob([Uint8Array.from(atob(data.audio), c => c.charCodeAt(0))], { type: 'audio/mp3' });
+      const audioBlob = new Blob(
+        [Uint8Array.from(atob(data.audio), c => c.charCodeAt(0))],
+        { type: 'audio/mp3' }
+      );
       const audioUrl = URL.createObjectURL(audioBlob);
       
       currentAudio = new Audio(audioUrl);
       
       currentAudio.onended = () => {
-        setActivity('standby');
+        setActivity('active');
         URL.revokeObjectURL(audioUrl);
         currentAudio = null;
       };
       
       currentAudio.onerror = () => {
-        console.error('Audio playback error');
-        setActivity('standby');
+        console.error('[KIRA] Audio playback error');
+        setActivity('active');
         URL.revokeObjectURL(audioUrl);
         currentAudio = null;
       };
       
       await currentAudio.play();
     } else {
-      setActivity('standby');
+      setActivity('active');
     }
   } catch (error) {
-    console.error('TTS failed:', error);
-    setActivity('standby');
+    console.error('[KIRA] TTS error:', error);
+    setActivity('active');
   }
 }
 
 function toggleMute() {
-  speechEnabled = !speechEnabled;
+  isMuted = !isMuted;
   const muteBtn = document.getElementById('mute');
   
-  if (speechEnabled) {
-    muteBtn.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-      </svg>
-    `;
-    muteBtn.title = 'Mute voice';
-  } else {
-    muteBtn.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-        <line x1="23" y1="9" x2="17" y2="15"></line>
-        <line x1="17" y1="9" x2="23" y2="15"></line>
-      </svg>
-    `;
-    muteBtn.title = 'Unmute voice';
-    
-    if (currentAudio) {
-      currentAudio.pause();
-      currentAudio = null;
-      setActivity('standby');
+  if (muteBtn) {
+    if (isMuted) {
+      muteBtn.innerHTML = `
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <line x1="23" y1="9" x2="17" y2="15"></line>
+          <line x1="17" y1="9" x2="23" y2="15"></line>
+        </svg>
+      `;
+      muteBtn.title = 'Unmute voice';
+      
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+        setActivity('active');
+      }
+    } else {
+      muteBtn.innerHTML = `
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        </svg>
+      `;
+      muteBtn.title = 'Mute voice';
     }
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Quick Commands
+// Voice Input
 // ═══════════════════════════════════════════════════════════════
 
-function quickCmd(command) {
-  document.getElementById('command').value = command;
-  sendCommand();
-}
+let recognition = null;
+let isListening = false;
 
-// ═══════════════════════════════════════════════════════════════
-// Event Listeners
-// ═══════════════════════════════════════════════════════════════
-
-document.getElementById('send').addEventListener('click', sendCommand);
-
-document.getElementById('command').addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') {
-    sendCommand();
+function toggleVoiceInput() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    addMessage('KIRA', 'I apologize, sir. Voice input is not supported in your browser.');
+    return;
   }
-});
-
-document.getElementById('mic').addEventListener('click', toggleMicrophone);
-document.getElementById('mute').addEventListener('click', toggleMute);
-document.getElementById('clear-chat').addEventListener('click', clearConversation);
-
-window.addEventListener('resize', () => {
-  resizeCanvas();
-  initParticles();
-});
-
-// ═══════════════════════════════════════════════════════════════
-// Initialization
-// ═══════════════════════════════════════════════════════════════
-
-function init() {
-  // Initialize particle background
-  resizeCanvas();
-  initParticles();
-  animateParticles();
   
-  // Initialize clock
-  updateClock();
-  setInterval(updateClock, 1000);
+  if (!recognition) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+    
+    recognition.onstart = () => {
+      isListening = true;
+      const micBtn = document.getElementById('mic');
+      if (micBtn) {
+        micBtn.style.background = 'var(--danger)';
+        micBtn.style.borderColor = 'var(--danger)';
+      }
+      setActivity('active');
+    };
+    
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      const input = document.getElementById('command');
+      if (input) {
+        input.value = transcript;
+        sendCommand();
+      }
+    };
+    
+    recognition.onerror = (event) => {
+      console.error('[KIRA] Voice recognition error:', event.error);
+      addMessage('KIRA', 'I apologize, sir. I encountered an error with voice recognition.');
+    };
+    
+    recognition.onend = () => {
+      isListening = false;
+      const micBtn = document.getElementById('mic');
+      if (micBtn) {
+        micBtn.style.background = '';
+        micBtn.style.borderColor = '';
+      }
+      setActivity('active');
+    };
+  }
   
-  // Set boot time
-  setBootTime();
-  
-  // Initialize speech recognition
-  initSpeechRecognition();
-  
-  // Update system telemetry every 3 seconds
-  updateSystemTelemetry();
-  setInterval(updateSystemTelemetry, 3000);
-  
-  // Update tasks every 10 seconds
-  updateTasks();
-  setInterval(updateTasks, 10000);
-  
-  // Focus command input
-  document.getElementById('command').focus();
+  if (isListening) {
+    recognition.stop();
+  } else {
+    recognition.start();
+  }
 }
 
-// Start the application
-init();
+// ═══════════════════════════════════════════════════════════════
+// System Monitoring
+// ═══════════════════════════════════════════════════════════════
+
+function startSystemMonitoring() {
+  updateSystemInfo();
+  setInterval(updateSystemInfo, 3000);
+}
+
+async function updateSystemInfo() {
+  try {
+    const response = await fetch(`${API_BASE}/api/system`);
+    const data = await response.json();
+    
+    if (data.cpu !== undefined) {
+      const cpuEl = document.getElementById('cpu');
+      const cpuBar = document.getElementById('cpu-bar');
+      if (cpuEl) cpuEl.textContent = `${data.cpu}%`;
+      if (cpuBar) cpuBar.style.width = `${data.cpu}%`;
+    }
+    
+    if (data.memory !== undefined) {
+      const memEl = document.getElementById('memory');
+      const memBar = document.getElementById('memory-bar');
+      if (memEl) memEl.textContent = `${data.memory}%`;
+      if (memBar) memBar.style.width = `${data.memory}%`;
+    }
+    
+    if (data.gpu !== undefined) {
+      const gpuEl = document.getElementById('gpu');
+      if (gpuEl) gpuEl.textContent = data.gpu || 'N/A';
+    }
+    
+  } catch (error) {
+    console.error('[KIRA] System monitoring error:', error);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Tasks
+// ═══════════════════════════════════════════════════════════════
+
+async function updateTasks() {
+  try {
+    const response = await fetch(`${API_BASE}/api/tasks`);
+    const data = await response.json();
+    
+    const tasksList = document.getElementById('tasks-list');
+    if (!tasksList) return;
+    
+    if (data.tasks && data.tasks.length > 0) {
+      tasksList.innerHTML = data.tasks.map(task => `
+        <div class="task-item">
+          <div class="task-bullet"></div>
+          <span>${task}</span>
+        </div>
+      `).join('');
+    } else {
+      tasksList.innerHTML = '<div class="task-empty">No pending tasks</div>';
+    }
+  } catch (error) {
+    console.error('[KIRA] Tasks error:', error);
+  }
+}

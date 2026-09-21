@@ -3,174 +3,135 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>KIRA — Holographic Interface</title>
+    <title>KIRA — 3D Neural Interface</title>
     <link rel="stylesheet" href="./style.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   </head>
   <body>
-    <!-- Animated Background -->
-    <div id="bg-container">
-      <canvas id="particles"></canvas>
-      <div class="grid-overlay"></div>
-    </div>
+    <!-- 3D Canvas -->
+    <canvas id="scene"></canvas>
 
-    <!-- Main Interface -->
-    <main id="interface">
-      <!-- Header -->
-      <header class="header">
-        <div class="header-left">
-          <div class="logo">
-            <div class="logo-icon">
-              <div class="logo-ring"></div>
-              <div class="logo-core"></div>
-            </div>
-            <div class="logo-text">
-              <h1>KIRA</h1>
-              <span class="subtitle">Neural Intelligence System</span>
-            </div>
+    <!-- HUD Overlay -->
+    <div id="hud">
+      <!-- Top Bar -->
+      <div class="top-bar">
+        <div class="logo-section">
+          <div class="logo-hex">
+            <svg viewBox="0 0 100 100" class="hex-bg">
+              <polygon points="50,5 95,27.5 95,72.5 50,95 5,72.5 5,27.5" />
+            </svg>
+            <span class="logo-text">K</span>
+          </div>
+          <div class="logo-info">
+            <h1>KIRA</h1>
+            <span class="version">v8.1 Neural Core</span>
           </div>
         </div>
-        
-        <div class="header-center">
-          <div class="status-indicator">
-            <div class="status-dot active"></div>
-            <span id="status-text">Online</span>
+
+        <div class="status-section">
+          <div class="status-badge online">
+            <div class="status-dot"></div>
+            <span>ONLINE</span>
           </div>
-        </div>
-        
-        <div class="header-right">
           <div class="time-display">
-            <span id="time">00:00:00</span>
-            <span id="date">Loading...</span>
+            <div class="time" id="time">00:00:00</div>
+            <div class="date" id="date">Loading...</div>
           </div>
         </div>
-      </header>
-
-      <!-- Main Content Grid -->
-      <div class="content-grid">
-        <!-- Left Panel: Conversation -->
-        <section class="panel conversation-panel">
-          <div class="panel-header">
-            <h2>Conversation</h2>
-            <button class="btn-icon" id="clear-chat" title="Clear conversation">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
-            </button>
-          </div>
-          
-          <div class="conversation" id="conversation">
-            <div class="message-block">
-              <div class="message-meta">
-                <span class="sender kira">KIRA</span>
-                <span class="timestamp" id="boot-time"></span>
-              </div>
-              <div class="message">Good day, sir. All systems are operational and at your service.</div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Center Panel: Core Visualization -->
-        <section class="panel core-panel">
-          <div class="core-visualization">
-            <div class="core-orb">
-              <div class="orb-ring ring-1"></div>
-              <div class="orb-ring ring-2"></div>
-              <div class="orb-ring ring-3"></div>
-              <div class="orb-core"></div>
-              <div class="orb-glow"></div>
-            </div>
-            
-            <div class="core-status">
-              <div class="status-label">
-                <span class="label">Activity</span>
-                <span class="value" id="activity">Standby</span>
-              </div>
-              <div class="activity-indicator">
-                <div class="indicator-dot" id="activity-dot"></div>
-                <div class="indicator-pulse"></div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Right Panel: System Info -->
-        <section class="panel system-panel">
-          <div class="panel-header">
-            <h2>System Status</h2>
-          </div>
-          
-          <div class="system-info">
-            <div class="info-group">
-              <h3>Performance</h3>
-              <div class="metric">
-                <div class="metric-header">
-                  <span class="metric-label">CPU</span>
-                  <span class="metric-value" id="cpu">0%</span>
-                </div>
-                <div class="metric-bar">
-                  <div class="metric-fill" id="cpu-bar" style="width: 0%"></div>
-                </div>
-              </div>
-              
-              <div class="metric">
-                <div class="metric-header">
-                  <span class="metric-label">Memory</span>
-                  <span class="metric-value" id="memory">0%</span>
-                </div>
-                <div class="metric-bar">
-                  <div class="metric-fill" id="memory-bar" style="width: 0%"></div>
-                </div>
-              </div>
-              
-              <div class="metric">
-                <div class="metric-header">
-                  <span class="metric-label">GPU</span>
-                  <span class="metric-value" id="gpu">N/A</span>
-                </div>
-              </div>
-            </div>
-            
-            <div class="info-group">
-              <h3>Quick Actions</h3>
-              <div class="quick-actions">
-                <button class="action-btn" onclick="quickCmd('open chrome')">
-                  <span class="action-icon">🌐</span>
-                  <span class="action-label">Browser</span>
-                </button>
-                <button class="action-btn" onclick="quickCmd('search for')">
-                  <span class="action-icon">🔍</span>
-                  <span class="action-label">Search</span>
-                </button>
-                <button class="action-btn" onclick="quickCmd('learn about')">
-                  <span class="action-icon">📚</span>
-                  <span class="action-label">Learn</span>
-                </button>
-                <button class="action-btn" onclick="quickCmd('list tasks')">
-                  <span class="action-icon">✓</span>
-                  <span class="action-label">Tasks</span>
-                </button>
-              </div>
-            </div>
-            
-            <div class="info-group">
-              <h3>Tasks</h3>
-              <div class="tasks-list" id="tasks-list">
-                <div class="task-empty">No pending tasks</div>
-              </div>
-            </div>
-          </div>
-        </section>
       </div>
 
-      <!-- Command Input -->
-      <section class="command-section">
+      <!-- Left Panel: Conversation -->
+      <div class="panel left-panel">
+        <div class="panel-header">
+          <div class="panel-icon">💬</div>
+          <h2>NEURAL LINK</h2>
+          <button class="clear-btn" id="clear-chat" title="Clear">✕</button>
+        </div>
+        <div class="conversation" id="conversation">
+          <div class="message-block">
+            <div class="message-meta">
+              <span class="sender kira">KIRA</span>
+              <span class="timestamp" id="boot-time"></span>
+            </div>
+            <div class="message">Good day, sir. All systems operational.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel: System -->
+      <div class="panel right-panel">
+        <div class="panel-header">
+          <div class="panel-icon">⚡</div>
+          <h2>SYSTEMS</h2>
+        </div>
+        <div class="system-content">
+          <div class="metric-group">
+            <h3>PERFORMANCE</h3>
+            <div class="metric">
+              <div class="metric-label">
+                <span>CPU</span>
+                <span class="metric-value" id="cpu">0%</span>
+              </div>
+              <div class="metric-bar">
+                <div class="metric-fill" id="cpu-bar"></div>
+              </div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">
+                <span>MEMORY</span>
+                <span class="metric-value" id="memory">0%</span>
+              </div>
+              <div class="metric-bar">
+                <div class="metric-fill" id="memory-bar"></div>
+              </div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">
+                <span>GPU</span>
+                <span class="metric-value" id="gpu">N/A</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="metric-group">
+            <h3>QUICK ACCESS</h3>
+            <div class="quick-grid">
+              <button class="quick-btn" onclick="quickCmd('open chrome')">
+                <span class="icon">🌐</span>
+                <span>Browser</span>
+              </button>
+              <button class="quick-btn" onclick="quickCmd('search for')">
+                <span class="icon">🔍</span>
+                <span>Search</span>
+              </button>
+              <button class="quick-btn" onclick="quickCmd('learn about')">
+                <span class="icon">📚</span>
+                <span>Learn</span>
+              </button>
+              <button class="quick-btn" onclick="quickCmd('list tasks')">
+                <span class="icon">✓</span>
+                <span>Tasks</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="metric-group">
+            <h3>ACTIVE TASKS</h3>
+            <div class="tasks-list" id="tasks-list">
+              <div class="task-empty">No pending tasks</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom: Command Input -->
+      <div class="command-section">
         <div class="command-container">
-          <button id="mic" class="command-btn mic-btn" title="Voice input">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button class="cmd-btn mic-btn" id="mic" title="Voice Input">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
               <line x1="12" y1="19" x2="12" y2="23"></line>
@@ -178,30 +139,40 @@
             </svg>
           </button>
           
-          <input
-            id="command"
-            type="text"
-            placeholder="Ask KIRA anything..."
-            autocomplete="off"
-          />
+          <div class="input-wrapper">
+            <input
+              id="command"
+              type="text"
+              placeholder="Command KIRA..."
+              autocomplete="off"
+            />
+            <div class="input-glow"></div>
+          </div>
           
-          <button id="mute" class="command-btn mute-btn" title="Toggle voice output">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button class="cmd-btn mute-btn" id="mute" title="Toggle Voice">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
               <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
             </svg>
           </button>
           
-          <button id="send" class="command-btn send-btn" title="Send">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          <button class="cmd-btn send-btn" id="send" title="Execute">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
             </svg>
           </button>
         </div>
-      </section>
-    </main>
+        
+        <div class="activity-bar">
+          <div class="activity-indicator" id="activity-indicator">
+            <div class="indicator-dot"></div>
+            <span id="activity">STANDBY</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <script type="module" src="./app.js"></script>
+    <script src="./scene.js"></script>
+    <script src="./app.js"></script>
   </body>
 </html>
