@@ -310,6 +310,12 @@ body {
   animation: pulse 1s infinite;
 }
 
+.activity-dot.speaking {
+  background: #4da6ff;
+  box-shadow: 0 0 12px #4da6ff;
+  animation: pulse 0.5s infinite;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.4; }
@@ -409,6 +415,25 @@ body {
 .mic-btn.listening {
   color: var(--red);
   animation: pulse 0.8s infinite;
+}
+
+.mute-btn {
+  width: 40px;
+  height: 40px;
+  margin-right: 4px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #777;
+  font-size: 16px;
+  cursor: pointer;
+  transition: 0.2s ease;
+  flex-shrink: 0;
+}
+
+.mute-btn:hover {
+  color: var(--red-bright);
+  background: rgba(255, 32, 32, 0.1);
 }
 
 .command-box input {

@@ -597,6 +597,22 @@ if (window.speechSynthesis) {
   };
 }
 
+// Mute/unmute toggle
+const muteButton = document.getElementById("mute");
+if (muteButton) {
+  muteButton.addEventListener("click", () => {
+    speechEnabled = !speechEnabled;
+    muteButton.textContent = speechEnabled ? "🔊" : "🔇";
+    muteButton.title = speechEnabled ? "Voice output ON" : "Voice output OFF";
+    
+    if (!speechEnabled) {
+      stopSpeaking();
+    }
+    
+    console.log(`[KIRA] Voice output ${speechEnabled ? "enabled" : "disabled"}`);
+  });
+}
+
 // Send command to backend (works in both native and browser modes)
 async function sendCommand(text) {
   if (!text.trim()) return;
