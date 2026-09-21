@@ -87,107 +87,112 @@ def start_ui_server():
 
 
 # ─────────────────────────────────────────────
-# Python-JS Bridge API
+# Command Processing (shared by HTTP API and pywebview bridge)
 # ─────────────────────────────────────────────
 
-class KiraAPI:
-    """
-    Python API exposed to JavaScript via pywebview.
-    This allows the frontend to call backend functions directly.
-    """
+def _try_builtin_response(text):
+    """Handle common greetings and questions without needing Ollama."""
+    lower = text.strip().lower()
     
-    def send_command(self, text):
-        """Process a command through the backend."""
-        if backend is None:
-            return {"error": f"Backend not available: {BACKEND_ERROR}"}
-        try:
-            print(f"[KIRA] Processing: {text}", flush=True)
-            cleaned = backend.normalize_command(text)
-            if not cleaned:
-                return {"action": "none", "response": ""}
-            
-            # Try built-in responses first (no Ollama needed)
-            builtin = self._try_builtin_response(cleaned)
-            if builtin:
-                print(f"[KIRA] Built-in response: {builtin[:50]}...", flush=True)
-                return {"action": "chat", "response": builtin}
-            
-            # Try command parsing
-            result = backend.parse_simple_command(cleaned)
-            if result is not None:
-                action = result.get("action", "none")
-                if action != "none":
-                    success = backend.execute_action(result)
+    greetings = {
+        "hello", "hi", "hey", "good morning", "good afternoon",
+        "good evening", "salut", "bonjour", "مرحبا", "hey kira",
+        "hello kira", "hi kira",
+    }
+    
+    if lower in greetings:
+        return "Hello sir. How can I help you?"
+    
+    if lower in {"who are you", "what are you", "what is kira"}:
+        return "I am KIRA, your local AI computer agent. I can control your computer, answer questions, manage tasks, and much more."
+    
+    if lower in {"what can you do", "help", "commands"}:
+        return (
+            "I can open applications, search the web, control your computer, "
+            "manage files, set reminders and timers, take screenshots, "
+            "analyze your screen, control volume and media, "
+            "and answer questions using my local AI engine."
+        )
+    
+    if lower in {"what time is it", "time", "current time"}:
+        from datetime import datetime
+        return f"The current time is {datetime.now().strftime('%H:%M')}."
+    
+    if lower in {"what is the date", "today's date", "date", "what day is it"}:
+        from datetime import datetime
+        return f"Today is {datetime.now().strftime('%A, %B %d, %Y')}."
+    
+    if lower in {"thank you", "thanks", "merci"}:
+        return "You're welcome, sir."
+    
+    if lower in {"goodbye", "bye", "see you", "exit", "quit"}:
+        return "Goodbye, sir. I'll be here when you need me."
+    
+    return None
+
+
+def process_command(text):
+    """Process a command — used by both HTTP API and pywebview bridge."""
+    if backend is None:
+        return {"error": f"Backend not available: {BACKEND_ERROR}"}
+    try:
+        print(f"[KIRA] Processing: {text}", flush=True)
+        cleaned = backend.normalize_command(text)
+        if not cleaned:
+            return {"action": "none", "response": ""}
+        
+        # Try built-in responses first (no Ollama needed)
+        builtin = _try_builtin_response(cleaned)
+        if builtin:
+            print(f"[KIRA] Built-in: {builtin[:60]}", flush=True)
+            return {"action": "chat", "response": builtin}
+        
+        # Try command parsing
+        result = backend.parse_simple_command(cleaned)
+        if result is not None:
+            action = result.get("action", "none")
+            if action != "none":
+                success = backend.execute_action(result)
+                try:
                     reply = backend.build_reply(
                         backend.detect_language(cleaned),
                         action,
                         str(result.get("target", result.get("query", "")))
                     )
-                    print(f"[KIRA] Action: {action} -> {success}", flush=True)
-                    return {
-                        "action": action,
-                        "success": success,
-                        "response": reply
-                    }
-            
-            # Fall back to Ollama chat
-            print("[KIRA] Asking Ollama...", flush=True)
-            try:
-                answer = backend.ask_chat(cleaned)
-                if answer:
-                    print(f"[KIRA] Ollama response: {answer[:80]}...", flush=True)
-                    return {"action": "chat", "response": answer}
-                else:
-                    return {"action": "chat", "response": "I received your message but could not generate a response. Is Ollama running?"}
-            except Exception as chat_error:
-                print(f"[KIRA] Ollama error: {chat_error}", flush=True)
-                return {
-                    "action": "chat",
-                    "response": f"I couldn't reach the AI engine. Make sure Ollama is running with: ollama serve\n\nError: {chat_error}"
-                }
-        except Exception as e:
-            print(f"[KIRA] Error: {e}", flush=True)
-            return {"error": str(e)}
+                except Exception:
+                    reply = f"Done: {action}"
+                print(f"[KIRA] Action: {action} -> {success}", flush=True)
+                return {"action": action, "success": success, "response": reply}
+        
+        # Fall back to Ollama chat
+        print("[KIRA] Asking Ollama...", flush=True)
+        try:
+            answer = backend.ask_chat(cleaned)
+            if answer:
+                print(f"[KIRA] Ollama: {answer[:80]}...", flush=True)
+                return {"action": "chat", "response": answer}
+            else:
+                return {"action": "chat", "response": "I received your message but could not generate a response. Is Ollama running?"}
+        except Exception as chat_error:
+            print(f"[KIRA] Ollama error: {chat_error}", flush=True)
+            return {
+                "action": "chat",
+                "response": f"I couldn't reach the AI engine. Make sure Ollama is running with: ollama serve\n\nError: {chat_error}"
+            }
+    except Exception as e:
+        print(f"[KIRA] Error: {e}", flush=True)
+        return {"error": str(e)}
+
+
+# ─────────────────────────────────────────────
+# Python-JS Bridge API (for pywebview)
+# ─────────────────────────────────────────────
+
+class KiraAPI:
+    """Python API exposed to JavaScript via pywebview."""
     
-    def _try_builtin_response(self, text):
-        """Handle common greetings and questions without needing Ollama."""
-        lower = text.strip().lower()
-        
-        greetings = {
-            "hello", "hi", "hey", "good morning", "good afternoon",
-            "good evening", "salut", "bonjour", "مرحبا", "hey kira",
-            "hello kira", "hi kira",
-        }
-        
-        if lower in greetings:
-            return "Hello sir. How can I help you?"
-        
-        if lower in {"who are you", "what are you", "what is kira"}:
-            return "I am KIRA, your local AI computer agent. I can control your computer, answer questions, manage tasks, and much more."
-        
-        if lower in {"what can you do", "help", "commands"}:
-            return (
-                "I can open applications, search the web, control your computer, "
-                "manage files, set reminders and timers, take screenshots, "
-                "analyze your screen, control volume and media, "
-                "and answer questions using my local AI engine."
-            )
-        
-        if lower in {"what time is it", "time", "current time"}:
-            from datetime import datetime
-            return f"The current time is {datetime.now().strftime('%H:%M')}."
-        
-        if lower in {"what is the date", "today's date", "date", "what day is it"}:
-            from datetime import datetime
-            return f"Today is {datetime.now().strftime('%A, %B %d, %Y')}."
-        
-        if lower in {"thank you", "thanks", "merci"}:
-            return "You're welcome, sir."
-        
-        if lower in {"goodbye", "bye", "see you", "exit", "quit"}:
-            return "Goodbye, sir. I'll be here when you need me."
-        
-        return None
+    def send_command(self, text):
+        return process_command(text)
     
     def get_system_info(self):
         """Get system telemetry."""
@@ -249,6 +254,7 @@ def main():
     print("[1/4] Initializing KIRA backend...")
     if backend is not None:
         kira_api.set_backend(backend)
+        kira_api.set_command_handler(process_command)  # Register our command processor
         print("       Backend ready")
     else:
         print(f"       Backend unavailable: {BACKEND_ERROR}")

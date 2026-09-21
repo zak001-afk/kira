@@ -527,34 +527,27 @@ async function sendCommand(text) {
   setActivity("THINKING");
   
   try {
-    let data;
+    // Always use HTTP API — works in both native app and browser
+    const response = await fetch(`${API_BASE}/api/command`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
     
-    if (IS_NATIVE && window.pywebview && window.pywebview.api) {
-      // Native app mode: use pywebview bridge
-      data = await window.pywebview.api.send_command(text);
-    } else {
-      // Browser mode: use HTTP API
-      const response = await fetch(`${API_BASE}/api/command`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      data = await response.json();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
+    
+    const data = await response.json();
     
     if (data.error) {
       addMessage("SYSTEM", `Error: ${data.error}`);
     } else if (data.response) {
       addMessage("KIRA", data.response);
     } else if (data.action && data.success) {
-      addMessage("KIRA", `Action completed: ${data.action}`);
+      addMessage("KIRA", `Done: ${data.action}`);
     } else if (data.action) {
-      addMessage("KIRA", `Action executed: ${data.action}`);
+      addMessage("KIRA", `Executed: ${data.action}`);
     } else {
       addMessage("KIRA", "Done.");
     }
@@ -563,15 +556,13 @@ async function sendCommand(text) {
   } catch (error) {
     console.error("Command failed:", error);
     
-    if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
-      addMessage("SYSTEM", "Cannot connect to KIRA backend. Is the API server running on port 8765?");
+    if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError") || error.message.includes("fetch")) {
+      addMessage("SYSTEM", "Cannot reach KIRA backend at " + API_BASE + ". Check that the API server is running.");
     } else {
-      addMessage("SYSTEM", `Connection error: ${error.message}`);
+      addMessage("SYSTEM", `Error: ${error.message}`);
     }
     
     setActivity("ERROR");
-    
-    // Retry connection after 3 seconds
     setTimeout(() => setActivity("READY"), 3000);
   }
 }

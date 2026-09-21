@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # Will be set by main_window or kira_voice_agent
 _backend = None
 _events_callback = None
+_command_handler = None
 
 DEFAULT_PORT = 8765
 DEFAULT_HOST = "0.0.0.0"
@@ -34,6 +35,17 @@ def set_events_callback(callback):
     """Set callback for getting recent events."""
     global _events_callback
     _events_callback = callback
+
+
+def set_command_handler(handler):
+    """Set a custom command handler function.
+    
+    The handler receives (text: str) and should return a dict like:
+    {"action": "chat", "response": "Hello!"}
+    or {"error": "something went wrong"}
+    """
+    global _command_handler
+    _command_handler = handler
 
 
 class KiraAPIHandler(BaseHTTPRequestHandler):
@@ -225,12 +237,22 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "No text provided"}, 400)
             return
 
+        # Use custom command handler if registered (from main_window.py)
+        if _command_handler is not None:
+            try:
+                result = _command_handler(text)
+                self._send_json(result)
+                return
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+                return
+
+        # Fallback: use backend directly
         if _backend is None:
             self._send_json({"error": "Backend not available"}, 503)
             return
 
         try:
-            # Process command through the backend
             cleaned = _backend.normalize_command(text)
             if not cleaned:
                 self._send_json({"response": "", "action": "none"})
@@ -238,7 +260,6 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
 
             result = _backend.parse_simple_command(cleaned)
             if result is None:
-                # Try chat
                 answer = _backend.ask_chat(cleaned)
                 self._send_json({"response": answer, "action": "chat"})
                 return
