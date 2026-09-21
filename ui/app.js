@@ -549,20 +549,53 @@ function speak(text) {
   const utterance = new SpeechSynthesisUtterance(cleanText);
   currentUtterance = utterance;
   
-  // Configure voice
-  utterance.rate = 1.0;
-  utterance.pitch = 1.0;
+  // Configure voice - fluent female
+  utterance.rate = 0.95;  // Slightly slower for clarity
+  utterance.pitch = 1.1;  // Slightly higher for feminine tone
   utterance.volume = 1.0;
   
-  // Try to find a good English voice
+  // Find the best female voice
   const voices = window.speechSynthesis.getVoices();
-  const preferredVoice = voices.find(v => 
-    v.lang.startsWith('en') && 
-    (v.name.includes('Female') || v.name.includes('Samantha') || v.name.includes('Google'))
-  ) || voices.find(v => v.lang.startsWith('en'));
   
-  if (preferredVoice) {
-    utterance.voice = preferredVoice;
+  // Priority list of preferred voices (best to worst)
+  const preferredVoices = [
+    // Google voices (high quality)
+    voices.find(v => v.name.includes('Google UK English Female')),
+    voices.find(v => v.name.includes('Google US English Female')),
+    voices.find(v => v.name.includes('Google Female')),
+    
+    // Microsoft voices (Windows)
+    voices.find(v => v.name.includes('Microsoft Zira')),
+    voices.find(v => v.name.includes('Microsoft Aria')),
+    voices.find(v => v.name.includes('Microsoft Jenny')),
+    voices.find(v => v.name.includes('Microsoft Sara')),
+    voices.find(v => v.name.includes('Microsoft Hazel')),
+    voices.find(v => v.name.includes('Microsoft Susan')),
+    
+    // Apple voices (macOS)
+    voices.find(v => v.name.includes('Samantha')),
+    voices.find(v => v.name.includes('Victoria')),
+    voices.find(v => v.name.includes('Karen')),
+    voices.find(v => v.name.includes('Moira')),
+    
+    // Generic female voices
+    voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('female')),
+    voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('woman')),
+    voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('girl')),
+    
+    // Any English female voice
+    voices.find(v => v.lang.startsWith('en-') && !v.name.toLowerCase().includes('male')),
+    voices.find(v => v.lang === 'en-US' && !v.name.toLowerCase().includes('male')),
+    voices.find(v => v.lang === 'en-GB' && !v.name.toLowerCase().includes('male')),
+  ];
+  
+  const selectedVoice = preferredVoices.find(v => v !== undefined);
+  
+  if (selectedVoice) {
+    utterance.voice = selectedVoice;
+    console.log("[KIRA] Using voice:", selectedVoice.name);
+  } else {
+    console.log("[KIRA] No preferred voice found, using default");
   }
   
   utterance.onstart = () => {
