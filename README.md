@@ -32,6 +32,12 @@ Everything runs on your machine. No cloud APIs, no API keys, no telemetry.
   confidence, then compares before/after screenshots to confirm it worked.
 - **Persistent memory** — remembers your name, preferences and past messages
   in a local SQLite database; deterministic recall for personal facts.
+- **Built-in calculator** — "what is 15% of 200", "calculate 2 to the power
+  of 10", in three languages, evaluated through a safe AST whitelist.
+- **Voice reminders** — "remind me in 10 minutes to call mom" sets a real
+  timer that speaks back when it fires (English, French and Arabic).
+- **Configurable everything** — your own app aliases, websites and
+  confirmation rules live in `kira_config.json`, not in code.
 - **Graphic UI** — dark `customtkinter` interface with a state machine
   (READY / LISTENING / THINKING / EXECUTING / SPEAKING), animated core,
   chat panel, quick commands and typed input.
@@ -97,6 +103,10 @@ after the wake word is fine: *"kira, open chrome"*, *"kira: open chrome"*.
 | what's on my screen | qu'est-ce qu'il y a sur mon écran | ماذا يوجد على الشاشة | vision: describe the screen |
 | find the save button and click it | trouve le bouton et clique | — | vision: locate → click → verify |
 | conversation mode / stop conversation | mode conversation | وضع المحادثة | toggle chat mode |
+| calculate 2 to the power of 10 | calcule dix fois trois | كم يساوي ١٢ ضرب ٢ | safe local arithmetic (words & % work) |
+| open github / gmail / netflix | ouvrir netflix | — | known websites (extendable in config) |
+| remind me in 5 minutes to call mom | rappelle-moi dans 2 heures de … | ذكرني بعد 10 دقائق … | set a spoken reminder |
+| list reminders / cancel reminders | mes rappels / annule les rappels | تذكيراتي / الغ التذكيرات | manage reminders |
 | clear chat | efface la conversation | محادثة جديدة | new conversation |
 | exit | au revoir | خروج | quit |
 
@@ -118,6 +128,11 @@ conversational chat mode with your stored memories as context.
   "chat_history_limit": 12,       // messages kept in the rolling context
   "preferred_address": "sir",     // sir, commander, captain, madam… (see ADDRESS_OPTIONS)
   "offline_model_path": "",       // absolute path to a Vosk model folder
+  "app_aliases": {},              // your apps:  "notion": "notion.exe"
+  "websites": {},                 // your sites: "my blog": "https://…"
+  "require_confirmation": [       // actions that ask before executing
+    "search", "mouse_move", "click", "lock_pc"
+  ],
   "shortcuts": {                  // voice-triggered sequences
     "work mode": [
       {"action": "open_app", "target": "vscode"},
@@ -126,6 +141,12 @@ conversational chat mode with your stored memories as context.
   }
 }
 ```
+
+Notes:
+
+- `require_wake_word: true` is now actually enforced — only phrases
+  containing "kira" are handled (conversation mode keeps the channel open).
+- Set `require_confirmation: []` to disable confirmation prompts entirely.
 
 Environment variables `KIRA_MODEL` / `KIRA_VISION_MODEL` override the model
 names (see `.env.example`).
@@ -162,6 +183,8 @@ Plain *"click"* and mouse moves always ask for voice confirmation.
 kira/
 ├── main_window.py        # customtkinter UI (orb, state machine, chat panel)
 ├── kira_voice_agent.py   # backend: STT, parser, LLM routing, actions, vision, TTS
+├── kira_calculator.py    # safe AST-whitelisted arithmetic (EN/FR/AR)
+├── kira_reminders.py     # in-process spoken reminders with daemon timers
 ├── kira_memory.py        # SQLite persistence (facts + conversations)
 ├── kira_config.json      # user configuration (see above)
 ├── dev.py                # watch-and-restart development mode

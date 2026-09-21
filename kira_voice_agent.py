@@ -4,6 +4,8 @@ import logging
 import os
 import platform
 import kira_memory
+import kira_calculator
+import kira_reminders
 import re
 import subprocess
 import time
@@ -36,6 +38,9 @@ DEFAULT_CONFIG = {
     "chat_history_limit": 12,
     "preferred_address": "sir",
     "offline_model_path": "",
+    "app_aliases": {},
+    "websites": {},
+    "require_confirmation": ["search", "mouse_move", "click", "lock_pc"],
     "shortcuts": {
         "work mode": [
             {"action": "open_app", "target": "vscode"},
@@ -336,6 +341,37 @@ APP_ALIASES = {
     "téléchargements": os.path.join(os.path.expanduser("~"), "Downloads"),
 }
 
+# Well-known websites understood by "open <name>" — users can extend or
+# override this map through the "websites" key of kira_config.json.
+WEBSITES = {
+    "github": "https://github.com",
+    "gmail": "https://mail.google.com",
+    "google mail": "https://mail.google.com",
+    "google maps": "https://maps.google.com",
+    "maps": "https://maps.google.com",
+    "wikipedia": "https://www.wikipedia.org",
+    "stack overflow": "https://stackoverflow.com",
+    "stackoverflow": "https://stackoverflow.com",
+    "netflix": "https://www.netflix.com",
+    "outlook": "https://outlook.live.com",
+    "reddit": "https://www.reddit.com",
+    "twitch": "https://www.twitch.tv",
+}
+
+# User-defined app aliases and websites from kira_config.json extend the
+# built-in maps (user entries win on conflict).
+if isinstance(CONFIG.get("app_aliases"), dict):
+    for alias, exe in CONFIG["app_aliases"].items():
+        alias_key = str(alias).strip().lower()
+        if alias_key:
+            APP_ALIASES[alias_key] = str(exe).strip()
+
+if isinstance(CONFIG.get("websites"), dict):
+    for site_name, url in CONFIG["websites"].items():
+        site_key = str(site_name).strip().lower()
+        if site_key and str(url).strip():
+            WEBSITES[site_key] = str(url).strip()
+
 MULTI_LANGUAGE_COMMANDS = {
     "en": {
         "open": "open",
@@ -522,6 +558,10 @@ def speak(text: str):
                 f"KIRA: Voice fallback failed: {type(fallback_exc).__name__}: {fallback_exc}",
                 flush=True,
             )
+
+
+# Voice announcements for fired reminders go through the normal speech path.
+kira_reminders.set_fire_callback(speak)
 
 
 def normalize_for_language(text: str) -> str:
@@ -1117,6 +1157,8 @@ def parse_simple_command(command: str):
                     return {"action": "open_app", "target": "chrome"}
             if target.lower() in APP_ALIASES:
                 return {"action": "open_app", "target": target.lower()}
+            if target.lower() in WEBSITES:
+                return {"action": "open_url", "target": WEBSITES[target.lower()]}
             if target.lower().startswith("http://") or target.lower().startswith(
                 "https://"
             ):
@@ -1135,12 +1177,15 @@ def parse_simple_command(command: str):
             target = text[len(prefix) :].strip()
             if not target:
                 return None
-            if target.lower() in APP_ALIASES or target.lower() in {
-                "google",
-                "youtube",
-                "chrome",
-            }:
+            if target.lower() in APP_ALIASES:
                 return {"action": "open_app", "target": target.lower()}
+            if target.lower() in WEBSITES:
+                return {"action": "open_url", "target": WEBSITES[target.lower()]}
+            # services that live on the web, not as .exe files
+            if target.lower() == "google":
+                return {"action": "open_url", "target": "https://www.google.com"}
+            if target.lower() == "youtube":
+                return {"action": "open_url", "target": "https://www.youtube.com"}
             if lang == "ar":
                 if "نوتباد" in lower or "مفكرة" in lower:
                     return {"action": "open_app", "target": "notepad"}
@@ -1214,6 +1259,54 @@ def parse_simple_command(command: str):
 
     if lower.startswith("open ") and "http" in lower:
         return {"action": "open_url", "target": text[5:].strip()}
+
+    # ---------------------------------------------------------
+    # REMINDERS & TIMERS
+    # ---------------------------------------------------------
+    if lower in {
+        "list reminders",
+        "my reminders",
+        "active reminders",
+        "what are my reminders",
+        "liste mes rappels",
+        "mes rappels",
+        "قائمة التذكيرات",
+        "تذكيراتي",
+    }:
+        return {"action": "reminders_list", "language": detect_language(text)}
+
+    if lower in {
+        "cancel reminders",
+        "clear reminders",
+        "cancel all reminders",
+        "annule les rappels",
+        "annuler les rappels",
+        "efface les rappels",
+        "الغ التذكيرات",
+        "ألغ التذكيرات",
+        "امسح التذكيرات",
+    }:
+        return {"action": "reminders_clear", "language": detect_language(text)}
+
+    reminder = kira_reminders.parse_reminder(text)
+    if reminder:
+        return {
+            "action": "remind",
+            "seconds": reminder["seconds"],
+            "text": reminder["text"],
+            "language": reminder.get("language", detect_language(text)),
+        }
+
+    # ---------------------------------------------------------
+    # CALCULATOR (safe local arithmetic)
+    # ---------------------------------------------------------
+    expression = kira_calculator.try_parse(text)
+    if expression:
+        return {
+            "action": "calc",
+            "expression": expression,
+            "language": detect_language(text),
+        }
 
     for key in [
         "google",
@@ -2472,6 +2565,40 @@ def execute_action(action_data):
 
         return True
 
+    if action == "calc":
+        expression = str(action_data.get("expression", "")).strip()
+        language = str(action_data.get("language", "en"))
+        return personalize_address(
+            kira_calculator.calculate_reply(expression, language)
+        )
+
+    if action == "remind":
+        language = str(action_data.get("language", "en"))
+        reminder_text = str(action_data.get("text", "")).strip()
+        try:
+            seconds_value = float(action_data.get("seconds", 0))
+        except (TypeError, ValueError):
+            return False
+        if seconds_value <= 0 or not reminder_text:
+            return False
+        kira_reminders.add_reminder(seconds_value, reminder_text, language)
+        return personalize_address(
+            kira_reminders.confirmation(seconds_value, reminder_text, language)
+        )
+
+    if action == "reminders_list":
+        language = str(action_data.get("language", "en"))
+        return personalize_address(kira_reminders.describe_active(language))
+
+    if action == "reminders_clear":
+        language = str(action_data.get("language", "en"))
+        cancelled = kira_reminders.cancel_all()
+        return personalize_address(
+            kira_reminders.cleared_message(cancelled, language)
+        )
+
+    return False
+
 
 def describe_action(action_data):
     if not isinstance(action_data, dict):
@@ -2568,39 +2695,28 @@ def is_wake_phrase(command: str) -> bool:
     )
 
 
+def requires_confirmation(action: str) -> bool:
+    """Whether an action must be voice-confirmed before execution.
+
+    Configurable through the "require_confirmation" list in kira_config.json;
+    an explicit empty list disables confirmation prompts entirely.
+    """
+    name = str(action or "").strip().lower()
+    configured = CONFIG.get("require_confirmation")
+    if isinstance(configured, list):
+        return name in {str(item).strip().lower() for item in configured}
+    return name in {"search", "mouse_move", "click", "lock_pc"}
+
+
 def should_process_command(command: str) -> bool:
     text = (command or "").strip()
     if not text:
         return False
-    lower = text.lower()
-
-    if is_wake_phrase(lower):
-        return True
-
-    if any(
-        token in lower
-        for token in [
-            "open ",
-            "play ",
-            "search ",
-            "type ",
-            "press ",
-            "close window",
-            "minimize",
-            "maximize",
-            "screenshot",
-            "switch app",
-            "open folder",
-            "close this",
-            "take screenshot",
-            "switch window",
-            "quit",
-            "exit",
-            "goodbye",
-        ]
-    ):
-        return True
-
+    # When "require_wake_word" is enabled, only commands containing the wake
+    # word are processed — unless conversation mode is currently active,
+    # which keeps the channel open.
+    if CONFIG.get("require_wake_word") and not _CONVERSATION_MODE:
+        return is_wake_phrase(text)
     return True
 
 
@@ -2686,7 +2802,7 @@ def main():
                 speak(personalize_address("Goodbye sir."))
                 break
 
-            if action in {"search", "mouse_move", "click", "lock_pc"}:
+            if requires_confirmation(action):
                 target_desc = describe_action(result)
                 allowed = confirm_action(action.replace("_", " "), target_desc)
                 if not allowed:
@@ -2698,13 +2814,11 @@ def main():
             success = execute_action(result)
             if success:
                 action_name = str(action).lower()
-                if action_name in {
-                    "read_clipboard",
-                    "system_info",
-                    "help",
-                    "time",
-                    "date",
-                }:
+                # Actions returning a string speak their own result
+                # (time, date, system info, clipboard, help, sequences,
+                # calculations, reminders).
+                if isinstance(success, str):
+                    speak(success)
                     continue
                 target_text = ""
                 if action == "open_app":

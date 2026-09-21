@@ -1122,12 +1122,7 @@ class KiraUI(ctk.CTk):
             return (
                 backend.ask_chat(cleaned) if ok else f"I could not start Ollama. {d}."
             )
-        if action in {
-            "search",
-            "mouse_move",
-            "click",
-            "lock_pc",
-        } and not backend.confirm_action(
+        if backend.requires_confirmation(action) and not backend.confirm_action(
             action.replace("_", " "), backend.describe_action(result)
         ):
             return "Action cancelled."

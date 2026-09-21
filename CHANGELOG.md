@@ -3,6 +3,35 @@
 All notable changes to KIRA are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.0] — 2026-09-21
+
+### Added
+- **Calculator** (`kira_calculator.py`): "calculate 2 to the power of 10",
+  "what is 15% of 200", spoken numbers ("twenty five times two") in EN/FR/AR —
+  evaluated through a strict AST whitelist, never raw `eval`.
+- **Reminders** (`kira_reminders.py`): "remind me in 5 minutes to call mom",
+  "rappelle-moi dans 2 heures de …", "ذكرني بعد 10 دقائق …", plus
+  list/cancel commands. Daemon timers, spoken on fire.
+- **Known websites**: "open github / gmail / stack overflow / netflix…"
+  routes to URLs (works after `ouvrir` too). Users can register their own
+  apps and sites via the new `app_aliases` and `websites` config keys.
+- **Configurable confirmations**: `require_confirmation` in config controls
+  which actions ask for voice confirmation (empty list disables prompts).
+- **121 new tests**: LLM agent JSON extraction (fences, prose, garbage,
+  outages), chat/memory deterministic flows, the full vision
+  locate → click → verify pipeline, calculator safety (injection attempts,
+  exponent bombs), reminders scheduling/cancellation, routing regressions.
+
+### Fixed
+- **CLI never spoke text results**: `time`, `date`, `system info`,
+  `read clipboard`, `help` and sequence summaries parsed and executed but
+  `main()` discarded the spoken string (`continue` without `speak`). They are
+  now announced, matching the UI behavior.
+- **French/Arabic "open google/youtube"** tried to launch a non-existent
+  `google.exe`; now opens the website like the English path.
+- `require_wake_word: true` was silently ignored — it is now enforced
+  (conversation mode keeps listening).
+
 ## [2.0.0] — 2026-09-21
 
 ### Added
