@@ -78,7 +78,8 @@ ollama pull qwen3-vl:2b
 
 4. **Run KIRA**
 ```bash
-python main_window.py
+python main_window.py  # Native desktop app (recommended)
+python launch_web.py     # Browser mode
 ```
 
 ### Development Mode

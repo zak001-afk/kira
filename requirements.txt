@@ -13,5 +13,8 @@ vosk>=0.3.45
 customtkinter>=5.2.0
 Pillow>=10.0.0
 
+# Native App Dependencies (pywebview creates the desktop window)
+pywebview>=4.0.0
+
 # Optional: Web API (already included in Python stdlib)
 # http.server is built-in, no extra dependency needed

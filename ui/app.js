@@ -481,6 +481,8 @@ window.addEventListener("resize", () => {
    KIRA BACKEND INTEGRATION
    ========================================================= */
 
+// Detect if running in pywebview (native app) or browser
+const IS_NATIVE = typeof window.pywebview !== "undefined";
 const API_BASE = window.location.origin;
 
 // Set boot time
@@ -517,7 +519,7 @@ function setActivity(state) {
   }
 }
 
-// Send command to backend
+// Send command to backend (works in both native and browser modes)
 async function sendCommand(text) {
   if (!text.trim()) return;
   
@@ -525,13 +527,20 @@ async function sendCommand(text) {
   setActivity("THINKING");
   
   try {
-    const response = await fetch(`${API_BASE}/api/command`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
+    let data;
     
-    const data = await response.json();
+    if (IS_NATIVE && window.pywebview && window.pywebview.api) {
+      // Native app mode: use pywebview bridge
+      data = await window.pywebview.api.send_command(text);
+    } else {
+      // Browser mode: use HTTP API
+      const response = await fetch(`${API_BASE}/api/command`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      data = await response.json();
+    }
     
     if (data.response) {
       addMessage("KIRA", data.response);
@@ -617,8 +626,14 @@ if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
 // Poll system telemetry every 3 seconds
 async function updateTelemetry() {
   try {
-    const response = await fetch(`${API_BASE}/api/system`);
-    const data = await response.json();
+    let data;
+    
+    if (IS_NATIVE && window.pywebview && window.pywebview.api) {
+      data = await window.pywebview.api.get_system_info();
+    } else {
+      const response = await fetch(`${API_BASE}/api/system`);
+      data = await response.json();
+    }
     
     if (data.cpu_percent !== undefined) {
       document.getElementById("cpu").textContent = `${data.cpu_percent}%`;
@@ -637,8 +652,14 @@ async function updateTelemetry() {
 // Poll tasks every 5 seconds
 async function updateTasks() {
   try {
-    const response = await fetch(`${API_BASE}/api/tasks?type=todo&completed=false`);
-    const data = await response.json();
+    let data;
+    
+    if (IS_NATIVE && window.pywebview && window.pywebview.api) {
+      data = await window.pywebview.api.get_tasks();
+    } else {
+      const response = await fetch(`${API_BASE}/api/tasks?type=todo&completed=false`);
+      data = await response.json();
+    }
     
     const tasksList = document.getElementById("tasks-list");
     

@@ -23,6 +23,6 @@ if errorlevel 1 (
 echo [2/2] Launching KIRA...
 echo.
 
-python launch_web.py
+python main_window.py
 
 pause
