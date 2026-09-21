@@ -1,9 +1,9 @@
 // ═══════════════════════════════════════════════════════════════
-// KIRA 3D Scene - Three.js Implementation
+// KIRA 3D Humanoid AI Face - Three.js Implementation
 // ═══════════════════════════════════════════════════════════════
 
 let scene, camera, renderer;
-let core, rings = [], particles;
+let head, eyes = [], mouth, rings = [], particles;
 let clock = new THREE.Clock();
 
 // ═══════════════════════════════════════════════════════════════
@@ -13,7 +13,7 @@ let clock = new THREE.Clock();
 function initScene() {
   // Scene
   scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x0a0e27, 0.015);
+  scene.fog = new THREE.FogExp2(0x0a0e27, 0.012);
 
   // Camera
   camera = new THREE.PerspectiveCamera(
@@ -22,7 +22,7 @@ function initScene() {
     0.1,
     1000
   );
-  camera.position.set(0, 2, 12);
+  camera.position.set(0, 1, 8);
   camera.lookAt(0, 0, 0);
 
   // Renderer
@@ -38,23 +38,30 @@ function initScene() {
   renderer.toneMappingExposure = 1.2;
 
   // Lighting
-  const ambientLight = new THREE.AmbientLight(0x00d4ff, 0.3);
+  const ambientLight = new THREE.AmbientLight(0x00d4ff, 0.4);
   scene.add(ambientLight);
 
-  const pointLight1 = new THREE.PointLight(0x00d4ff, 2, 50);
+  const pointLight1 = new THREE.PointLight(0x00d4ff, 2.5, 50);
   pointLight1.position.set(5, 5, 5);
   scene.add(pointLight1);
 
-  const pointLight2 = new THREE.PointLight(0x0066ff, 1.5, 50);
-  pointLight2.position.set(-5, -5, 5);
+  const pointLight2 = new THREE.PointLight(0x0066ff, 2, 50);
+  pointLight2.position.set(-5, -3, 5);
   scene.add(pointLight2);
 
-  const pointLight3 = new THREE.PointLight(0x00ffaa, 1, 50);
+  const pointLight3 = new THREE.PointLight(0x00ffaa, 1.5, 50);
   pointLight3.position.set(0, 5, -5);
   scene.add(pointLight3);
 
+  // Rim light for dramatic effect
+  const rimLight = new THREE.DirectionalLight(0x00d4ff, 1);
+  rimLight.position.set(-5, 0, -5);
+  scene.add(rimLight);
+
   // Create objects
-  createCore();
+  createHead();
+  createEyes();
+  createMouth();
   createRings();
   createParticles();
   createGrid();
@@ -67,62 +74,208 @@ function initScene() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Core Sphere
+// 3D Head/Face
 // ═══════════════════════════════════════════════════════════════
 
-function createCore() {
-  // Main sphere
-  const geometry = new THREE.SphereGeometry(1.5, 64, 64);
-  const material = new THREE.MeshPhysicalMaterial({
-    color: 0x00d4ff,
-    emissive: 0x00d4ff,
-    emissiveIntensity: 0.5,
-    metalness: 0.9,
-    roughness: 0.1,
-    clearcoat: 1.0,
+function createHead() {
+  // Main head shape - elongated sphere
+  const headGeometry = new THREE.SphereGeometry(2, 64, 64);
+  // Modify vertices to create a more head-like shape
+  const positions = headGeometry.attributes.position;
+  for (let i = 0; i < positions.count; i++) {
+    const x = positions.getX(i);
+    const y = positions.getY(i);
+    const z = positions.getZ(i);
+    
+    // Elongate vertically and flatten sides slightly
+    positions.setY(i, y * 1.2);
+    positions.setX(i, x * 0.95);
+    
+    // Create chin area
+    if (y < -0.5) {
+      const factor = 1 - Math.abs(y + 0.5) * 0.3;
+      positions.setX(i, x * factor);
+      positions.setZ(i, z * factor);
+    }
+  }
+  headGeometry.computeVertexNormals();
+
+  const headMaterial = new THREE.MeshPhysicalMaterial({
+    color: 0x1a2a4a,
+    emissive: 0x001133,
+    emissiveIntensity: 0.3,
+    metalness: 0.8,
+    roughness: 0.2,
+    clearcoat: 0.8,
     clearcoatRoughness: 0.1,
+    transparent: true,
+    opacity: 0.9
+  });
+
+  head = new THREE.Mesh(headGeometry, headMaterial);
+  scene.add(head);
+
+  // Add circuit patterns on face
+  createCircuitPatterns();
+
+  // Inner glow
+  const glowGeometry = new THREE.SphereGeometry(2.1, 32, 32);
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x00d4ff,
+    transparent: true,
+    opacity: 0.1,
+    side: THREE.BackSide
+  });
+  const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+  head.add(glow);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Circuit Patterns
+// ═══════════════════════════════════════════════════════════════
+
+function createCircuitPatterns() {
+  const circuitMaterial = new THREE.LineBasicMaterial({
+    color: 0x00d4ff,
+    transparent: true,
+    opacity: 0.6
+  });
+
+  // Create geometric circuit lines on the face
+  const circuits = [
+    // Forehead circuits
+    { points: [[-0.8, 1.2, 1.5], [-0.5, 1.3, 1.6], [0, 1.4, 1.6], [0.5, 1.3, 1.6], [0.8, 1.2, 1.5]] },
+    { points: [[-0.6, 1.0, 1.6], [-0.3, 1.1, 1.65], [0.3, 1.1, 1.65], [0.6, 1.0, 1.6]] },
+    
+    // Cheek circuits
+    { points: [[-1.2, 0, 1.3], [-1.3, -0.3, 1.2], [-1.2, -0.6, 1.1]] },
+    { points: [[1.2, 0, 1.3], [1.3, -0.3, 1.2], [1.2, -0.6, 1.1]] },
+    
+    // Temple circuits
+    { points: [[-1.5, 0.5, 0.8], [-1.6, 0.3, 0.7], [-1.5, 0, 0.6]] },
+    { points: [[1.5, 0.5, 0.8], [1.6, 0.3, 0.7], [1.5, 0, 0.6]] },
+  ];
+
+  circuits.forEach(circuit => {
+    const points = circuit.points.map(p => new THREE.Vector3(...p));
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const line = new THREE.Line(geometry, circuitMaterial);
+    head.add(line);
+  });
+
+  // Add small glowing nodes at circuit intersections
+  const nodeMaterial = new THREE.MeshBasicMaterial({
+    color: 0x00ffff,
     transparent: true,
     opacity: 0.8
   });
 
-  core = new THREE.Mesh(geometry, material);
-  scene.add(core);
+  const nodePositions = [
+    [-0.8, 1.2, 1.5], [0.8, 1.2, 1.5], [0, 1.4, 1.6],
+    [-1.2, 0, 1.3], [1.2, 0, 1.3],
+    [-1.5, 0.5, 0.8], [1.5, 0.5, 0.8]
+  ];
 
-  // Inner glow
-  const glowGeometry = new THREE.SphereGeometry(1.8, 32, 32);
+  nodePositions.forEach(pos => {
+    const nodeGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+    const node = new THREE.Mesh(nodeGeometry, nodeMaterial);
+    node.position.set(...pos);
+    head.add(node);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Eyes
+// ═══════════════════════════════════════════════════════════════
+
+function createEyes() {
+  const eyePositions = [
+    { x: -0.6, y: 0.3, z: 1.7 },  // Left eye
+    { x: 0.6, y: 0.3, z: 1.7 }    // Right eye
+  ];
+
+  eyePositions.forEach((pos, index) => {
+    // Eye socket (dark area)
+    const socketGeometry = new THREE.SphereGeometry(0.35, 32, 32);
+    const socketMaterial = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.8
+    });
+    const socket = new THREE.Mesh(socketGeometry, socketMaterial);
+    socket.position.set(pos.x, pos.y, pos.z);
+    socket.scale.set(1, 0.7, 0.5);
+    head.add(socket);
+
+    // Eye glow (iris)
+    const eyeGeometry = new THREE.SphereGeometry(0.25, 32, 32);
+    const eyeMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00d4ff,
+      transparent: true,
+      opacity: 0.9
+    });
+    const eye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    eye.position.set(pos.x, pos.y, pos.z + 0.1);
+    eye.scale.set(1, 0.7, 0.5);
+    head.add(eye);
+    eyes.push(eye);
+
+    // Eye glow effect
+    const glowGeometry = new THREE.SphereGeometry(0.35, 16, 16);
+    const glowMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00d4ff,
+      transparent: true,
+      opacity: 0.3,
+      blending: THREE.AdditiveBlending
+    });
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+    glow.position.set(pos.x, pos.y, pos.z + 0.05);
+    glow.scale.set(1, 0.7, 0.5);
+    head.add(glow);
+    eye.userData.glow = glow;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Mouth/Voice Indicator
+// ═══════════════════════════════════════════════════════════════
+
+function createMouth() {
+  // Mouth area - horizontal line that animates when speaking
+  const mouthGeometry = new THREE.BoxGeometry(0.8, 0.05, 0.1);
+  const mouthMaterial = new THREE.MeshBasicMaterial({
+    color: 0x00d4ff,
+    transparent: true,
+    opacity: 0.7
+  });
+
+  mouth = new THREE.Mesh(mouthGeometry, mouthMaterial);
+  mouth.position.set(0, -0.8, 1.8);
+  head.add(mouth);
+
+  // Add mouth glow
+  const glowGeometry = new THREE.BoxGeometry(1, 0.15, 0.2);
   const glowMaterial = new THREE.MeshBasicMaterial({
     color: 0x00d4ff,
     transparent: true,
     opacity: 0.2,
-    side: THREE.BackSide
+    blending: THREE.AdditiveBlending
   });
-
   const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-  core.add(glow);
-
-  // Wireframe overlay
-  const wireGeometry = new THREE.SphereGeometry(1.55, 32, 32);
-  const wireMaterial = new THREE.MeshBasicMaterial({
-    color: 0x00ffff,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.3
-  });
-
-  const wireframe = new THREE.Mesh(wireGeometry, wireMaterial);
-  core.add(wireframe);
+  glow.position.set(0, -0.8, 1.75);
+  head.add(glow);
+  mouth.userData.glow = glow;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Orbital Rings
+// Orbital Rings (around head)
 // ═══════════════════════════════════════════════════════════════
 
 function createRings() {
   const ringConfigs = [
-    { radius: 3, tube: 0.02, rotation: [0, 0, 0], speed: 0.5, color: 0x00d4ff },
-    { radius: 3.5, tube: 0.015, rotation: [Math.PI / 4, 0, 0], speed: -0.3, color: 0x0099cc },
-    { radius: 4, tube: 0.01, rotation: [Math.PI / 2, Math.PI / 4, 0], speed: 0.4, color: 0x0066ff },
-    { radius: 4.5, tube: 0.008, rotation: [Math.PI / 3, Math.PI / 2, 0], speed: -0.6, color: 0x00ffaa }
+    { radius: 3.5, tube: 0.02, rotation: [0, 0, Math.PI / 6], speed: 0.4, color: 0x00d4ff },
+    { radius: 4, tube: 0.015, rotation: [Math.PI / 4, 0, 0], speed: -0.3, color: 0x0099cc },
+    { radius: 4.5, tube: 0.01, rotation: [Math.PI / 2, Math.PI / 4, 0], speed: 0.5, color: 0x0066ff },
   ];
 
   ringConfigs.forEach(config => {
@@ -130,7 +283,7 @@ function createRings() {
     const material = new THREE.MeshBasicMaterial({
       color: config.color,
       transparent: true,
-      opacity: 0.6
+      opacity: 0.5
     });
 
     const ring = new THREE.Mesh(geometry, material);
@@ -151,13 +304,12 @@ function createParticles() {
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(particleCount * 3);
   const colors = new Float32Array(particleCount * 3);
-  const sizes = new Float32Array(particleCount);
 
   const color = new THREE.Color();
 
   for (let i = 0; i < particleCount; i++) {
     // Random position in sphere
-    const radius = 5 + Math.random() * 15;
+    const radius = 6 + Math.random() * 15;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
 
@@ -171,17 +323,13 @@ function createParticles() {
     colors[i * 3] = color.r;
     colors[i * 3 + 1] = color.g;
     colors[i * 3 + 2] = color.b;
-
-    // Random sizes
-    sizes[i] = Math.random() * 2 + 0.5;
   }
 
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
   const material = new THREE.PointsMaterial({
-    size: 0.1,
+    size: 0.08,
     vertexColors: true,
     transparent: true,
     opacity: 0.6,
@@ -198,8 +346,8 @@ function createParticles() {
 
 function createGrid() {
   const gridHelper = new THREE.GridHelper(50, 50, 0x00d4ff, 0x003366);
-  gridHelper.position.y = -5;
-  gridHelper.material.opacity = 0.2;
+  gridHelper.position.y = -4;
+  gridHelper.material.opacity = 0.15;
   gridHelper.material.transparent = true;
   scene.add(gridHelper);
 }
@@ -213,31 +361,37 @@ function animate() {
 
   const time = clock.getElapsedTime();
 
-  // Rotate core
-  if (core) {
-    core.rotation.y = time * 0.2;
-    core.rotation.x = Math.sin(time * 0.3) * 0.1;
-    
-    // Pulse effect
-    const scale = 1 + Math.sin(time * 2) * 0.05;
-    core.scale.set(scale, scale, scale);
+  // Head subtle movement
+  if (head) {
+    head.rotation.y = Math.sin(time * 0.3) * 0.15;
+    head.rotation.x = Math.sin(time * 0.2) * 0.05;
+    head.position.y = Math.sin(time * 0.5) * 0.1;
   }
 
+  // Eye pulsing
+  eyes.forEach(eye => {
+    const pulse = 0.9 + Math.sin(time * 2) * 0.1;
+    eye.scale.set(pulse, pulse * 0.7, pulse * 0.5);
+    if (eye.userData.glow) {
+      eye.userData.glow.material.opacity = 0.2 + Math.sin(time * 2) * 0.1;
+    }
+  });
+
   // Rotate rings
-  rings.forEach((ring, index) => {
+  rings.forEach(ring => {
     ring.rotation.z += ring.userData.speed * 0.01;
     ring.rotation.x += ring.userData.speed * 0.005;
   });
 
   // Rotate particles
   if (particles) {
-    particles.rotation.y = time * 0.05;
+    particles.rotation.y = time * 0.03;
     particles.rotation.x = Math.sin(time * 0.1) * 0.1;
   }
 
   // Camera gentle movement
-  camera.position.x = Math.sin(time * 0.1) * 0.5;
-  camera.position.y = 2 + Math.sin(time * 0.15) * 0.3;
+  camera.position.x = Math.sin(time * 0.1) * 0.3;
+  camera.position.y = 1 + Math.sin(time * 0.15) * 0.2;
   camera.lookAt(0, 0, 0);
 
   renderer.render(scene, camera);
@@ -258,24 +412,59 @@ function onWindowResize() {
 // ═══════════════════════════════════════════════════════════════
 
 function setSceneActivity(state) {
-  if (!core) return;
+  if (!head || !eyes.length) return;
+
+  const eyeColor = new THREE.Color();
+  let mouthScale = 1;
 
   switch(state) {
     case 'thinking':
-      core.material.emissiveIntensity = 1.0;
-      core.material.emissive.setHex(0xffaa00);
+      // Yellow eyes, pulsing
+      eyeColor.setHex(0xffaa00);
+      head.material.emissive.setHex(0x332200);
+      head.material.emissiveIntensity = 0.5;
+      mouthScale = 1.2;
       break;
+      
     case 'speaking':
-      core.material.emissiveIntensity = 1.2;
-      core.material.emissive.setHex(0x00ffaa);
+      // Green eyes, mouth animates
+      eyeColor.setHex(0x00ffaa);
+      head.material.emissive.setHex(0x003322);
+      head.material.emissiveIntensity = 0.6;
+      mouthScale = 1.5 + Math.sin(Date.now() * 0.01) * 0.5;
       break;
+      
     case 'active':
-      core.material.emissiveIntensity = 0.8;
-      core.material.emissive.setHex(0x00ff88);
+      // Bright cyan eyes
+      eyeColor.setHex(0x00ff88);
+      head.material.emissive.setHex(0x002211);
+      head.material.emissiveIntensity = 0.4;
+      mouthScale = 1;
       break;
-    default:
-      core.material.emissiveIntensity = 0.5;
-      core.material.emissive.setHex(0x00d4ff);
+      
+    default: // standby
+      // Cyan eyes
+      eyeColor.setHex(0x00d4ff);
+      head.material.emissive.setHex(0x001133);
+      head.material.emissiveIntensity = 0.3;
+      mouthScale = 1;
+  }
+
+  // Update eye colors
+  eyes.forEach(eye => {
+    eye.material.color.copy(eyeColor);
+    if (eye.userData.glow) {
+      eye.userData.glow.material.color.copy(eyeColor);
+    }
+  });
+
+  // Update mouth for speaking
+  if (mouth) {
+    mouth.scale.y = mouthScale;
+    if (mouth.userData.glow) {
+      mouth.userData.glow.scale.y = mouthScale;
+      mouth.userData.glow.material.opacity = state === 'speaking' ? 0.4 : 0.2;
+    }
   }
 }
 
