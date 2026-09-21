@@ -45,6 +45,15 @@ except Exception as e:
     print(f"[WARNING] Failed to import kira_tasks: {e}")
     kira_tasks = None
 
+# Import caching
+try:
+    from kira_cache import command_cache, start_cache_cleanup_thread
+    CACHE_ENABLED = True
+    print("[OK] Caching enabled")
+except ImportError:
+    CACHE_ENABLED = False
+    print("[WARNING] Caching not available")
+
 # Try to import webview
 try:
     import webview
@@ -211,6 +220,15 @@ def process_command(text):
     """Process a command — used by both HTTP API and pywebview bridge."""
     if backend is None:
         return {"error": f"Backend not available: {BACKEND_ERROR}"}
+    
+    # Check cache first (skip for commands that should always execute)
+    if CACHE_ENABLED:
+        cache_key = f"cmd:{hash(text)}"
+        cached_result = command_cache.get(cache_key)
+        if cached_result is not None:
+            print(f"[KIRA] Cache hit for command: {text[:50]}", flush=True)
+            return cached_result
+    
     try:
         print(f"[KIRA] Processing: {text}", flush=True)
         cleaned = backend.normalize_command(text)
@@ -221,7 +239,11 @@ def process_command(text):
         builtin = _try_builtin_response(cleaned)
         if builtin:
             print(f"[KIRA] Built-in: {builtin[:60]}", flush=True)
-            return {"action": "chat", "response": builtin}
+            result = {"action": "chat", "response": builtin}
+            # Cache built-in responses
+            if CACHE_ENABLED:
+                command_cache.set(cache_key, result, ttl=300)  # 5 min TTL
+            return result
         
         # Try command parsing
         result = backend.parse_simple_command(cleaned)
@@ -238,7 +260,9 @@ def process_command(text):
                 except Exception:
                     reply = f"Done: {action}"
                 print(f"[KIRA] Action: {action} -> {success}", flush=True)
-                return {"action": action, "success": success, "response": reply}
+                result = {"action": action, "success": success, "response": reply}
+                # Don't cache action executions (they change state)
+                return result
         
         # Fall back to Ollama chat
         print("[KIRA] Asking Ollama...", flush=True)
@@ -246,7 +270,11 @@ def process_command(text):
             answer = backend.ask_chat(cleaned)
             if answer:
                 print(f"[KIRA] Ollama: {answer[:80]}...", flush=True)
-                return {"action": "chat", "response": answer}
+                result = {"action": "chat", "response": answer}
+                # Cache Ollama responses
+                if CACHE_ENABLED:
+                    command_cache.set(cache_key, result, ttl=300)  # 5 min TTL
+                return result
             else:
                 return {"action": "chat", "response": "I received your message but could not generate a response. Is Ollama running?"}
         except Exception as chat_error:
@@ -318,6 +346,12 @@ def main():
     print("              KIRA — NEURAL INTERFACE")
     print("=" * 60)
     print()
+    
+    # Start cache cleanup thread if caching is enabled
+    if CACHE_ENABLED:
+        print("[0/4] Starting cache cleanup thread...")
+        start_cache_cleanup_thread(interval=300)  # Cleanup every 5 minutes
+        print("       Cache cleanup active")
     
     if kira_api is None:
         print("[ERROR] kira_api module not available. Cannot start API server.")

@@ -2,26 +2,45 @@ import os
 import re
 import sqlite3
 import uuid
+import threading
 from datetime import datetime
 
+# Import caching
+try:
+    from kira_cache import memory_cache
+    CACHE_ENABLED = True
+except ImportError:
+    CACHE_ENABLED = False
 
 DB_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "kira_memory.db",
 )
 
+# Thread-local storage for connection pooling
+_connection_local = threading.local()
+
+
 def _connect():
-    connection = sqlite3.connect(
-        DB_PATH,
-        timeout=5,
-    )
-
-    connection.execute("PRAGMA journal_mode=WAL")
-    connection.execute("PRAGMA synchronous=NORMAL")
-    connection.execute("PRAGMA temp_store=MEMORY")
-    connection.execute("PRAGMA cache_size=-2000")  # 2MB cache
-
-    return connection
+    """Get thread-local database connection with optimizations."""
+    if not hasattr(_connection_local, "connection"):
+        connection = sqlite3.connect(
+            DB_PATH,
+            timeout=5,
+            check_same_thread=False,
+        )
+        
+        # Performance optimizations
+        connection.execute("PRAGMA journal_mode=WAL")           # Write-Ahead Logging
+        connection.execute("PRAGMA synchronous=NORMAL")         # Balance safety/speed
+        connection.execute("PRAGMA temp_store=MEMORY")          # Temp tables in RAM
+        connection.execute("PRAGMA cache_size=-64000")          # 64MB cache (was 2MB)
+        connection.execute("PRAGMA mmap_size=268435456")        # 256MB memory-mapped I/O
+        connection.execute("PRAGMA page_size=4096")             # Optimal page size
+        
+        _connection_local.connection = connection
+    
+    return _connection_local.connection
 
 
 def initialize():
@@ -189,35 +208,40 @@ def save_memory(category, key, value, confidence=1.0):
     now = datetime.now().isoformat(timespec="seconds")
 
     try:
-        with _connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO memories
-                (
-                    category,
-                    memory_key,
-                    memory_value,
-                    confidence,
-                    created_at,
-                    updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
-
-                ON CONFLICT(category, memory_key)
-                DO UPDATE SET
-                    memory_value = excluded.memory_value,
-                    confidence = excluded.confidence,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    category,
-                    key,
-                    value,
-                    float(confidence),
-                    now,
-                    now,
-                ),
+        connection = _connect()
+        connection.execute(
+            """
+            INSERT INTO memories
+            (
+                category,
+                memory_key,
+                memory_value,
+                confidence,
+                created_at,
+                updated_at
             )
+            VALUES (?, ?, ?, ?, ?, ?)
+
+            ON CONFLICT(category, memory_key)
+            DO UPDATE SET
+                memory_value = excluded.memory_value,
+                confidence = excluded.confidence,
+                updated_at = excluded.updated_at
+            """,
+            (
+                category,
+                key,
+                value,
+                float(confidence),
+                now,
+                now,
+            ),
+        )
+        
+        # Invalidate cache for this memory
+        if CACHE_ENABLED:
+            cache_key = f"memory:{category}:{key}"
+            memory_cache.set(cache_key, value)  # Update cache with new value
 
         return True
 
@@ -326,21 +350,32 @@ def load_memories(category=None):
 
 
 def get_memory(category, key, default=None):
+    # Check cache first
+    if CACHE_ENABLED:
+        cache_key = f"memory:{category}:{key}"
+        cached_value = memory_cache.get(cache_key)
+        if cached_value is not None:
+            return cached_value
+    
     try:
-        with _connect() as connection:
-            row = connection.execute(
-                """
-                SELECT memory_value
-                FROM memories
-                WHERE category = ?
-                AND memory_key = ?
-                LIMIT 1
-                """,
-                (category, key),
-            ).fetchone()
+        connection = _connect()
+        row = connection.execute(
+            """
+            SELECT memory_value
+            FROM memories
+            WHERE category = ?
+            AND memory_key = ?
+            LIMIT 1
+            """,
+            (category, key),
+        ).fetchone()
 
         if row:
-            return row[0]
+            value = row[0]
+            # Cache the result
+            if CACHE_ENABLED:
+                memory_cache.set(cache_key, value)
+            return value
 
     except sqlite3.Error:
         pass

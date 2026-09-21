@@ -1,15 +1,26 @@
 """
 KIRA Web Access Module — Search and browse the internet.
 
-Provides web search and page reading capabilities using:
+Provides web search and page reading capabilities with intelligent caching
+to minimize redundant network requests and improve response times.
+
+Uses:
 - DuckDuckGo for web search (free, no API key)
 - Requests + BeautifulSoup for page fetching
 """
 
 import re
+import hashlib
 from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
+
+# Import caching
+try:
+    from kira_cache import web_cache
+    CACHE_ENABLED = True
+except ImportError:
+    CACHE_ENABLED = False
 
 try:
     from duckduckgo_search import DDGS
@@ -33,6 +44,14 @@ def search_web(query: str, num_results: int = 5) -> list:
     if not DUCKDUCKGO_AVAILABLE:
         return [{"error": "duckduckgo-search not installed"}]
     
+    # Check cache first
+    if CACHE_ENABLED:
+        cache_key = f"search:{hashlib.md5(query.encode()).hexdigest()}:{num_results}"
+        cached_result = web_cache.get(cache_key)
+        if cached_result is not None:
+            print(f"[KIRA WEB] Cache hit for search: {query}")
+            return cached_result
+    
     try:
         print(f"[KIRA WEB] Searching: {query}")
         
@@ -49,6 +68,11 @@ def search_web(query: str, num_results: int = 5) -> list:
             })
         
         print(f"[KIRA WEB] Found {len(formatted)} results")
+        
+        # Cache the results
+        if CACHE_ENABLED:
+            web_cache.set(cache_key, formatted, ttl=3600)  # 1 hour TTL
+        
         return formatted
         
     except Exception as e:
@@ -68,12 +92,20 @@ def fetch_webpage(url: str, max_length: int = 3000) -> dict:
         Dictionary with title, url, and content
     """
     try:
-        print(f"[KIRA WEB] Fetching: {url}")
-        
         # Validate URL
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             return {"error": "Invalid URL"}
+        
+        # Check cache first
+        if CACHE_ENABLED:
+            cache_key = f"webpage:{hashlib.md5(url.encode()).hexdigest()}"
+            cached_result = web_cache.get(cache_key)
+            if cached_result is not None:
+                print(f"[KIRA WEB] Cache hit for webpage: {url}")
+                return cached_result
+        
+        print(f"[KIRA WEB] Fetching: {url}")
         
         # Fetch page with timeout
         headers = {
@@ -107,11 +139,17 @@ def fetch_webpage(url: str, max_length: int = 3000) -> dict:
         
         print(f"[KIRA WEB] Fetched {len(text)} characters")
         
-        return {
+        result = {
             "title": title,
             "url": url,
             "content": text
         }
+        
+        # Cache the result
+        if CACHE_ENABLED:
+            web_cache.set(cache_key, result, ttl=3600)  # 1 hour TTL
+        
+        return result
         
     except requests.exceptions.Timeout:
         return {"error": "Request timed out"}
