@@ -125,10 +125,27 @@ def _try_builtin_response(text):
     if lower in {"thank you", "thanks", "merci"}:
         return "You're welcome, sir."
     
-    if lower in {"goodbye", "bye", "see you", "exit", "quit"}:
-        return "Goodbye, sir. I'll be here when you need me."
-    
-    return None
+        if lower in {"goodbye", "bye", "see you", "exit", "quit"}:
+            return "Goodbye, sir. I'll be here when you need me."
+        
+        # Check if it's a web search request
+        search_keywords = ["search for", "search", "look up", "find", "google", "what is", "who is", "where is", "when did", "how to", "latest", "news about", "current", "recent"]
+        if any(keyword in lower for keyword in search_keywords):
+            # Extract the search query
+            query = text
+            for prefix in ["search for", "search", "look up", "find", "google"]:
+                if lower.startswith(prefix):
+                    query = text[len(prefix):].strip()
+                    break
+            
+            print(f"[KIRA] Web search requested: {query}")
+            try:
+                import kira_web
+                return kira_web.search_and_summarize(query)
+            except Exception as e:
+                return f"I tried to search the web but encountered an error: {str(e)}"
+        
+        return None
 
 
 def process_command(text):

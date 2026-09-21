@@ -131,6 +131,10 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._handle_remember(data)
         elif path == "/api/tts":
             self._handle_tts(data)
+        elif path == "/api/web/search":
+            self._handle_web_search(data)
+        elif path == "/api/web/fetch":
+            self._handle_web_fetch(data)
         else:
             self._send_json({"error": "Not found"}, 404)
 
@@ -394,6 +398,42 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
                 "audio": audio_base64,
                 "format": "mp3"
             })
+            
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_web_search(self, data):
+        """Search the web using DuckDuckGo."""
+        try:
+            import kira_web
+            
+            query = str(data.get("query", "")).strip()
+            num_results = int(data.get("num_results", 5))
+            
+            if not query:
+                self._send_json({"error": "Query required"}, 400)
+                return
+            
+            results = kira_web.search_web(query, num_results)
+            self._send_json({"success": True, "results": results})
+            
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_web_fetch(self, data):
+        """Fetch and extract content from a web page."""
+        try:
+            import kira_web
+            
+            url = str(data.get("url", "")).strip()
+            max_length = int(data.get("max_length", 3000))
+            
+            if not url:
+                self._send_json({"error": "URL required"}, 400)
+                return
+            
+            result = kira_web.fetch_webpage(url, max_length)
+            self._send_json(result)
             
         except Exception as e:
             self._send_json({"error": str(e)}, 500)
