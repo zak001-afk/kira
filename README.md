@@ -84,9 +84,13 @@ Everything runs on your machine. No cloud APIs, no API keys, no telemetry.
   timer that speaks back when it fires (English, French and Arabic).
 - **Configurable everything** — your own app aliases, websites and
   confirmation rules live in `kira_config.json`, not in code.
-- **Graphic UI** — dark `customtkinter` interface with a state machine
-  (READY / LISTENING / THINKING / EXECUTING / SPEAKING), animated core,
-  chat panel, quick commands and typed input.
+- **3D holographic core** — the interface centrepiece is a real
+  perspective-projected orb: a 430-point depth-sorted sphere, six meridians
+  and four latitude rings (each shaded by depth), an equatorial scan ring,
+  3D orbiting satellites, and a glowing heart behind the KIRA wordmark —
+  all wrapped in **two layers of matrix rain** (dense/dim behind, sparse/
+  bright in front) so the sphere sits *inside* the rain. Six UI states drive
+  spin, tilt, pulse, rain speed and hue.
 - **Safe by default** — sensitive actions (web search, mouse clicks, locking
   the PC) ask for voice confirmation; destructive steps fail loudly.
 
@@ -207,6 +211,7 @@ conversational chat mode with your stored memories as context.
   },
   "personality": { "humor": "charming" }, // charming | neutral | dry | formal
   "builder_model": "",            // optional stronger model for project builds
+  "orb_quality": "balanced",      // UI render budget: high | balanced | low
   "projects_dir": "",             // default: ~/KIRA Projects
   "skill_promote_after": 10,      // successes before KIRA offers a shortcut
   "lab_passphrase": "",           // optional passphrase for "unlock the lab"
@@ -312,6 +317,42 @@ control:
 Startup is now a small boot sequence: a calibration-style banner with memory
 counts, then a spoken briefing (time, date, battery, pending reminders).
 
+## The 3D core
+
+![KIRA's 3D core](assets/orb_preview.png)
+
+The interface centrepiece is a genuinely 3D object, not a decorated circle.
+`kira_orb.py` holds the maths (pure Python, no UI dependencies, fully
+unit-tested) and `main_window.py` draws it with tkinter:
+
+| Layer | What it is |
+|---|---|
+| Halo | A barely-there bloom so the sphere sits in light, not on a plate |
+| Wireframe | 6 meridians + 4 latitude rings, shaded by average depth per segment — the far side stays a ghost so the near side reads as the front |
+| Point cloud | 430 points spread by Fibonacci sphere, rotated, perspective-projected and painted far → near, size and colour scaled by depth |
+| Scan ring | A tilted equatorial ring that swings with the animation |
+| Core | Dark shell with a glowing heart behind the KIRA / CORE wordmark, rim-lit and breathing |
+| Satellites | 10 markers on real 3D orbits, depth-shaded |
+| Matrix rain | Two layers — dense/dim columns *behind* the orb and sparse/bright columns *in front* — each a head with a long fading tail, glyphs from a font-safe alphabet |
+
+The right-handed projection (`+z` toward the viewer, camera at `3.2`) gives
+every point a normalized depth `0..1`, which is what drives size, brightness
+and draw order. Six UI states (READY / LISTENING / THINKING / EXECUTING /
+SPEAKING / ERROR) each set spin rate, tilt, pulse, rain speed and hue.
+
+**See it without launching the app** — the preview renders the *same* maths
+through Pillow, so you can inspect or share frames from any machine:
+
+```powershell
+python scripts/render_orb_preview.py                       # one frame
+python scripts/render_orb_preview.py --state THINKING --phase 2.5
+python scripts/render_orb_preview.py --filmstrip           # all four states
+```
+
+Render cost is bounded: `orb_quality` (`high` / `balanced` / `low`, default
+`balanced`) scales the sphere, rain and wireframe budgets, and the counts
+also shrink automatically on small canvases.
+
 ## Building projects from an idea
 
 Say *"build me a project that tracks my expenses"* (or type it) and KIRA runs
@@ -402,6 +443,7 @@ kira/
 ├── kira_voice_agent.py   # backend: STT, parser, LLM routing, actions, vision, TTS
 ├── kira_thought.py       # the agent's mind: think → act → reflect, self-reports
 ├── kira_builder.py       # idea → planned, generated, tested, self-repaired project
+├── kira_orb.py           # pure 3D geometry + matrix rain maths (no UI deps)
 ├── kira_calculator.py    # safe AST-whitelisted arithmetic (EN/FR/AR)
 ├── kira_reminders.py     # in-process spoken reminders with daemon timers
 ├── kira_personality.py   # humor levels, time-aware greetings, boot theater
@@ -416,7 +458,8 @@ kira/
 ├── kira_config.json      # user configuration (see above)
 ├── dev.py                # watch-and-restart development mode
 ├── scripts/
-│   └── setup_models.py   # one-time model installer (Ollama + Vosk)
+│   ├── setup_models.py   # one-time model installer (Ollama + Vosk)
+│   └── render_orb_preview.py  # render the 3D core to a PNG (no display needed)
 ├── assets/               # icons
 ├── tests/                # pytest suite (runs anywhere — hardware is stubbed)
 ├── KIRA.spec             # PyInstaller spec (single source of truth for builds)
@@ -429,7 +472,7 @@ kira/
 dev_mode.bat        # auto-restarts KIRA whenever a source file changes
 
 pip install -r requirements-dev.txt
-pytest              # 580 unit tests — no mic, display or Ollama needed
+pytest              # 629 unit tests — no mic, display or Ollama needed
 ruff check .        # lint
 python -m compileall dev.py kira_memory.py kira_thought.py kira_voice_agent.py main_window.py scripts tests
 ```

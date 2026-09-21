@@ -18,6 +18,8 @@ except Exception as exc:
     backend = None
     BACKEND_IMPORT_ERROR = exc
 
+import kira_orb
+
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 BG = "#02060B"
@@ -1224,251 +1226,242 @@ class KiraUI(ctk.CTk):
             daemon=True,
         ).start()
 
+    # ── 3D core renderer (geometry lives in kira_orb, tested there) ────
+
+    def _orb_density(self, width, height):
+        """Object budget per layer, scaled down on small canvases."""
+        area = max(1.0, width * height)
+        settings = getattr(backend, "CONFIG", {}) if backend else {}
+        quality = str(settings.get("orb_quality", "balanced"))
+        factors = {"high": 1.35, "balanced": 1.0, "low": 0.6}
+        factor = factors.get(quality, 1.0)
+        scale = min(1.0, (area / 420000.0) ** 0.5) * factor
+        return {
+            "cloud": max(120, int(430 * scale)),
+            "rain_far": max(18, int(width // 12 * scale)),
+            "rain_near": max(8, int(width // 30 * scale)),
+        }
+
     def _draw_orb(self):
-        """Render the animated KIRA core and bottom audio waveform."""
+        """Render the 3D KIRA core: point-cloud sphere + matrix rain."""
         c = self.canvas
-        w = max(400, c.winfo_width())
-        h = max(400, c.winfo_height())
+        w = max(360, c.winfo_width())
+        h = max(360, c.winfo_height())
+        state = getattr(self, "last_state", "READY")
+        profile = kira_orb.profile(state)
+        hue = profile["hue"]
+        breath = kira_orb.pulse(self.phase, 1.8)
+        spin_x, spin_y, spin_z = kira_orb.spin_angles(state, self.phase)
 
         c.delete("all")
 
-        cx = w / 2
-        cy = h / 2 - 8
-        state = getattr(self, "last_state", "READY")
+        cx, cy = w / 2.0, h / 2.0 - 6
+        radius = kira_orb.orb_radius(w, h, margin=0.30)
+        camera = 3.2
+        density = self._orb_density(w, h)
 
-        # ---------------------------------------------------------
-        # CENTRAL MATRIX BACKGROUND
-        # ---------------------------------------------------------
+        # ── rain behind the orb ───────────────────────────────────────
+        self._draw_orb_rain(
+            c, w, h,
+            phase=self.phase,
+            profile=profile,
+            columns=density["rain_far"],
+            column_width=12.0,
+            row_height=15.0,
+            trail=10,
+            far="#2E0505",
+            near="#8A1212",
+            small=True,
+            seed=7,
+        )
 
-        for i in range(32):
-            x = (i * 47 + int(self.particle_phase * 35)) % w
-            y = (i * 83 + int(self.phase * 22)) % h
-
-            char = "1" if (i + int(self.phase * 2)) % 2 else "0"
-
-            c.create_text(
-                x,
-                y,
-                text=char,
-                fill="#3A0608",
-                font=("Consolas", 8),
-                anchor="center",
-            )
-
-        profiles = {
-            "READY": {
-                "speed": 0.025,
-                "pulse": 5,
-                "edge": "#1599C2",
-                "wave": 4,
-                "rotation": 0.08,
-            },
-            "LISTENING": {
-                "speed": 0.075,
-                "pulse": 14,
-                "edge": ACCENT_ALT,
-                "wave": 18,
-                "rotation": 0.25,
-            },
-            "THINKING": {
-                "speed": 0.14,
-                "pulse": 11,
-                "edge": ACCENT_HOT,
-                "wave": 14,
-                "rotation": 0.55,
-            },
-            "EXECUTING": {
-                "speed": 0.20,
-                "pulse": 15,
-                "edge": ACCENT_WARM,
-                "wave": 20,
-                "rotation": 0.85,
-            },
-            "SPEAKING": {
-                "speed": 0.10,
-                "pulse": 18,
-                "edge": ACCENT,
-                "wave": 28,
-                "rotation": 0.35,
-            },
-            "ERROR": {
-                "speed": 0.06,
-                "pulse": 12,
-                "edge": RED,
-                "wave": 10,
-                "rotation": 0.15,
-            },
-        }
-
-        profile = profiles.get(state, profiles["READY"])
-        pulse = (math.sin(self.phase * 2.0) + 1.0) / 2.0
-
-        # Background particles
-        for i in range(75):
-            angle = i * 2.399 + self.particle_phase * (0.12 + (i % 4) * 0.01)
-            radius = 105 + (i * 37) % 280
-            drift = math.sin(self.phase * profile["rotation"] + i) * (
-                2 if state != "READY" else 0.5
-            )
-
-            x = cx + math.cos(angle) * (radius + drift)
-            y = cy + math.sin(angle) * (radius + drift) * 0.72
-            size = 1 if i % 4 else 2
-
-            particle_color = (
-                profile["edge"] if i % 11 == 0 and state != "READY" else "#5A0808"
-            )
-
+        # ── halo: barely-there bloom, no banding ──────────────────────
+        halo = radius * (1.15 + 0.03 * breath)
+        for step in range(9, 0, -1):
+            t = step / 9.0
+            ring = halo * (0.84 + 0.16 * t)
             c.create_oval(
-                x - size, y - size, x + size, y + size, fill=particle_color, outline=""
+                cx - ring, cy - ring, cx + ring, cy + ring,
+                fill=kira_orb.mix(BG, hue, 0.020 * (1.0 - t) ** 3),
+                outline="",
             )
 
-        # Outer orbit rings
-        rings = [
-            (235, "#210506", 1),
-            (215, "#3A0808", 1),
-            (192, "#5C0D0D", 1),
-            (170, profile["edge"], 2),
-        ]
+        # ── wireframe: 6 meridians + 4 latitude rings ─────────────────
+        lines = list(kira_orb.meridian_rings(6, 1.0, 96)) + list(
+            kira_orb.latitude_rings(4, 1.0, 96)
+        )
+        for line in lines:
+            rotated = kira_orb.rotate_all(line, spin_x, spin_y, spin_z)
+            projected = kira_orb.project_all(
+                rotated, w, h, radius, camera, center=(cx, cy)
+            )
+            for start in range(0, len(projected) - 1, 8):
+                run = projected[start : start + 9]
+                if len(run) < 2:
+                    continue
+                depth = sum(point["depth"] for point in run) / len(run)
+                # the far side stays a ghost so the near side reads as the front
+                color = kira_orb.depth_color(
+                    "#1C0303", kira_orb.mix(hue, "#FFFFFF", 0.22),
+                    max(0.0, depth - 0.2),
+                )
+                if depth < 0.35:
+                    color = kira_orb.mix(color, kira_orb.mix(BG, hue, 0.10), 0.5)
+                flat = []
+                for point in run:
+                    flat.extend((point["x"], point["y"]))
+                c.create_line(*flat, fill=color, width=1, smooth=True)
 
-        for index, (radius, color, width) in enumerate(rings):
-            expansion = profile["pulse"] * pulse
-            if index < 2:
-                expansion *= 0.35
-
-            r = radius + expansion
-            c.create_oval(cx - r, cy - r, cx + r, cy + r, outline=color, width=width)
-
-        # Rotating orbit markers
-        for i in range(40):
-            angle = i * math.tau / 40 + self.phase * profile["rotation"]
-            radius = 196
-
-            x1 = cx + math.cos(angle) * radius
-            y1 = cy + math.sin(angle) * radius
-
-            marker_length = 7 if i % 4 else 14
-            x2 = cx + math.cos(angle) * (radius + marker_length)
-            y2 = cy + math.sin(angle) * (radius + marker_length)
-
-            marker_color = profile["edge"] if i % 5 == 0 else "#0D4058"
-
-            c.create_line(
-                x1, y1, x2, y2, fill=marker_color, width=2 if i % 5 == 0 else 1
+        # ── point cloud, painted far to near ─────────────────────────
+        cloud = kira_orb.rotate_all(
+            kira_orb.fibonacci_sphere(density["cloud"], 1.0),
+            spin_x, spin_y, spin_z,
+        )
+        projected = kira_orb.project_all(
+            cloud, w, h, radius, camera, center=(cx, cy)
+        )
+        for index in kira_orb.depth_sort(projected):
+            point = projected[index]
+            depth = point["depth"]
+            size = 1.1 + depth * 1.7
+            c.create_oval(
+                point["x"] - size, point["y"] - size,
+                point["x"] + size, point["y"] + size,
+                fill=kira_orb.depth_color("#3C0606", hue, depth),
+                outline="",
             )
 
-        # Core glow
-        layers = [
-            (158, "#100304"),
-            (148, "#190506"),
-            (138, "#260707"),
-            (128, "#350909"),
-            (118, "#220506"),
-        ]
+        # ── equatorial scan ring ─────────────────────────────────────
+        scan = kira_orb.rotate_all(
+            kira_orb.circle_ring(1.06, 84, tilt=math.sin(self.phase * 0.7) * 0.35),
+            spin_x, spin_y, spin_z,
+        )
+        flat = []
+        for point in kira_orb.project_all(scan, w, h, radius, camera, center=(cx, cy)):
+            flat.extend((point["x"], point["y"]))
+        c.create_line(
+            *flat,
+            fill=kira_orb.mix(hue, "#FFFFFF", 0.30 + 0.25 * breath),
+            width=2,
+            smooth=True,
+        )
 
-        for radius, color in layers:
-            factor = profile["pulse"]
-            if radius < 140:
-                factor *= 0.8
-
-            r = radius + pulse * factor
-            c.create_oval(cx - r, cy - r, cx + r, cy + r, fill=color, outline="")
-
-        edge_radius = 112 + pulse * profile["pulse"] * 0.35
+        # ── the core: shell outside, glowing heart inside ────────────
+        core = radius * (0.50 + 0.04 * breath)
+        steps = 16
+        for step in range(steps, 0, -1):
+            t = step / steps
+            ring = core * (0.18 + 0.82 * t)
+            glow = (1.0 - t) ** 1.8
+            c.create_oval(
+                cx - ring, cy - ring, cx + ring, cy + ring,
+                fill=kira_orb.mix("#0A0203", hue, 0.06 + 0.42 * glow),
+                outline="",
+            )
         c.create_oval(
-            cx - edge_radius,
-            cy - edge_radius,
-            cx + edge_radius,
-            cy + edge_radius,
-            outline=profile["edge"],
-            width=4 if state != "READY" else 3,
+            cx - core, cy - core, cx + core, cy + core,
+            outline=kira_orb.mix(hue, "#FFFFFF", 0.30 + 0.25 * breath),
+            width=2,
+        )
+        iris = core * 0.62
+        c.create_oval(
+            cx - iris, cy - iris, cx + iris, cy + iris,
+            outline=kira_orb.mix(hue, "#FFFFFF", 0.05 + 0.10 * breath),
+            width=1,
         )
 
-        # Neural waves
-        wave_count = 7 if state in {"THINKING", "EXECUTING"} else 5
-
-        for k in range(wave_count):
-            points = []
-
-            for x in range(-94, 95, 4):
-                base_amp = 4 + k * 1.8
-                dynamic_amp = (
-                    profile["wave"] * pulse
-                    + abs(math.sin(self.phase * 1.7 + k * 0.8)) * profile["wave"] * 0.4
-                )
-
-                y = (
-                    math.sin(x * 0.055 + self.phase * (1.0 + profile["rotation"]) + k)
-                    * (base_amp + dynamic_amp)
-                    * math.sin((x + 95) * math.pi / 190)
-                )
-
-                if state == "SPEAKING":
-                    y *= 1.0 + 0.35 * math.sin(self.phase * 3 + x * 0.03)
-
-                points.extend([cx + x, cy + y + (k - (wave_count - 1) / 2) * 11])
-
-            c.create_line(
-                *points,
-                fill=(profile["edge"] if k == wave_count // 2 else "#B51212"),
-                width=3 if k == wave_count // 2 else 1,
-                smooth=True,
+        # ── orbiting satellites (true 3D orbits) ─────────────────────
+        for index in range(10):
+            angle = kira_orb.TAU * index / 10 + self.phase * (profile["spin"] * 0.45)
+            orbit = kira_orb.orbit_point(1.26, angle, tilt=0.42)
+            point = kira_orb.project(orbit, w, h, radius, camera, center=(cx, cy))
+            size = 1.4 + point["depth"] * 2.0
+            c.create_oval(
+                point["x"] - size, point["y"] - size,
+                point["x"] + size, point["y"] + size,
+                fill=kira_orb.depth_color("#4A0707", hue, point["depth"]),
+                outline="",
             )
 
-        # Central KIRA text
-        c.create_text(cx, cy - 8, text="KIRA", fill=TEXT, font=(FONT, 30, "bold"))
-
+        # ── labels ───────────────────────────────────────────────────
         c.create_text(
-            cx, cy + 25, text="CORE", fill=profile["edge"], font=(FONT, 9, "bold")
+            cx, cy - core * 0.16,
+            text="KIRA", fill=TEXT,
+            font=(FONT, max(16, int(radius * 0.21)), "bold"),
+        )
+        c.create_text(
+            cx, cy + core * 0.42,
+            text="CORE",
+            fill=kira_orb.mix(hue, "#FFFFFF", 0.35 + 0.25 * breath),
+            font=(FONT, max(8, int(radius * 0.066)), "bold"),
         )
 
-        # Bottom audio waveform
-        if hasattr(self, "wave"):
-            wc = self.wave
-            ww = max(250, wc.winfo_width())
-            wh = 58
-            wc.delete("all")
-            mid = wh / 2
+        # ── rain in front of the orb ─────────────────────────────────
+        self._draw_orb_rain(
+            c, w, h,
+            phase=self.phase * 0.6,
+            profile=profile,
+            columns=density["rain_near"],
+            column_width=27.0,
+            row_height=17.0,
+            trail=7,
+            far="#5A0C0C",
+            near=RED,
+            small=False,
+            seed=23,
+        )
 
-            waveform_strength = {
-                "READY": 3,
-                "LISTENING": 20,
-                "THINKING": 13,
-                "EXECUTING": 19,
-                "SPEAKING": 27,
-                "ERROR": 9,
-            }.get(state, 4)
+        self._draw_waveform(state, breath)
 
-            for i in range(41):
-                x = 15 + i * (ww - 30) / 40
-                movement = abs(math.sin(i * 0.52 + self.phase * 3))
+        # advance the animation only after the whole frame is drawn
+        self.phase += profile["spin"] * 0.16 + 0.01
+        self.particle_phase += 0.012
 
-                amp = 3 + waveform_strength * movement * (0.45 + pulse * 0.8)
-
-                if state == "READY":
-                    amp = 2 + movement * 2
-
-                wc.create_line(
-                    x,
-                    mid - amp,
-                    x,
-                    mid + amp,
-                    fill="#FF2A2A" if i % 4 == 0 else "#7A0C0C",
-                    width=2 if i % 4 == 0 else 1,
+    def _draw_orb_rain(self, canvas, width, height, phase, profile, columns,
+                       column_width, row_height, trail, far, near, small, seed):
+        """One depth layer of glyph rain (kira_orb supplies the maths)."""
+        speed = kira_orb.rain_intensity(profile) * (0.85 if small else 1.25)
+        font = ("Consolas", 8 if small else 11)
+        for column in kira_orb.make_columns(
+            width, height, column_width=column_width, count=columns, seed=seed
+        ):
+            for y, glyph, intensity in kira_orb.column_glyphs(
+                column, phase * speed, height,
+                row_height=row_height, glyphs_visible=trail,
+            ):
+                color = kira_orb.depth_color(far, near, intensity)
+                if intensity >= 0.999:
+                    color = kira_orb.mix(color, "#FFFFFF", 0.55)
+                canvas.create_text(
+                    column["x"], y, text=glyph, fill=color, font=font,
+                    anchor="center",
                 )
 
+    def _draw_waveform(self, state, pulse):
+        """Bottom audio waveform (kept from the original HUD)."""
+        if not hasattr(self, "wave"):
+            return
+        wc = self.wave
+        ww = max(250, wc.winfo_width())
+        wh = 58
+        wc.delete("all")
+        mid = wh / 2
+        strength = {
+            "READY": 3, "LISTENING": 20, "THINKING": 13,
+            "EXECUTING": 19, "SPEAKING": 27, "ERROR": 9,
+        }.get(state, 4)
+        for i in range(41):
+            x = 15 + i * (ww - 30) / 40
+            movement = abs(math.sin(i * 0.52 + self.phase * 3))
+            amp = 3 + strength * movement * (0.45 + pulse * 0.8)
+            if state == "READY":
+                amp = 2 + movement * 2
             wc.create_line(
-                10,
-                mid,
-                ww - 10,
-                mid,
-                fill="#0B2C3C",
-                width=1,
+                x, mid - amp, x, mid + amp,
+                fill=ACCENT if i % 4 == 0 else "#7A0C0C",
+                width=2 if i % 4 == 0 else 1,
             )
-
-        # Advance animation only after all drawing is complete.
-        self.phase += profile["speed"]
-        self.particle_phase += 0.012
+        wc.create_line(10, mid, ww - 10, mid, fill="#0B2C3C", width=1)
 
     def _draw_panel_matrix(self, canvas, phase_offset=0):
         """Draw subtle red Matrix rain inside a HUD panel."""

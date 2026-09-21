@@ -19,7 +19,7 @@ import kira_homeassist
 import kira_builder
 import re
 
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 import subprocess
 import time
 import webbrowser
@@ -94,6 +94,7 @@ DEFAULT_CONFIG = {
     "skill_promote_after": 10,
     "projects_dir": "",
     "builder_model": "",
+    "orb_quality": "balanced",   # high | balanced | low — UI render budget
     "project_test_timeout": 180,
     "project_max_attempts": 3,
     "shortcuts": {

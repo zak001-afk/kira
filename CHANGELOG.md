@@ -3,6 +3,40 @@
 All notable changes to KIRA are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.5.0] — 2026-09-21
+
+### Added — 3D holographic core (`kira_orb.py`)
+- **A real 3D orb**, not a decorated circle: Fibonacci-sphere point cloud
+  (430 points), 6 meridians + 4 latitude rings, an equatorial scan ring, a
+  glowing core with rim light, and 10 satellites on true 3D orbits. Every
+  primitive is perspective-projected (camera at 3.2) and depth-shaded —
+  size, brightness and draw order all follow the normalized depth, so the
+  sphere reads as a solid object with a near and far side.
+- **Two-layer matrix rain**: dense/dim columns behind the orb and
+  sparse/bright columns in front, so the sphere sits *inside* the rain.
+  Each column is a stream — a white-hot head with a long fading tail — over
+  a font-safe glyph alphabet (the previous katakana set rendered as blank
+  boxes in common monospace fonts).
+- **Pure maths, separately testable**: `kira_orb.py` has no tkinter/PIL
+  imports, so geometry, projection, colour and rain are unit-tested directly.
+- **Offline preview**: `scripts/render_orb_preview.py` renders the same
+  frame to a PNG through Pillow (`--state`, `--phase`, `--filmstrip`), which
+  is how the artwork in the README was produced — no display needed.
+- Six UI states drive spin, tilt, pulse, rain speed and hue; `orb_quality`
+  (high/balanced/low) caps the render budget, and layer counts also scale
+  down automatically on small canvases.
+
+### Changed
+- The old 2D orb (flat rings, waveform-only core, scattered digits) is
+  replaced; the bottom audio waveform is retained as its own renderer.
+
+### Tests
+- 49 new tests: geometry invariants (points on the sphere, no polar
+  clustering, great circles), rotation/orthogonality, projection and
+  depth-sorting, colour maths, rain determinism and tails, state profiles —
+  plus the **real tkinter renderer driven through a fake canvas**, so the
+  drawing path is executed and asserted without a display. **629 passing.**
+
 ## [2.4.0] — 2026-09-21
 
 ### Added — project builder (`kira_builder.py`)
