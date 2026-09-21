@@ -101,58 +101,58 @@ def _try_builtin_response(text):
     }
     
     if lower in greetings:
-        # Vary the greeting to sound more natural
+        # JARVIS-style greetings
         import random
         greetings_list = [
-            "Hello sir.",
-            "Hi there.",
-            "Hey, good to see you.",
-            "Hello.",
-            "Hi sir, what's on your mind?"
+            "Good day, sir.",
+            "Welcome back, sir.",
+            "At your service, sir.",
+            "Good to see you, sir.",
+            "Hello, sir. All systems are operational."
         ]
         return random.choice(greetings_list)
     
     if lower in {"who are you", "what are you", "what is kira"}:
-        return "I'm KIRA - your local AI assistant. I can help with your computer, search the web, manage tasks, answer questions, and learn new things over time."
+        return "I'm KIRA, sir - your personal AI assistant, modeled after JARVIS. I manage your systems, search the web, learn continuously, and anticipate your needs. Think of me as your digital butler and strategic advisor."
     
     if lower in {"what can you do", "help", "commands"}:
         return (
-            "I can do quite a bit actually. I control your computer - open apps, manage files, take screenshots. "
-            "I search the web and learn from it, so I get smarter over time. I handle tasks and reminders, "
-            "control media and volume, and I'm always ready for a conversation or to answer questions."
+            "I'm equipped to handle quite a lot, sir. I control your computer systems - applications, files, media. "
+            "I search the web and learn from it, building knowledge over time. I manage tasks and reminders, "
+            "analyze your screen, and I'm always ready to assist with whatever you need. Shall I demonstrate something specific?"
         )
     
     if lower in {"what time is it", "time", "current time"}:
         from datetime import datetime
         current_time = datetime.now().strftime('%H:%M')
-        return f"It's {current_time}."
+        return f"The time is {current_time}, sir."
     
     if lower in {"what is the date", "today's date", "date", "what day is it"}:
         from datetime import datetime
         current_date = datetime.now().strftime('%A, %B %d, %Y')
-        return f"Today is {current_date}."
+        return f"Today is {current_date}, sir."
     
     if lower in {"thank you", "thanks", "merci"}:
-        # Vary the response
+        # JARVIS-style acknowledgments
         import random
         thanks_list = [
-            "You're welcome.",
-            "No problem.",
-            "Anytime.",
-            "Happy to help.",
-            "Of course."
+            "You're quite welcome, sir.",
+            "My pleasure, sir.",
+            "Always at your service.",
+            "Happy to be of assistance.",
+            "Of course, sir."
         ]
         return random.choice(thanks_list)
     
     if lower in {"goodbye", "bye", "see you", "exit", "quit"}:
-        # Vary the farewell
+        # JARVIS-style farewells
         import random
         farewell_list = [
-            "Goodbye, sir.",
-            "See you later.",
-            "Take care.",
-            "Until next time.",
-            "Goodbye."
+            "Goodbye, sir. I'll be here when you return.",
+            "Until next time, sir.",
+            "Take care, sir. I'll keep things running.",
+            "Farewell, sir.",
+            "Good day, sir."
         ]
         return random.choice(farewell_list)
         
