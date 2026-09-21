@@ -346,7 +346,7 @@ const reactorParticles = new THREE.Points(particleGeo, particleMat);
 reactor.add(reactorParticles);
 
 /* =========================================================
-   MATRIX RAIN — ENHANCED
+   MATRIX RAIN
    ========================================================= */
 
 const matrixCanvas = document.getElementById("matrix");
@@ -354,13 +354,12 @@ const matrixContext = matrixCanvas.getContext("2d");
 let matrixWidth = 0;
 let matrixHeight = 0;
 
-const matrixFontSize = 14;
-const matrixChars = "01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF<>{}[]|/\\=+-*&^%$#@!?";
+const matrixFontSize = 16;
+const matrixChars = "01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF";
 
 let matrixColumns = [];
 let matrixSpeeds = [];
 let matrixBrightness = [];
-let matrixTrails = [];
 
 function resizeMatrix() {
   matrixWidth = matrixCanvas.width = window.innerWidth;
@@ -368,61 +367,46 @@ function resizeMatrix() {
   const columns = Math.floor(matrixWidth / matrixFontSize);
   
   matrixColumns = new Array(columns).fill(0).map(() => Math.random() * matrixHeight / matrixFontSize);
-  matrixSpeeds = new Array(columns).fill(0).map(() => 0.5 + Math.random() * 1.5);
+  matrixSpeeds = new Array(columns).fill(0).map(() => 0.15 + Math.random() * 0.4);
   matrixBrightness = new Array(columns).fill(0).map(() => Math.random());
-  matrixTrails = new Array(columns).fill(0).map(() => 5 + Math.floor(Math.random() * 15));
 }
 
 function drawMatrix() {
-  // Fade effect (creates trails)
-  matrixContext.fillStyle = "rgba(0, 0, 0, 0.06)";
+  // Heavier fade for subtler trails
+  matrixContext.fillStyle = "rgba(0, 0, 0, 0.08)";
   matrixContext.fillRect(0, 0, matrixWidth, matrixHeight);
   
   matrixContext.font = `${matrixFontSize}px 'Courier New', monospace`;
 
   for (let i = 0; i < matrixColumns.length; i++) {
+    // Skip some columns for less density
+    if (i % 3 === 0) continue;
+    
     const x = i * matrixFontSize;
     const y = matrixColumns[i] * matrixFontSize;
     
     // Random character
     const char = matrixChars[Math.floor(Math.random() * matrixChars.length)];
     
-    // Brightness variation
+    // Brightness variation (less intense)
     const brightness = matrixBrightness[i];
     
-    // Leading character (brightest)
-    if (brightness > 0.9) {
-      matrixContext.fillStyle = "#ffffff";
-      matrixContext.shadowBlur = 15;
-      matrixContext.shadowColor = "#ff4040";
-    } else if (brightness > 0.7) {
-      matrixContext.fillStyle = "#ff6060";
-      matrixContext.shadowBlur = 10;
-      matrixContext.shadowColor = "#ff2020";
-    } else if (brightness > 0.4) {
-      matrixContext.fillStyle = "#d51b1b";
-      matrixContext.shadowBlur = 5;
-      matrixContext.shadowColor = "#ff1010";
+    // Simpler color scheme, less glow
+    if (brightness > 0.85) {
+      matrixContext.fillStyle = "#ff5555";
+    } else if (brightness > 0.6) {
+      matrixContext.fillStyle = "#cc2222";
     } else {
-      matrixContext.fillStyle = "#8b1010";
-      matrixContext.shadowBlur = 0;
+      matrixContext.fillStyle = "#661111";
     }
     
     matrixContext.fillText(char, x, y);
-    matrixContext.shadowBlur = 0;
     
-    // Occasional glitch effect
-    if (Math.random() < 0.001) {
-      matrixContext.fillStyle = "#ff8080";
-      matrixContext.fillRect(x, y - matrixFontSize, matrixFontSize, matrixFontSize * 3);
-    }
-    
-    // Move down
-    if (y > matrixHeight && Math.random() > 0.96) {
+    // Reset when off screen (less frequent)
+    if (y > matrixHeight && Math.random() > 0.985) {
       matrixColumns[i] = 0;
       matrixBrightness[i] = Math.random();
-      matrixSpeeds[i] = 0.5 + Math.random() * 1.5;
-      matrixTrails[i] = 5 + Math.floor(Math.random() * 15);
+      matrixSpeeds[i] = 0.15 + Math.random() * 0.4;
     } else {
       matrixColumns[i] += matrixSpeeds[i];
     }
