@@ -995,7 +995,6 @@ def parse_simple_command(command: str):
         "حالة الكمبيوتر",
     }:
         return {"action": "system_info"}
-        return {"action": "system_info"}
 
     if lower in {
         "help",
@@ -1801,37 +1800,6 @@ def ask_chat(command: str):
     # Do not ask the small LLM to interpret simple user facts.
     # ---------------------------------------------------------
 
-    # ---------------------------------------------------------
-    # FORGET SPECIFIC MEMORY
-    # ---------------------------------------------------------
-
-    forget_patterns = [
-        (
-            r"forget\s+(?:my\s+)?name\??",
-            "identity",
-            "name",
-        ),
-        (
-            r"forget\s+(?:my\s+)?favorite\s+(?:programming\s+)?language\??",
-            "preference",
-            "favorite_programming_language",
-        ),
-    ]
-
-    for pattern, category, memory_key in forget_patterns:
-        if re.fullmatch(
-            pattern,
-            command,
-            flags=re.IGNORECASE,
-        ):
-            if kira_memory.forget_memory(
-                category,
-                memory_key,
-            ):
-                return "Understood. I have forgotten that memory."
-
-            return "I don't have that memory stored."
-
     memory_patterns = [
         (
             r"(?:what|which)\s+is\s+my\s+favorite\s+(?:programming\s+)?language\??",
@@ -1913,8 +1881,6 @@ def ask_chat(command: str):
                         )
                     )
                 )
-
-        return "I don't have a previous user statement available."
 
         return "I don't have a previous user statement available."
 
@@ -2310,7 +2276,6 @@ def help_command():
         "report system status, analyze your screen, locate things on screen, "
         "and answer questions using my local AI, sir."
     )
-    return True
 
 
 def report_time():
@@ -2387,7 +2352,7 @@ def execute_action(action_data):
                     logging.warning("Sequence step %s failed: %s", index, step)
                     return f"I could not complete step {index}, sir."
 
-            except Exception as exc:
+            except Exception:
                 logging.exception("Sequence step %s failed", index)
                 return f"The sequence stopped at step {index}, sir."
 
@@ -2584,6 +2549,9 @@ def normalize_command(command: str) -> str:
     for prefix in [WAKE_WORD, "hey kira", "hello kira", "kira please", "okay kira"]:
         if lower.startswith(prefix):
             text = text[len(prefix) :].strip()
+            # Tolerate a separator between wake word and command,
+            # e.g. "kira, open chrome" or "kira: open chrome".
+            text = text.lstrip(" ,;:-").strip()
             break
     return text.strip()
 

@@ -27,10 +27,10 @@ PANEL2 = "#091722"
 BORDER = "#12344A"
 TEXT = "#F4F8FF"
 MUTED = "#6F879C"
-CYAN = "#FF2A2A"
-BLUE = "#FF3B30"
-PURPLE = "#FF1744"
-GREEN = "#FF5252"
+ACCENT = "#FF2A2A"
+ACCENT_WARM = "#FF3B30"
+ACCENT_HOT = "#FF1744"
+ACCENT_ALT = "#FF5252"
 RED = "#FF1A1A"
 AMBER = "#FFB84D"
 FONT = "Segoe UI"
@@ -563,7 +563,7 @@ class KiraUI(ctk.CTk):
                 logo = ctk.CTkLabel(
                     brand,
                     text="◉",
-                    text_color=CYAN,
+                    text_color=ACCENT,
                     font=ctk.CTkFont(size=30, weight="bold"),
                 )
                 logo.pack(side="left", padx=(0, 10))
@@ -571,7 +571,7 @@ class KiraUI(ctk.CTk):
             logo = ctk.CTkLabel(
                 brand,
                 text="◉",
-                text_color=CYAN,
+                text_color=ACCENT,
                 font=ctk.CTkFont(size=30, weight="bold"),
             )
             logo.pack(side="left", padx=(0, 10))
@@ -628,7 +628,7 @@ class KiraUI(ctk.CTk):
         ctk.CTkLabel(
             info,
             text="LOCAL • PRIVATE",
-            text_color=CYAN,
+            text_color=ACCENT,
             font=ctk.CTkFont(size=9, weight="bold"),
         ).pack(anchor="w", padx=14, pady=(13, 5))
         ctk.CTkLabel(
@@ -651,7 +651,7 @@ class KiraUI(ctk.CTk):
         elif n == "Voice":
             self.toggle_listening()
         else:
-            self.set_state("READY", CYAN, f"{n} module selected")
+            self.set_state("READY", ACCENT, f"{n} module selected")
 
     def _build_header(self, p):
         h = ctk.CTkFrame(p, fg_color="transparent", height=72)
@@ -679,7 +679,7 @@ class KiraUI(ctk.CTk):
         self.model_chip = ctk.CTkLabel(
             m,
             text=f"◈  {str(model).upper()}",
-            text_color=CYAN,
+            text_color=ACCENT,
             font=ctk.CTkFont(size=9, weight="bold"),
         )
         self.model_chip.pack(side="left", padx=14, pady=12)
@@ -688,7 +688,7 @@ class KiraUI(ctk.CTk):
         online = ctk.CTkFrame(m, fg_color="#071B17", corner_radius=11)
         online.pack(side="left", padx=(7, 9), pady=7)
         self.status_dot = ctk.CTkLabel(
-            online, text="●", text_color=GREEN, font=ctk.CTkFont(size=11)
+            online, text="●", text_color=ACCENT_ALT, font=ctk.CTkFont(size=11)
         )
         self.status_dot.pack(side="left", padx=(10, 4), pady=5)
         self.status_text = ctk.CTkLabel(
@@ -723,7 +723,7 @@ class KiraUI(ctk.CTk):
         ctk.CTkLabel(
             top,
             text="KIRA CORE",
-            text_color=CYAN,
+            text_color=ACCENT,
             font=ctk.CTkFont(size=10, weight="bold"),
         ).pack(side="left")
         ctk.CTkLabel(
@@ -748,7 +748,7 @@ class KiraUI(ctk.CTk):
         self.state_label = ctk.CTkLabel(
             panel,
             text="READY",
-            text_color=CYAN,
+            text_color=ACCENT,
             font=ctk.CTkFont(size=20, weight="bold"),
         )
         self.state_label.grid(row=2, column=0, pady=(0, 0))
@@ -767,11 +767,11 @@ class KiraUI(ctk.CTk):
         self.core_cards = []
         for i, (icon, name, color) in enumerate(
             [
-                ("○", "READY", CYAN),
-                ("♩", "LISTENING", GREEN),
-                ("◈", "THINKING", PURPLE),
-                ("⌁", "EXECUTING", BLUE),
-                ("◉", "SPEAKING", CYAN),
+                ("○", "READY", ACCENT),
+                ("♩", "LISTENING", ACCENT_ALT),
+                ("◈", "THINKING", ACCENT_HOT),
+                ("⌁", "EXECUTING", ACCENT_WARM),
+                ("◉", "SPEAKING", ACCENT),
             ]
         ):
             f = ctk.CTkFrame(
@@ -812,7 +812,7 @@ class KiraUI(ctk.CTk):
         self.model_label = ctk.CTkLabel(
             top,
             text="LOCAL",
-            text_color=PURPLE,
+            text_color=ACCENT_HOT,
             font=ctk.CTkFont(size=8, weight="bold"),
         )
         self.model_label.pack(side="right")
@@ -883,7 +883,7 @@ class KiraUI(ctk.CTk):
             width=57,
             height=49,
             corner_radius=14,
-            fg_color=BLUE,
+            fg_color=ACCENT_WARM,
             hover_color="#FF625A",
             font=ctk.CTkFont(size=18, weight="bold"),
             command=self.send_message,
@@ -909,7 +909,7 @@ class KiraUI(ctk.CTk):
         bar.grid_columnconfigure(1, weight=1)
         left = ctk.CTkFrame(bar, fg_color="transparent")
         left.grid(row=0, column=0, sticky="w", padx=15)
-        ctk.CTkLabel(left, text="♫", text_color=CYAN, font=ctk.CTkFont(size=20)).pack(
+        ctk.CTkLabel(left, text="♫", text_color=ACCENT, font=ctk.CTkFont(size=20)).pack(
             side="left", padx=(0, 9)
         )
         ctk.CTkLabel(
@@ -961,7 +961,7 @@ class KiraUI(ctk.CTk):
             "kira" if speaker.upper() == "KIRA" else "you",
         )
         self.chat.insert("end", f"{message}\n\n", "body")
-        self.chat.tag_config("kira", foreground=CYAN)
+        self.chat.tag_config("kira", foreground=ACCENT)
         self.chat.tag_config("you", foreground="#B9C8FF")
         self.chat.tag_config("body", foreground=TEXT)
         self.chat.see("end")
@@ -983,11 +983,11 @@ class KiraUI(ctk.CTk):
 
         status_color = {
             "ERROR": RED,
-            "LISTENING": GREEN,
-            "THINKING": PURPLE,
-            "EXECUTING": BLUE,
-            "SPEAKING": CYAN,
-        }.get(state, CYAN)
+            "LISTENING": ACCENT_ALT,
+            "THINKING": ACCENT_HOT,
+            "EXECUTING": ACCENT_WARM,
+            "SPEAKING": ACCENT,
+        }.get(state, ACCENT)
 
         if hasattr(self, "header_status"):
             self.header_status.configure(
@@ -1073,7 +1073,7 @@ class KiraUI(ctk.CTk):
             return
         self.entry.delete(0, "end")
         self.add_message("YOU", text)
-        self.set_state("THINKING", PURPLE, "Understanding your request...")
+        self.set_state("THINKING", ACCENT_HOT, "Understanding your request...")
         self._set_busy(True)
         threading.Thread(target=self._process, args=(text,), daemon=True).start()
 
@@ -1132,7 +1132,7 @@ class KiraUI(ctk.CTk):
         ):
             return "Action cancelled."
         self.events.put(
-            ("state", ("EXECUTING", BLUE, f"Executing: {action.replace('_', ' ')}"))
+            ("state", ("EXECUTING", ACCENT_WARM, f"Executing: {action.replace('_', ' ')}"))
         )
 
         success = backend.execute_action(result)
@@ -1167,7 +1167,7 @@ class KiraUI(ctk.CTk):
         self.listening = True
         self._set_busy(True)
         self.mic_btn.configure(text="●", fg_color="#123B2B")
-        self.set_state("LISTENING", GREEN, "Speak to KIRA...")
+        self.set_state("LISTENING", ACCENT_ALT, "Speak to KIRA...")
         threading.Thread(target=self._listen, daemon=True).start()
 
     def _listen(self):
@@ -1186,10 +1186,10 @@ class KiraUI(ctk.CTk):
         self.mic_btn.configure(text="♩", fg_color=PANEL2)
         self._set_busy(False)
         if not text:
-            self.set_state("READY", CYAN, "I didn't hear a command")
+            self.set_state("READY", ACCENT, "I didn't hear a command")
             return
         self.add_message("YOU", text)
-        self.set_state("THINKING", PURPLE, "Processing your voice command...")
+        self.set_state("THINKING", ACCENT_HOT, "Processing your voice command...")
         self._set_busy(True)
         threading.Thread(target=self._process, args=(text,), daemon=True).start()
 
@@ -1248,28 +1248,28 @@ class KiraUI(ctk.CTk):
             "LISTENING": {
                 "speed": 0.075,
                 "pulse": 14,
-                "edge": GREEN,
+                "edge": ACCENT_ALT,
                 "wave": 18,
                 "rotation": 0.25,
             },
             "THINKING": {
                 "speed": 0.14,
                 "pulse": 11,
-                "edge": PURPLE,
+                "edge": ACCENT_HOT,
                 "wave": 14,
                 "rotation": 0.55,
             },
             "EXECUTING": {
                 "speed": 0.20,
                 "pulse": 15,
-                "edge": BLUE,
+                "edge": ACCENT_WARM,
                 "wave": 20,
                 "rotation": 0.85,
             },
             "SPEAKING": {
                 "speed": 0.10,
                 "pulse": 18,
-                "edge": CYAN,
+                "edge": ACCENT,
                 "wave": 28,
                 "rotation": 0.35,
             },
@@ -1700,17 +1700,17 @@ class KiraUI(ctk.CTk):
                             target=self._speak, args=(p,), daemon=True
                         ).start()
                     else:
-                        self.set_state("READY", CYAN, "Waiting for your command")
+                        self.set_state("READY", ACCENT, "Waiting for your command")
                         self._set_busy(False)
                 elif k == "state":
                     state, color, detail = p
                     self.set_state(state, color, detail)
                 elif k == "speaking_start":
                     self.speaking = True
-                    self.set_state("SPEAKING", CYAN, "KIRA is speaking...")
+                    self.set_state("SPEAKING", ACCENT, "KIRA is speaking...")
                 elif k == "speaking_done":
                     self.speaking = False
-                    self.set_state("READY", CYAN, "Waiting for your command")
+                    self.set_state("READY", ACCENT, "Waiting for your command")
                     self._set_busy(False)
                 elif k == "heard":
                     self._heard(p)
@@ -1722,11 +1722,11 @@ class KiraUI(ctk.CTk):
                     if hasattr(self, "header_status"):
                         self.header_status.configure(
                             text="● ONLINE" if online else "● LOCAL",
-                            text_color=GREEN if online else MUTED,
+                            text_color=ACCENT_ALT if online else MUTED,
                         )
 
                     if hasattr(self, "status_dot"):
-                        self.status_dot.configure(text_color=GREEN if online else MUTED)
+                        self.status_dot.configure(text_color=ACCENT_ALT if online else MUTED)
 
                     if hasattr(self, "status_text"):
                         self.status_text.configure(text="ONLINE" if online else "LOCAL")

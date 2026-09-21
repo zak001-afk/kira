@@ -24,18 +24,13 @@ echo [2/4] Installing PyInstaller...
 python -m pip install --upgrade pyinstaller
 
 echo.
-echo [3/4] Building KIRA...
+echo [3/4] Building KIRA from KIRA.spec...
 rmdir /s /q build 2>nul
 rmdir /s /q dist 2>nul
 
-python -m PyInstaller --noconfirm --clean --windowed ^
- --name "KIRA" ^
- --icon "assets\kira_app.ico" ^
- --add-data "kira_config.json;." ^
- --add-data "assets;assets" ^
- --collect-all customtkinter ^
- --collect-all PIL ^
- main_window.py
+rem The .spec file is the single source of truth for the build.
+rem Edit KIRA.spec instead of maintaining flags in this script.
+python -m PyInstaller --noconfirm --clean KIRA.spec
 
 if errorlevel 1 (
     echo.
