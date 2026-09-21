@@ -3,6 +3,7 @@ import tempfile
 import logging
 import os
 import platform
+import threading
 import kira_memory
 import kira_calculator
 import kira_reminders
@@ -667,16 +668,30 @@ def get_or_create_speech_engine():
     return _SPEECH_ENGINE
 
 
+_SPEECH_LOCK = threading.Lock()
+
+
 def speak(text: str):
+    """Speak one line of text — serialized across threads.
+
+    The watchdog alerts from its own thread while the main loop may be
+    answering; without the lock two Windows voices would talk over each
+    other (and the pyttsx3 fallback engine is not thread-safe).
+    """
     if not text:
         return
     response_text = personalize_address(text)
     print(f"KIRA: {response_text}", flush=True)
+    with _SPEECH_LOCK:
+        _speak_locked(response_text)
+
+
+def _speak_locked(text: str):
     try:
         speech_text = re.sub(
             "[\\U0001F000-\\U0001FAFF\\U00002700-\\U000027BF\\U0001F1E6-\\U0001F1FF]",
             "",
-            response_text,
+            text,
         )
         speech_text = re.sub(r"\\s{2,}", " ", speech_text).strip()
         if not speech_text:

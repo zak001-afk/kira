@@ -113,3 +113,37 @@ class TestBackendGate:
         )
         assert "does not match" in reply
         assert backend.kira_security.is_locked()
+
+
+class TestSpeechSerialization:
+    """The watchdog speaks from its own thread; voices must never overlap."""
+
+    def test_concurrent_speak_is_serialized(self, backend, monkeypatch):
+        import threading as _threading
+        import time as _time
+        import types
+
+        state = {"active": 0, "max_active": 0}
+        lock = _threading.Lock()
+
+        def fake_run(*args, **kwargs):
+            with lock:
+                state["active"] += 1
+                state["max_active"] = max(state["max_active"], state["active"])
+            _time.sleep(0.05)  # simulate the voice actually talking
+            with lock:
+                state["active"] -= 1
+            return types.SimpleNamespace(returncode=0, stderr="")
+
+        monkeypatch.setattr(backend.subprocess, "run", fake_run)
+
+        threads = [
+            _threading.Thread(target=backend.speak, args=(f"line {i}",))
+            for i in range(4)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert state["max_active"] == 1
