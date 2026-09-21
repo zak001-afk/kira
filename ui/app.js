@@ -522,19 +522,17 @@ function setActivity(state) {
 }
 
 // ─────────────────────────────────────────────
-// Text-to-Speech (KIRA speaks responses aloud)
+// Text-to-Speech (KIRA speaks responses aloud using neural voices)
 // ─────────────────────────────────────────────
 
 let speechEnabled = true;
-let currentUtterance = null;
+let currentAudio = null;
 
-function speak(text) {
+async function speak(text) {
   if (!speechEnabled || !text) return;
   
-  // Cancel any ongoing speech
-  if (window.speechSynthesis.speaking) {
-    window.speechSynthesis.cancel();
-  }
+  // Stop any ongoing speech
+  stopSpeaking();
   
   // Clean text for speech (remove markdown, URLs, code)
   const cleanText = text
@@ -546,89 +544,90 @@ function speak(text) {
   
   if (!cleanText) return;
   
-  const utterance = new SpeechSynthesisUtterance(cleanText);
-  currentUtterance = utterance;
-  
-  // Configure voice - fluent female
-  utterance.rate = 0.95;  // Slightly slower for clarity
-  utterance.pitch = 1.1;  // Slightly higher for feminine tone
-  utterance.volume = 1.0;
-  
-  // Find the best female voice
-  const voices = window.speechSynthesis.getVoices();
-  
-  // Priority list of preferred voices (best to worst)
-  const preferredVoices = [
-    // Google voices (high quality)
-    voices.find(v => v.name.includes('Google UK English Female')),
-    voices.find(v => v.name.includes('Google US English Female')),
-    voices.find(v => v.name.includes('Google Female')),
+  try {
+    setActivity("THINKING");
+    console.log("[KIRA] Generating speech:", cleanText.substring(0, 60) + "...");
     
-    // Microsoft voices (Windows)
-    voices.find(v => v.name.includes('Microsoft Zira')),
-    voices.find(v => v.name.includes('Microsoft Aria')),
-    voices.find(v => v.name.includes('Microsoft Jenny')),
-    voices.find(v => v.name.includes('Microsoft Sara')),
-    voices.find(v => v.name.includes('Microsoft Hazel')),
-    voices.find(v => v.name.includes('Microsoft Susan')),
+    // Call TTS API endpoint
+    const response = await fetch(`${API_BASE}/api/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        text: cleanText,
+        voice: "jenny"  // Use Jenny neural voice
+      }),
+    });
     
-    // Apple voices (macOS)
-    voices.find(v => v.name.includes('Samantha')),
-    voices.find(v => v.name.includes('Victoria')),
-    voices.find(v => v.name.includes('Karen')),
-    voices.find(v => v.name.includes('Moira')),
+    if (!response.ok) {
+      throw new Error(`TTS API error: ${response.status}`);
+    }
     
-    // Generic female voices
-    voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('female')),
-    voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('woman')),
-    voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('girl')),
+    const data = await response.json();
     
-    // Any English female voice
-    voices.find(v => v.lang.startsWith('en-') && !v.name.toLowerCase().includes('male')),
-    voices.find(v => v.lang === 'en-US' && !v.name.toLowerCase().includes('male')),
-    voices.find(v => v.lang === 'en-GB' && !v.name.toLowerCase().includes('male')),
-  ];
-  
-  const selectedVoice = preferredVoices.find(v => v !== undefined);
-  
-  if (selectedVoice) {
-    utterance.voice = selectedVoice;
-    console.log("[KIRA] Using voice:", selectedVoice.name);
-  } else {
-    console.log("[KIRA] No preferred voice found, using default");
+    if (data.error) {
+      console.error("[KIRA] TTS error:", data.error);
+      setActivity("READY");
+      return;
+    }
+    
+    if (!data.audio) {
+      console.error("[KIRA] No audio data received");
+      setActivity("READY");
+      return;
+    }
+    
+    // Decode base64 audio and play
+    const audioBlob = base64ToBlob(data.audio, "audio/mpeg");
+    const audioUrl = URL.createObjectURL(audioBlob);
+    
+    currentAudio = new Audio(audioUrl);
+    
+    currentAudio.onplay = () => {
+      setActivity("SPEAKING");
+      console.log("[KIRA] Speaking (neural voice)...");
+    };
+    
+    currentAudio.onended = () => {
+      setActivity("READY");
+      URL.revokeObjectURL(audioUrl);
+      currentAudio = null;
+    };
+    
+    currentAudio.onerror = (event) => {
+      console.error("[KIRA] Audio playback error:", event);
+      setActivity("READY");
+      URL.revokeObjectURL(audioUrl);
+      currentAudio = null;
+    };
+    
+    await currentAudio.play();
+    
+  } catch (error) {
+    console.error("[KIRA] TTS failed:", error);
+    setActivity("READY");
   }
-  
-  utterance.onstart = () => {
-    setActivity("SPEAKING");
-    console.log("[KIRA] Speaking:", cleanText.substring(0, 60) + "...");
-  };
-  
-  utterance.onend = () => {
-    setActivity("READY");
-    currentUtterance = null;
-  };
-  
-  utterance.onerror = (event) => {
-    console.error("[KIRA] Speech error:", event.error);
-    setActivity("READY");
-  };
-  
-  window.speechSynthesis.speak(utterance);
 }
 
 function stopSpeaking() {
-  if (window.speechSynthesis.speaking) {
-    window.speechSynthesis.cancel();
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
   }
   setActivity("READY");
 }
 
-// Load voices (they load asynchronously in some browsers)
-if (window.speechSynthesis) {
-  window.speechSynthesis.onvoiceschanged = () => {
-    console.log("[KIRA] Voices loaded:", window.speechSynthesis.getVoices().length);
-  };
+// Helper: Convert base64 to Blob
+function base64ToBlob(base64, mimeType) {
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type: mimeType });
 }
+
 
 // Mute/unmute toggle
 const muteButton = document.getElementById("mute");

@@ -11,6 +11,7 @@ import logging
 import os
 import sys
 import threading
+import base64
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
@@ -128,6 +129,8 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._handle_delete_task(data)
         elif path == "/api/remember":
             self._handle_remember(data)
+        elif path == "/api/tts":
+            self._handle_tts(data)
         else:
             self._send_json({"error": "Not found"}, 404)
 
@@ -358,6 +361,40 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
 
             success = kira_memory.save_memory(category, key, value)
             self._send_json({"success": success})
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_tts(self, data):
+        """Generate text-to-speech audio using neural voices."""
+        try:
+            import kira_tts
+            
+            text = str(data.get("text", "")).strip()
+            voice = data.get("voice", None)  # Optional voice name
+            
+            if not text:
+                self._send_json({"error": "Text required"}, 400)
+                return
+            
+            # Generate audio file
+            audio_path = kira_tts.generate_speech(text, voice)
+            
+            if not audio_path:
+                self._send_json({"error": "Failed to generate speech"}, 500)
+                return
+            
+            # Read audio file and encode as base64
+            with open(audio_path, "rb") as f:
+                audio_data = f.read()
+            
+            audio_base64 = base64.b64encode(audio_data).decode("utf-8")
+            
+            self._send_json({
+                "success": True,
+                "audio": audio_base64,
+                "format": "mp3"
+            })
+            
         except Exception as e:
             self._send_json({"error": str(e)}, 500)
 

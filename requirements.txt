@@ -16,5 +16,8 @@ Pillow>=10.0.0
 # Native App Dependencies (pywebview creates the desktop window)
 pywebview>=4.0.0
 
+# High-quality neural TTS (Microsoft Edge voices - sounds very human)
+edge-tts>=6.1.0
+
 # Optional: Web API (already included in Python stdlib)
 # http.server is built-in, no extra dependency needed
