@@ -514,9 +514,87 @@ function setActivity(state) {
   
   if (state === "THINKING") {
     dotEl.classList.add("thinking");
+  } else if (state === "SPEAKING") {
+    dotEl.classList.add("speaking");
   } else if (state !== "STANDBY") {
     dotEl.classList.add("active");
   }
+}
+
+// ─────────────────────────────────────────────
+// Text-to-Speech (KIRA speaks responses aloud)
+// ─────────────────────────────────────────────
+
+let speechEnabled = true;
+let currentUtterance = null;
+
+function speak(text) {
+  if (!speechEnabled || !text) return;
+  
+  // Cancel any ongoing speech
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+  }
+  
+  // Clean text for speech (remove markdown, URLs, code)
+  const cleanText = text
+    .replace(/```[\s\S]*?```/g, "code block")
+    .replace(/`[^`]+`/g, "")
+    .replace(/https?:\/\/\S+/g, "link")
+    .replace(/[*_~]/g, "")
+    .trim();
+  
+  if (!cleanText) return;
+  
+  const utterance = new SpeechSynthesisUtterance(cleanText);
+  currentUtterance = utterance;
+  
+  // Configure voice
+  utterance.rate = 1.0;
+  utterance.pitch = 1.0;
+  utterance.volume = 1.0;
+  
+  // Try to find a good English voice
+  const voices = window.speechSynthesis.getVoices();
+  const preferredVoice = voices.find(v => 
+    v.lang.startsWith('en') && 
+    (v.name.includes('Female') || v.name.includes('Samantha') || v.name.includes('Google'))
+  ) || voices.find(v => v.lang.startsWith('en'));
+  
+  if (preferredVoice) {
+    utterance.voice = preferredVoice;
+  }
+  
+  utterance.onstart = () => {
+    setActivity("SPEAKING");
+    console.log("[KIRA] Speaking:", cleanText.substring(0, 60) + "...");
+  };
+  
+  utterance.onend = () => {
+    setActivity("READY");
+    currentUtterance = null;
+  };
+  
+  utterance.onerror = (event) => {
+    console.error("[KIRA] Speech error:", event.error);
+    setActivity("READY");
+  };
+  
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeaking() {
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+  }
+  setActivity("READY");
+}
+
+// Load voices (they load asynchronously in some browsers)
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    console.log("[KIRA] Voices loaded:", window.speechSynthesis.getVoices().length);
+  };
 }
 
 // Send command to backend (works in both native and browser modes)
@@ -544,8 +622,10 @@ async function sendCommand(text) {
       addMessage("SYSTEM", `Error: ${data.error}`);
     } else if (data.response) {
       addMessage("KIRA", data.response);
+      speak(data.response);
     } else if (data.action && data.success) {
       addMessage("KIRA", `Done: ${data.action}`);
+      speak(`Done. ${data.action.replace(/_/g, ' ')}`);
     } else if (data.action) {
       addMessage("KIRA", `Executed: ${data.action}`);
     } else {
