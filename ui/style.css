@@ -72,6 +72,7 @@ html, body {
   padding: 12px 24px;
   background: linear-gradient(180deg, rgba(0, 10, 30, 0.95) 0%, rgba(0, 10, 30, 0) 100%);
   border-bottom: 1px solid var(--panel-border);
+  animation: topBarFloat 6s ease-in-out infinite;
 }
 
 .logo-section {
@@ -207,6 +208,7 @@ html, body {
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.1), inset 0 0 20px rgba(0, 255, 255, 0.05);
 }
 
 .panel::before {
@@ -222,10 +224,12 @@ html, body {
 
 .panel-left {
   width: 340px;
+  animation: panelFloatLeft 8s ease-in-out infinite;
 }
 
 .panel-right {
   width: 300px;
+  animation: panelFloatRight 9s ease-in-out infinite;
 }
 
 .panel-center {
@@ -480,6 +484,7 @@ html, body {
   padding: 16px 24px;
   background: linear-gradient(0deg, rgba(0, 10, 30, 0.95) 0%, rgba(0, 10, 30, 0) 100%);
   border-top: 1px solid var(--panel-border);
+  animation: bottomBarFloat 7s ease-in-out infinite;
 }
 
 .command-row {
@@ -630,6 +635,46 @@ html, body {
 @keyframes msgSlide {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes panelFloatLeft {
+  0%, 100% { 
+    transform: translateY(0px) rotate(0deg);
+  }
+  25% { 
+    transform: translateY(-8px) rotate(-0.3deg);
+  }
+  50% { 
+    transform: translateY(-4px) rotate(0deg);
+  }
+  75% { 
+    transform: translateY(-10px) rotate(0.2deg);
+  }
+}
+
+@keyframes panelFloatRight {
+  0%, 100% { 
+    transform: translateY(0px) rotate(0deg);
+  }
+  25% { 
+    transform: translateY(-10px) rotate(0.3deg);
+  }
+  50% { 
+    transform: translateY(-5px) rotate(0deg);
+  }
+  75% { 
+    transform: translateY(-7px) rotate(-0.2deg);
+  }
+}
+
+@keyframes topBarFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes bottomBarFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(3px); }
 }
 
 /* ═══ Responsive ═══ */
