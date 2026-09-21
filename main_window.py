@@ -145,6 +145,37 @@ def _try_builtin_response(text):
             except Exception as e:
                 return f"I tried to search the web but encountered an error: {str(e)}"
         
+        # Check if it's a learn/research request (search and store in memory)
+        learn_keywords = ["learn about", "research", "study", "memorize", "remember this", "teach yourself"]
+        if any(keyword in lower for keyword in learn_keywords):
+            # Extract the topic
+            query = text
+            for prefix in ["learn about", "research", "study", "memorize", "teach yourself about"]:
+                if lower.startswith(prefix):
+                    query = text[len(prefix):].strip()
+                    break
+            
+            print(f"[KIRA] Learn and memorize requested: {query}")
+            try:
+                import kira_web
+                return kira_web.search_and_learn(query)
+            except Exception as e:
+                return f"I tried to learn about that but encountered an error: {str(e)}"
+        
+        # Check if it's a URL to learn from
+        if lower.startswith("http://") or lower.startswith("https://") or "www." in lower:
+            # It's a URL - learn from it
+            url = text
+            if not url.startswith("http"):
+                url = "https://" + url
+            
+            print(f"[KIRA] Learning from URL: {url}")
+            try:
+                import kira_web
+                return kira_web.learn_from_url(url)
+            except Exception as e:
+                return f"I tried to learn from that URL but encountered an error: {str(e)}"
+        
         return None
 
 

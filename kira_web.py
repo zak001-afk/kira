@@ -122,12 +122,13 @@ def fetch_webpage(url: str, max_length: int = 3000) -> dict:
         return {"error": str(e)}
 
 
-def search_and_summarize(query: str) -> str:
+def search_and_summarize(query: str, store_memory: bool = False) -> str:
     """
     Search the web and return a formatted summary of results.
     
     Args:
         query: Search query
+        store_memory: If True, store key information in KIRA's memory
     
     Returns:
         Formatted string with search results
@@ -145,4 +146,75 @@ def search_and_summarize(query: str) -> str:
         summary_parts.append(f"   {result['snippet']}")
         summary_parts.append(f"   Source: {result['url']}\n")
     
+    # Store in memory if requested
+    if store_memory:
+        try:
+            import kira_memory
+            # Create a concise memory entry
+            memory_key = query.lower().replace(" ", "_")[:50]  # Limit key length
+            memory_content = f"Web search results for '{query}': " + "; ".join([
+                f"{r['title']} - {r['snippet'][:100]}" for r in results[:2]
+            ])
+            
+            kira_memory.save_memory("web_knowledge", memory_key, memory_content)
+            summary_parts.append("\n💾 I've saved this information to my memory for future reference.")
+            print(f"[KIRA WEB] Stored search results in memory: {memory_key}")
+        except Exception as e:
+            print(f"[KIRA WEB] Failed to store memory: {e}")
+    
     return "\n".join(summary_parts)
+
+
+def learn_from_url(url: str) -> str:
+    """
+    Fetch a web page and store key information in KIRA's memory.
+    
+    Args:
+        url: URL to learn from
+    
+    Returns:
+        Status message
+    """
+    try:
+        import kira_memory
+        
+        # Fetch the page
+        page_data = fetch_webpage(url, max_length=5000)
+        
+        if "error" in page_data:
+            return f"I couldn't read that page: {page_data['error']}"
+        
+        # Extract key information
+        title = page_data.get("title", "Untitled")
+        content = page_data.get("content", "")
+        
+        # Create a summary (first 500 chars)
+        summary = content[:500].strip()
+        if len(content) > 500:
+            summary += "..."
+        
+        # Store in memory
+        memory_key = url.replace("https://", "").replace("http://", "").replace("/", "_")[:50]
+        memory_content = f"Learned from {title} ({url}): {summary}"
+        
+        kira_memory.save_memory("web_knowledge", memory_key, memory_content)
+        
+        print(f"[KIRA WEB] Learned from {url} and stored in memory")
+        return f"I've read and memorized the content from '{title}'. I'll remember this for future conversations."
+        
+    except Exception as e:
+        print(f"[KIRA WEB] Learn from URL error: {e}")
+        return f"I encountered an error while trying to learn from that page: {str(e)}"
+
+
+def search_and_learn(query: str) -> str:
+    """
+    Search the web and automatically store key information in memory.
+    
+    Args:
+        query: Search query
+    
+    Returns:
+        Formatted string with search results and memory confirmation
+    """
+    return search_and_summarize(query, store_memory=True)

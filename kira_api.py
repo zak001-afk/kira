@@ -135,6 +135,10 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._handle_web_search(data)
         elif path == "/api/web/fetch":
             self._handle_web_fetch(data)
+        elif path == "/api/web/learn":
+            self._handle_web_learn(data)
+        elif path == "/api/web/search-learn":
+            self._handle_web_search_learn(data)
         else:
             self._send_json({"error": "Not found"}, 404)
 
@@ -434,6 +438,40 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             
             result = kira_web.fetch_webpage(url, max_length)
             self._send_json(result)
+            
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_web_learn(self, data):
+        """Learn from a URL and store in memory."""
+        try:
+            import kira_web
+            
+            url = str(data.get("url", "")).strip()
+            
+            if not url:
+                self._send_json({"error": "URL required"}, 400)
+                return
+            
+            result = kira_web.learn_from_url(url)
+            self._send_json({"success": True, "message": result})
+            
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_web_search_learn(self, data):
+        """Search the web and store results in memory."""
+        try:
+            import kira_web
+            
+            query = str(data.get("query", "")).strip()
+            
+            if not query:
+                self._send_json({"error": "Query required"}, 400)
+                return
+            
+            result = kira_web.search_and_learn(query)
+            self._send_json({"success": True, "message": result})
             
         except Exception as e:
             self._send_json({"error": str(e)}, 500)
