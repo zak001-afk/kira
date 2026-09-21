@@ -29,14 +29,25 @@
           <span class="brand-name">K I R A</span>
           <span class="brand-sub">NEURAL COMPUTER AGENT // LOCAL INSTANCE</span>
         </div>
-        <div class="online">
-          <span class="online-dot"></span>
-          <span id="status-text">ONLINE</span>
+        <div class="header-right">
+          <div class="clock">
+            <div class="clock-time" id="clock-time">00:00:00</div>
+            <div class="clock-date" id="clock-date">LOADING...</div>
+          </div>
+          <div class="online">
+            <span class="online-dot"></span>
+            <span id="status-text">ONLINE</span>
+          </div>
         </div>
       </header>
 
       <!-- LEFT PANEL — CONVERSATION -->
       <section class="hud-panel conversation-panel">
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+        
         <div class="panel-title">CONVERSATION</div>
         <div class="panel-line"></div>
         <div class="conversation" id="conversation">
@@ -49,20 +60,39 @@
 
       <!-- RIGHT PANEL — TELEMETRY -->
       <section class="hud-panel telemetry-panel">
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+
         <div class="panel-title">SYSTEM TELEMETRY</div>
         <div class="panel-line"></div>
 
         <div class="telemetry-row">
-          <span>CPU</span>
-          <strong id="cpu">--%</strong>
+          <div class="telemetry-label-row">
+            <span>CPU</span>
+            <strong id="cpu">--%</strong>
+          </div>
+          <div class="stat-bar">
+            <div class="stat-fill" id="cpu-bar"></div>
+          </div>
         </div>
+
         <div class="telemetry-row">
-          <span>MEMORY</span>
-          <strong id="memory">--%</strong>
+          <div class="telemetry-label-row">
+            <span>MEMORY</span>
+            <strong id="memory">--%</strong>
+          </div>
+          <div class="stat-bar">
+            <div class="stat-fill" id="memory-bar"></div>
+          </div>
         </div>
+
         <div class="telemetry-row">
-          <span>GPU</span>
-          <strong id="gpu">--</strong>
+          <div class="telemetry-label-row">
+            <span>GPU</span>
+            <strong id="gpu">--</strong>
+          </div>
         </div>
 
         <div class="telemetry-divider"></div>
@@ -88,15 +118,32 @@
       <!-- COMMAND -->
       <section class="command-area">
         <div class="command-box">
-          <button id="mic" class="mic-btn" title="Voice input">🎤</button>
+          <button id="mic" class="icon-btn mic-btn" title="Voice input">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
           <input
             id="command"
             type="text"
             placeholder="ASK KIRA..."
             autocomplete="off"
           />
-          <button id="mute" class="mute-btn" title="Toggle voice output">🔊</button>
-          <button id="send">➤</button>
+          <button id="mute" class="icon-btn mute-btn" title="Toggle voice output">
+            <svg viewBox="0 0 24 24">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            </svg>
+          </button>
+          <button id="send">
+            <svg viewBox="0 0 24 24">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
         </div>
 
         <div class="quick-actions">
