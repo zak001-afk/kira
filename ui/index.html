@@ -1,175 +1,116 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>KIRA — Neural Interface</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-</head>
-<body>
-  <!-- 3D Scene Canvas -->
-  <canvas id="scene"></canvas>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KIRA // Neural Interface</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <!-- 3D BACKGROUND -->
+    <div id="scene-container"></div>
 
-  <!-- HUD Overlay -->
-  <div id="hud">
-    <!-- Top Bar -->
-    <div class="top-bar">
-      <div class="logo-section">
-        <div class="logo-hex">
-          <span class="logo-letter">K</span>
-        </div>
-        <div>
-          <div class="brand-name">KIRA</div>
-          <div class="brand-sub">NEURAL INTERFACE v3.0</div>
-        </div>
-      </div>
+    <!-- MATRIX OVERLAY -->
+    <canvas id="matrix"></canvas>
 
-      <div class="status-section">
-        <div class="status-badge">
-          <span class="status-dot"></span>
-          <span>ONLINE</span>
+    <!-- HUD -->
+    <main id="hud">
+      <!-- HEADER -->
+      <header class="top-bar">
+        <div class="brand">
+          <span class="brand-name">K I R A</span>
+          <span class="brand-sub">NEURAL COMPUTER AGENT // LOCAL INSTANCE</span>
         </div>
+        <div class="online">
+          <span class="online-dot"></span>
+          <span id="status-text">ONLINE</span>
+        </div>
+      </header>
 
-        <div class="clock">
-          <div class="clock-time" id="time">00:00:00</div>
-          <div class="clock-date" id="date">Loading...</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Main Content -->
-    <div class="main-content">
-      <!-- Left Panel: Conversation -->
-      <div class="panel panel-left">
-        <div class="panel-header">
-          <span class="panel-title">Neural Link</span>
-          <button class="panel-action" id="clear-chat">CLEAR</button>
-        </div>
+      <!-- LEFT PANEL — CONVERSATION -->
+      <section class="hud-panel conversation-panel">
+        <div class="panel-title">CONVERSATION</div>
+        <div class="panel-line"></div>
         <div class="conversation" id="conversation">
           <div class="message-block">
-            <div class="message-meta">
-              <span class="sender kira">KIRA</span>
-              <span class="timestamp">--:--:--</span>
-            </div>
-            <div class="message">Neural interface initialized. How may I assist you, sir?</div>
+            <div class="message-meta">KIRA &nbsp;//&nbsp; <span id="boot-time"></span></div>
+            <div class="message">Hello sir.<br />I am ready for your orders.</div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Center (3D scene visible) -->
-      <div class="panel-center"></div>
+      <!-- RIGHT PANEL — TELEMETRY -->
+      <section class="hud-panel telemetry-panel">
+        <div class="panel-title">SYSTEM TELEMETRY</div>
+        <div class="panel-line"></div>
 
-      <!-- Right Panel: Systems -->
-      <div class="panel panel-right">
-        <div class="panel-header">
-          <span class="panel-title">Systems</span>
+        <div class="telemetry-row">
+          <span>CPU</span>
+          <strong id="cpu">--%</strong>
+        </div>
+        <div class="telemetry-row">
+          <span>MEMORY</span>
+          <strong id="memory">--%</strong>
+        </div>
+        <div class="telemetry-row">
+          <span>GPU</span>
+          <strong id="gpu">--</strong>
         </div>
 
-        <div class="system-stats">
-          <div class="stat-row">
-            <div class="stat-label">
-              <span>CPU</span>
-              <span class="stat-value" id="cpu">--%</span>
-            </div>
-            <div class="stat-bar">
-              <div class="stat-fill" id="cpu-bar" style="width: 0%"></div>
-            </div>
-          </div>
+        <div class="telemetry-divider"></div>
+        <div class="panel-label">CORE</div>
+        <div class="core-name">LOCAL NEURAL ENGINE</div>
 
-          <div class="stat-row">
-            <div class="stat-label">
-              <span>MEMORY</span>
-              <span class="stat-value" id="memory">--%</span>
-            </div>
-            <div class="stat-bar">
-              <div class="stat-fill" id="memory-bar" style="width: 0%"></div>
-            </div>
-          </div>
+        <div class="panel-label activity-label">ACTIVITY</div>
+        <div class="activity">
+          <span class="activity-dot" id="activity-dot"></span>
+          <span id="activity">STANDBY</span>
+        </div>
 
-          <div class="stat-row">
-            <div class="stat-label">
-              <span>GPU</span>
-              <span class="stat-value" id="gpu">N/A</span>
-            </div>
-          </div>
+        <div class="telemetry-divider"></div>
+        <div class="panel-label">TASKS</div>
+        <div class="tasks-list" id="tasks-list">
+          <div class="task-empty">No pending tasks</div>
+        </div>
+      </section>
+
+      <!-- CORE LABEL -->
+      <div class="core-caption">KIRA // NEURAL PROCESSOR</div>
+
+      <!-- COMMAND -->
+      <section class="command-area">
+        <div class="command-box">
+          <button id="mic" class="mic-btn" title="Voice input">🎤</button>
+          <input
+            id="command"
+            type="text"
+            placeholder="ASK KIRA..."
+            autocomplete="off"
+          />
+          <button id="mute" class="mute-btn" title="Toggle voice output">🔊</button>
+          <button id="send">➤</button>
         </div>
 
         <div class="quick-actions">
-          <div class="quick-title">QUICK ACTIONS</div>
-          <div class="quick-grid">
-            <button class="quick-btn" onclick="quickCmd('open browser')">
-              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-              <span>Browser</span>
-            </button>
-            <button class="quick-btn" onclick="quickCmd('search the web')">
-              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <span>Search</span>
-            </button>
-            <button class="quick-btn" onclick="quickCmd('learn something new')">
-              <svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-              <span>Learn</span>
-            </button>
-            <button class="quick-btn" onclick="quickCmd('show tasks')">
-              <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
-              <span>Tasks</span>
-            </button>
-          </div>
+          <button onclick="quickCmd('open chrome')">OPEN CHROME</button>
+          <button onclick="quickCmd('search for')">SEARCH WEB</button>
+          <button onclick="quickCmd('learn about')">LEARN</button>
+          <button onclick="quickCmd('analyze screen')">ANALYZE SCREEN</button>
+          <button onclick="quickCmd('system info')">SYSTEM STATUS</button>
+          <button onclick="quickCmd('list tasks')">MY TASKS</button>
+          <button onclick="quickCmd('what time is it')">TIME</button>
         </div>
+      </section>
+    </main>
 
-        <div class="tasks-section">
-          <div class="quick-title">ACTIVE TASKS</div>
-          <div class="tasks-list" id="tasks-list">
-            <div class="task-empty">No pending tasks</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Bottom Bar -->
-    <div class="bottom-bar">
-      <div class="activity-row">
-        <div class="activity-indicator" id="activity-indicator"></div>
-        <span class="activity-label">STATUS:</span>
-        <span id="activity">STANDBY</span>
-      </div>
-
-      <div class="command-row">
-        <button class="cmd-btn" id="mic" title="Voice input">
-          <svg viewBox="0 0 24 24">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-            <line x1="12" y1="19" x2="12" y2="23"></line>
-            <line x1="8" y1="23" x2="16" y2="23"></line>
-          </svg>
-        </button>
-
-        <input
-          type="text"
-          class="command-input"
-          id="command"
-          placeholder="Enter command or ask KIRA..."
-          autocomplete="off"
-        />
-
-        <button class="cmd-btn" id="mute" title="Toggle voice">
-          <svg viewBox="0 0 24 24">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-          </svg>
-        </button>
-
-        <button class="cmd-btn send" id="send" title="Send">
-          <svg viewBox="0 0 24 24">
-            <line x1="22" y1="2" x2="11" y2="13"></line>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-          </svg>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <script src="scene.js"></script>
-  <script src="app.js"></script>
-</body>
+    <script type="module" src="./app.js"></script>
+  </body>
 </html>
