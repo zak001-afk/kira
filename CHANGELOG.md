@@ -3,6 +3,69 @@
 All notable changes to KIRA are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.7.0] — 2026-09-21
+
+### Changed — the desktop app is now the browser interface
+- **One interface.** `main_window.py` (1,786 lines of customtkinter) is
+  deleted. The app is `kira_app.py`: it starts `kira_server` in-process on an
+  ephemeral `127.0.0.1` port, shows `ui/` in a native window through
+  **pywebview** (Edge WebView2 on Windows), and shuts the server down when the
+  window closes. The HUD is not copied, embedded or re-implemented — it *is*
+  the interface, so every panel and every future fix lands once.
+- **It degrades instead of failing.** No pywebview, or no WebView2 runtime →
+  an app-mode Edge/Chrome window (`--app`, no tabs, no URL bar), configured to
+  the same 1540×930. No Chromium-family browser either → the default browser.
+  Whichever path runs, the microphone, the confirmation round-trip and the
+  command pipeline are identical, because they live in `kira_server.py`.
+- **The desktop chrome was ported into the HUD** rather than dropped, so the
+  new app is not a smaller app: the module rail (Chat, Voice, Commands,
+  Vision, Files, Tools, Memory, Settings), the five-state strip, the voice
+  activity line, and the media bar with a 24-hour clock and date.
+- Confirmation now behaves the same everywhere, because there is only one
+  confirmation implementation left.
+- Runtime dependencies shrink: `customtkinter` and `Pillow` are no longer
+  needed by the app (`Pillow` moves to the dev requirements for the preview
+  script); `pywebview` is added.
+- `KIRA.spec` bundles `ui/` and pywebview; `dev.py` now watches `.html`,
+  `.css`, `.js` and `.mjs`, so editing the interface restarts the window and
+  reloads it.
+
+### Added — the ported controls do real work
+- **The rail is wired, not decorative.** Chat focuses the command bar; Voice
+  opens the microphone; Commands focuses the bar and highlights the quick
+  actions; Vision sends *"what is on my screen"*; Files opens the downloads
+  folder; Memory asks *"what did you learn"*; Settings toggles voice output.
+  **Tools is marked inert and says so** when clicked instead of pretending.
+- **The media bar posts commands the parser already knows** (`previous track`,
+  `play pause`, `next track`) — a test cross-checks every `data-command` in the
+  markup against `parse_simple_command`, so a button that says nothing real
+  cannot be shipped.
+- `KiraService.watchdog_running` — a public answer to "is the watchdog up?",
+  which the app's banner reports honestly.
+
+### Fixed
+- `scripts/check_ui.mjs` **awaited nothing**: an `async` check body escaped as
+  an unhandled rejection, so a *failing* check could be counted as passing.
+  Every check is now awaited, and the three failures it was hiding were fixed.
+- The HUD clock is built by hand instead of via `toLocaleTimeString`, so it
+  reads the same 24-hour time in every locale (it showed `07:00 PM` in some).
+- `find_app_browser` no longer probes Windows install paths off Windows, where
+  `%ProgramFiles%` can never expand (found by a test).
+- **Offline mode no longer calls itself a simulation.** `KiraService.version`
+  returned `"sim"` whenever the backend could not be imported, so a
+  half-installed agent reported itself as a demo — and the ported sidebar
+  displays that string. It now reads the version from `pyproject.toml`, which
+  is also the one place the number is written down.
+
+### Tests
+- 730 tests (**728 passing, 2 skipped** without Pillow): the retired tkinter
+  renderer's 9 canvas tests are replaced by 22 `kira_app` tests that drive the
+  real shell — including one that opens the URL handed to the window and
+  asserts the live HUD is being served there — plus 7 markup tests pinning the
+  ported chrome. The Node smoke check grew from 29 to **38 checks** (media,
+  clock, state strip, voice line, every rail module, and that an unwired
+  module says so).
+
 ## [2.6.0] — 2026-09-21
 
 ### Added — the browser interface (`kira_server.py` + `ui/`)

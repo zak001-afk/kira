@@ -164,6 +164,19 @@ class TestServiceModes:
         assert service.mode == "simulation"
         assert service.version == "sim"
 
+    def test_offline_is_not_labelled_as_a_simulation(self):
+        """A half-installed agent is not a demo, and must not read like one."""
+        service = kira_server.KiraService(simulate=False)
+        service.backend = None
+        version = service.version
+        assert version != "sim", "offline mode called itself a simulation"
+        assert re.match(r"^\d+\.\d+", version), (
+            f"the offline interface cannot say which build it is: {version!r}"
+        )
+        # ...and it agrees with the one place the number is written down
+        pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        assert f'version = "{version}"' in pyproject
+
     def test_offline_mode_explains_itself(self):
         service = kira_server.KiraService(simulate=False)
         service.backend = None
@@ -821,9 +834,74 @@ class TestUiMarkup:
         css = (ROOT / "ui" / "style.css").read_text(encoding="utf-8")
         hud = css[css.index("#hud {"): css.index("#hud {") + 200]
         assert "pointer-events: none" in hud, "the HUD would swallow every click"
-        for selector in (".status-cluster", ".command-box", ".quick-actions", ".confirm-bar"):
+        for selector in (".status-cluster", ".command-box", ".quick-actions",
+                         ".confirm-bar", ".sidebar-nav", ".media-bar"):
             block = css[css.index(f"{selector} {{"): css.index(f"{selector} {{") + 400]
             assert "pointer-events: auto" in block, f"{selector} is unclickable"
+
+    # ── the desktop app's chrome, ported into the HUD ───────────────────────
+
+    def test_the_rail_has_every_module_the_desktop_app_had(self):
+        index = (ROOT / "ui" / "index.html").read_text(encoding="utf-8")
+        assert 'id="sidebar-nav"' in index
+        for module in ("chat", "voice", "commands", "vision", "files",
+                       "tools", "memory", "settings"):
+            assert f'data-nav="{module}"' in index, f"the {module} module is gone"
+
+    def test_a_module_that_cannot_work_says_so(self):
+        """The rail must not imply a module exists when it does not."""
+        index = (ROOT / "ui" / "index.html").read_text(encoding="utf-8")
+        assert "inert" in index, "no module is marked as unwired"
+        script = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
+        assert "not wired up" in script, "an unwired module fails silently"
+
+    def test_the_state_strip_shows_the_five_states(self):
+        index = (ROOT / "ui" / "index.html").read_text(encoding="utf-8")
+        assert 'id="state-strip"' in index
+        for state in ("READY", "LISTENING", "THINKING", "EXECUTING", "SPEAKING"):
+            assert f'data-state="{state}"' in index, f"the {state} state is missing"
+
+    def test_the_media_bar_and_clock_are_present(self):
+        index = (ROOT / "ui" / "index.html").read_text(encoding="utf-8")
+        for transport in ("previous track", "play pause", "next track"):
+            assert f'data-command="{transport}"' in index, f"no {transport} button"
+        assert 'id="clock"' in index and 'id="date"' in index
+        assert 'id="waveform"' in index, "the voice activity line is gone"
+
+    def test_the_ported_controls_actually_do_something(self):
+        """Every ported control is wired: none may be decoration."""
+        script = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
+        for hook in ("sidebar-nav", "dataset.nav", "[data-command]", "WAVE_STRENGTH",
+                     "tickClock", "stateStrip"):
+            assert hook in script, f"app.js never handles {hook}"
+
+
+class TestUiCommandsReachTheAgent:
+    """The HUD's buttons must send phrases KIRA's parser understands.
+
+    A button that posts an unknown phrase is a lie in the interface, so the
+    markup is cross-checked against the real parser instead of trusted.
+    """
+
+    KNOWN = ["open chrome", "systems check", "what did you learn",
+             "previous track", "play pause", "next track"]
+
+    def test_every_known_button_phrase_parses(self, backend):
+        for phrase in self.KNOWN:
+            assert backend.parse_simple_command(phrase), (
+                f"'{phrase}' is in the interface but the parser does not know it"
+            )
+
+    def test_the_markup_only_offers_what_is_wired(self):
+        """Every data-command in the markup is either known or listed here."""
+        index = (ROOT / "ui" / "index.html").read_text(encoding="utf-8")
+        offered = set(re.findall(r'data-command="([^"]+)"', index))
+        # "what is on my screen" needs the vision pipeline, which no entry
+        # point routes yet — it is knowingly unhandled, not accidentally.
+        assert offered == set(self.KNOWN) | {"what is on my screen"}, (
+            f"the interface offers commands nothing handles: "
+            f"{offered - set(self.KNOWN) - {'what is on my screen'}}"
+        )
 
 
 class TestVendoredThree:

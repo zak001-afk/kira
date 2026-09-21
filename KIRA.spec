@@ -1,17 +1,25 @@
 # -*- mode: python ; coding: utf-8 -*-
+# KIRA's release build. The app shell (kira_app.py) serves ui/ and shows it
+# in a native window, so the HUD files ship as data — not as bundled Python.
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('kira_config.json', '.'), ('assets', 'assets')]
+datas = [('kira_config.json', '.'), ('ui', 'ui')]
 binaries = []
-hiddenimports = ['PIL', 'PIL.Image']
-tmp_ret = collect_all('customtkinter')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('PIL')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports = []
+
+# pywebview is the native window. It is optional at runtime (KIRA falls back
+# to a browser), so a build without it installed still succeeds.
+try:
+    tmp_ret = collect_all('webview')
+    datas += tmp_ret[0]
+    binaries += tmp_ret[1]
+    hiddenimports += tmp_ret[2]
+except Exception:
+    pass
 
 
 a = Analysis(
-    ['main_window.py'],
+    ['kira_app.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,

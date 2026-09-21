@@ -2,9 +2,11 @@
 # Local LLM backend (requires the Ollama server: https://ollama.com)
 ollama>=0.4.0,<1.0
 
-# Desktop UI (desktop app + bundled icon rendering)
-customtkinter>=5.2.2
-Pillow>=10.4.0
+# Application window. KIRA's interface is ui/ — the same HUD the browser
+# gets from kira_server.py — and pywebview shows it in a native frame
+# (Edge WebView2 on Windows). Without it KIRA opens an app-mode Edge/Chrome
+# window instead, so this package is optional in practice but expected here.
+pywebview>=5.0
 
 # Computer control
 pyautogui>=0.9.54

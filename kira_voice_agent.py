@@ -19,7 +19,7 @@ import kira_homeassist
 import kira_builder
 import re
 
-VERSION = "2.6.0"
+VERSION = "2.7.0"
 import subprocess
 import time
 import webbrowser

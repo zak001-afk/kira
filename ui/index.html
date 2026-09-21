@@ -43,6 +43,41 @@
     <canvas id="matrix"></canvas>
 
     <!-- ================================================= -->
+    <!-- SIDEBAR                                           -->
+    <!-- ================================================= -->
+
+    <aside id="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-mark" aria-hidden="true">◉</span>
+
+        <div class="sidebar-brand-text">
+          <span class="sidebar-title">KIRA</span>
+          <span class="sidebar-sub">LOCAL AI COMPUTER AGENT</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <button data-nav="chat" class="nav-item active">▣&nbsp;&nbsp;CHAT</button>
+        <button data-nav="voice" class="nav-item">♩&nbsp;&nbsp;VOICE</button>
+        <button data-nav="commands" class="nav-item">⌘&nbsp;&nbsp;COMMANDS</button>
+        <button data-nav="vision" class="nav-item">◉&nbsp;&nbsp;VISION</button>
+        <button data-nav="files" class="nav-item">□&nbsp;&nbsp;FILES</button>
+        <button data-nav="tools" class="nav-item inert" title="Not wired up yet">
+          ⚒&nbsp;&nbsp;TOOLS
+        </button>
+        <button data-nav="memory" class="nav-item">◎&nbsp;&nbsp;MEMORY</button>
+        <button data-nav="settings" class="nav-item">⚙&nbsp;&nbsp;SETTINGS</button>
+      </nav>
+
+      <div class="sidebar-card">
+        <div class="sidebar-card-label">LOCAL • PRIVATE</div>
+        <p>A smarter computer experience. Built around your local AI.</p>
+      </div>
+
+      <div class="sidebar-footer" id="sidebar-version">KIRA CORE</div>
+    </aside>
+
+    <!-- ================================================= -->
     <!-- HUD                                               -->
     <!-- ================================================= -->
 
@@ -51,14 +86,18 @@
 
       <header class="top-bar">
         <div class="brand">
-          <span class="brand-name">K I R A</span>
+          <span class="brand-name">KIRA CORE</span>
 
           <span class="brand-sub">
-            NEURAL COMPUTER AGENT // <span id="mode-label">LOCAL INSTANCE</span>
+            NEURAL INTERFACE // <span id="mode-label">LOCAL INSTANCE</span>
           </span>
         </div>
 
         <div class="status-cluster">
+          <div class="header-chip" id="model-chip" title="Active local model">
+            ◈ <span id="model-name">—</span>
+          </div>
+
           <button id="speak-toggle" class="chip-button" title="Speak replies aloud">
             VOICE: ON
           </button>
@@ -156,9 +195,25 @@
 
       <div class="core-caption">KIRA // NEURAL PROCESSOR</div>
 
-      <!-- COMMAND -->
+      <!-- COMMAND STACK (bottom-anchored: state, voice line, command, media) -->
 
       <section class="command-area">
+        <!-- WHICH STATE KIRA IS IN -->
+
+        <div class="state-strip" id="state-strip" aria-label="KIRA's current state">
+          <div class="state-card" data-state="READY"><b>○</b><span>READY</span></div>
+          <div class="state-card" data-state="LISTENING"><b>♩</b><span>LISTENING</span></div>
+          <div class="state-card" data-state="THINKING"><b>◈</b><span>THINKING</span></div>
+          <div class="state-card" data-state="EXECUTING"><b>⌁</b><span>EXECUTING</span></div>
+          <div class="state-card" data-state="SPEAKING"><b>◉</b><span>SPEAKING</span></div>
+        </div>
+
+        <!-- VOICE ACTIVITY LINE -->
+
+        <canvas id="waveform" height="40" aria-hidden="true"></canvas>
+
+        <!-- COMMAND -->
+
         <div class="command-box">
           <button id="mic" class="mic-button" title="Hold a thought and speak (uses KIRA's microphone)">
             MIC
@@ -187,6 +242,29 @@
           <span id="confirm-text">Confirm that action?</span>
           <button id="confirm-yes">CONFIRM</button>
           <button id="confirm-no">CANCEL</button>
+        </div>
+
+        <!-- MEDIA + CLOCK -->
+
+        <div class="media-bar">
+          <div class="media-label">
+            <span class="media-icon" aria-hidden="true">♫</span>
+            <span>
+              KIRA MEDIA
+              <em>Voice • media • system controls</em>
+            </span>
+          </div>
+
+          <div class="media-controls">
+            <button data-command="previous track" title="Previous track">|◀</button>
+            <button data-command="play pause" title="Play / pause">▶</button>
+            <button data-command="next track" title="Next track">▶|</button>
+          </div>
+
+          <div class="media-clock">
+            <strong id="clock">--:--</strong>
+            <span id="date">—</span>
+          </div>
         </div>
       </section>
     </main>

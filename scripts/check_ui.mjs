@@ -120,12 +120,28 @@ class FakeElement {
   getContext(type) {
     if (type !== "2d") return null; // no WebGL here — must degrade, not throw
     return {
+      strokeStyle: "",
       fillStyle: "",
       font: "",
       textAlign: "",
+      lineWidth: 1,
       fillRect() {},
       fillText() {},
+      clearRect() {},
+      beginPath() {},
+      moveTo() {},
+      lineTo() {},
+      stroke() {},
+      setTransform() {},
     };
+  }
+
+  // the waveform sizes itself from the canvas box
+  get clientWidth() {
+    return this._clientWidth ?? 420;
+  }
+  get clientHeight() {
+    return this._clientHeight ?? 32;
   }
 }
 
@@ -142,7 +158,8 @@ function element(id) {
   "online-text", "mode-label", "activity", "activity-row", "cpu", "memory",
   "disk", "battery", "cpu-bar", "memory-bar", "model", "skills", "episodes",
   "backend-note", "matrix", "scene-container", "speak-toggle", "reset-chat",
-  "quick-actions",
+  "quick-actions", "state-strip", "sidebar-nav", "sidebar-version",
+  "model-name", "clock", "date", "waveform",
 ].forEach(element);
 
 const quickActions = [
@@ -156,6 +173,45 @@ const quickActions = [
   return button;
 });
 
+/* the media transport and the sidebar rail, as the markup defines them */
+const mediaButtons = ["previous track", "play pause", "next track"].map(
+  (text, index) => {
+    const button = new FakeElement("button", `media-${index}`);
+    button.dataset.command = text;
+    return button;
+  },
+);
+
+const stateCards = [
+  "READY",
+  "LISTENING",
+  "THINKING",
+  "EXECUTING",
+  "SPEAKING",
+].map((name) => {
+  const card = new FakeElement("div", `state-${name}`);
+  card.dataset.state = name;
+  return card;
+});
+element("state-strip").append(...stateCards);
+
+const navItems = [
+  "chat",
+  "voice",
+  "commands",
+  "vision",
+  "files",
+  "tools",
+  "memory",
+  "settings",
+].map((name) => {
+  const item = new FakeElement("button", `nav-${name}`);
+  item.dataset.nav = name;
+  return item;
+});
+element("sidebar-nav").append(...navItems);
+const navButton = (name) => navItems.find((item) => item.dataset.nav === name);
+
 const body = new FakeElement("body");
 
 globalThis.document = {
@@ -163,7 +219,7 @@ globalThis.document = {
   createElement: (tag) => new FakeElement(tag),
   createElementNS: (_namespace, tag) => new FakeElement(tag),
   querySelectorAll: (selector) =>
-    selector === "#quick-actions button" ? quickActions : [],
+    selector === "[data-command]" ? [...quickActions, ...mediaButtons] : [],
   body,
   addEventListener: () => {},
 };
@@ -277,9 +333,11 @@ process.on("unhandledRejection", (error) => rejections.push(error));
 process.on("uncaughtException", (error) => rejections.push(error));
 
 const failures = [];
-function check(name, fn) {
+/* `check` is awaited at every call site: an async body used to escape as an
+   unhandled rejection, which made a failing check look like a passing one. */
+async function check(name, fn) {
   try {
-    fn();
+    await fn();
     console.log(`  ok    ${name}`);
   } catch (error) {
     failures.push(`${name}: ${error.message}`);
@@ -325,21 +383,21 @@ const rendered = () =>
 
 /* ── boot ───────────────────────────────────────────────── */
 
-check("boot requested telemetry", () => {
+await check("boot requested telemetry", () => {
   assert.ok(calls.some((call) => call.url.startsWith("/api/state")));
 });
 
-check("boot restored the conversation history", () => {
+await check("boot restored the conversation history", () => {
   assert.ok(calls.some((call) => call.url.startsWith("/api/history")));
   assert.ok(rendered().includes("Hello sir."), "history not rendered");
 });
 
-check("online chip reflects the backend", () => {
+await check("online chip reflects the backend", () => {
   assert.equal(element("online-text").textContent, "ONLINE");
   assert.equal(element("mode-label").textContent, "LOCAL INSTANCE");
 });
 
-check("telemetry is displayed", () => {
+await check("telemetry is displayed", () => {
   assert.equal(element("cpu").textContent, "22%");
   assert.equal(element("memory").textContent, "42%");
   assert.equal(element("disk").textContent, "63%");
@@ -350,11 +408,11 @@ check("telemetry is displayed", () => {
   assert.equal(element("cpu-bar").style.width, "22.4%");
 });
 
-check("activity shows the agent state", () => {
+await check("activity shows the agent state", () => {
   assert.equal(element("activity").textContent, "STANDBY");
 });
 
-check("poll loop is running", () => {
+await check("poll loop is running", () => {
   assert.ok(intervals.length >= 1, "no interval registered");
   assert.ok(
     intervals.some((timer) => timer.ms <= 5000),
@@ -371,7 +429,7 @@ input.value = "open chrome";
 await sendButton.fire("click");
 await tick();
 
-check("the command reached /api/command", () => {
+await check("the command reached /api/command", () => {
   assert.ok(
     calls.some(
       (call) => call.url === "/api/command" && call.body.text === "open chrome",
@@ -379,18 +437,18 @@ check("the command reached /api/command", () => {
   );
 });
 
-check("both sides of the exchange are rendered", () => {
+await check("both sides of the exchange are rendered", () => {
   assert.ok(rendered().includes("open chrome"), "user line missing");
   assert.ok(rendered().includes("Consider it done, sir."), "reply missing");
 });
 
-check("the reply is spoken through the browser voice", () => {
+await check("the reply is spoken through the browser voice", () => {
   assert.ok(
     globalThis.speechSynthesis.spoken.includes("Consider it done, sir."),
   );
 });
 
-check("the command bar is cleared and idle again", () => {
+await check("the command bar is cleared and idle again", () => {
   assert.equal(input.value, "");
   assert.equal(sendButton.disabled, false);
 });
@@ -407,7 +465,7 @@ input.value = "open my editor";
 await sendButton.fire("click");
 await tick();
 
-check("thoughts render as a MIND line", () => {
+await check("thoughts render as a MIND line", () => {
   const mind = conversation.children.find((child) =>
     child.classList.contains("mind"),
   );
@@ -415,7 +473,7 @@ check("thoughts render as a MIND line", () => {
   assert.ok(mind.children[1].textContent.includes("opening vscode"));
 });
 
-check("thoughts are never spoken aloud", () => {
+await check("thoughts are never spoken aloud", () => {
   assert.ok(
     !globalThis.speechSynthesis.spoken.some((line) => line.includes("vscode")),
   );
@@ -426,7 +484,7 @@ input.value = "click the thing";
 await sendButton.fire("click");
 await tick();
 
-check("failures render but are not spoken", () => {
+await check("failures render but are not spoken", () => {
   const failed = conversation.children.find((child) =>
     child.classList.contains("failed"),
   );
@@ -446,7 +504,7 @@ input.value = "search for kira";
 await sendButton.fire("click");
 await tick();
 
-check("the confirmation bar appears when the server asks", () => {
+await check("the confirmation bar appears when the server asks", () => {
   assert.equal(element("confirm-bar").hidden, false);
   assert.ok(element("confirm-text").textContent.includes("search the web"));
 });
@@ -455,7 +513,7 @@ commandReply = { reply: "Searching now, sir.", kind: "action", ok: true };
 await element("confirm-yes").fire("click");
 await tick();
 
-check("confirming posts confirm=true and hides the bar", () => {
+await check("confirming posts confirm=true and hides the bar", () => {
   assert.ok(
     calls.some((call) => call.url === "/api/command" && call.body.confirm === true),
   );
@@ -467,7 +525,7 @@ check("confirming posts confirm=true and hides the bar", () => {
 await quickActions[2].fire("click");
 await tick();
 
-check("quick actions send their command", () => {
+await check("quick actions send their command", () => {
   assert.ok(
     calls.some(
       (call) =>
@@ -477,16 +535,97 @@ check("quick actions send their command", () => {
   );
 });
 
+/* ── media transport + clock (the desktop app's bottom bar) ── */
+
+commandReply = { reply: "Playing, sir.", kind: "action", ok: true };
+await mediaButtons[1].fire("click");
+await tick();
+
+await check("media transport posts a command the parser knows", () => {
+  assert.ok(
+    calls.some(
+      (call) => call.url === "/api/command" && call.body.text === "play pause",
+    ),
+    "the play button never posted its command",
+  );
+});
+
+await check("the clock and date are rendered", () => {
+  assert.match(element("clock").textContent, /^\d{2}:\d{2}$/);
+  assert.ok(element("date").textContent.length > 3, "no date rendered");
+});
+
+/* ── the state strip ────────────────────────────────────── */
+
+await check("the state strip lights exactly one card", () => {
+  const active = stateCards.filter((card) => card.classList.contains("active"));
+  assert.equal(active.length, 1, `${active.length} cards lit at once`);
+});
+
+/* ── the voice activity line ────────────────────────────── */
+
+await check("the waveform draws without throwing", () => {
+  assert.ok(
+    element("waveform").width > 0,
+    "the voice line was never sized for the canvas",
+  );
+});
+
+/* ── sidebar modules ────────────────────────────────────── */
+
+await check("the rail marks the module the user picked", async () => {
+  await navButton("memory").fire("click");
+  assert.ok(navButton("memory").classList.contains("active"));
+  assert.ok(!navButton("chat").classList.contains("active"));
+});
+
+await check("a module with a real job sends its command", () => {
+  assert.ok(
+    calls.some(
+      (call) =>
+        call.url === "/api/command" && call.body.text === "what did you learn",
+    ),
+    "the memory module never posted its command",
+  );
+});
+
+await check("the voice module listens", async () => {
+  const before = calls.filter((call) => call.url === "/api/listen").length;
+  await navButton("voice").fire("click");
+  await tick();
+  const after = calls.filter((call) => call.url === "/api/listen").length;
+  assert.ok(after > before, "the voice module did not open the microphone");
+});
+
+await check("the settings module toggles voice output", async () => {
+  const toggle = element("speak-toggle");
+  const before = toggle.textContent;
+  await navButton("settings").fire("click");
+  assert.notEqual(toggle.textContent, before, "voice output did not flip");
+  await navButton("settings").fire("click");
+  assert.equal(toggle.textContent, before, "voice output did not flip back");
+});
+
+await check("a module that is not wired up says so", async () => {
+  const before = conversation.children.length;
+  await navButton("tools").fire("click");
+  assert.ok(conversation.children.length > before, "no explanation was shown");
+  assert.ok(
+    rendered().some((line) => line.includes("not wired up")),
+    "the tools module claimed to do something it cannot",
+  );
+});
+
 /* ── microphone ─────────────────────────────────────────── */
 
 await element("mic").fire("click");
 await tick();
 
-check("the mic button posts to /api/listen", () => {
+await check("the mic button posts to /api/listen", () => {
   assert.ok(calls.some((call) => call.url === "/api/listen"));
 });
 
-check("a recognised phrase is sent as a command", () => {
+await check("a recognised phrase is sent as a command", () => {
   assert.ok(
     calls.some(
       (call) => call.url === "/api/command" && call.body.text === "systems check",
@@ -504,7 +643,7 @@ statePayload = {
 await intervals[0].fn();
 await tick();
 
-check("watchdog alerts appear unprompted", () => {
+await check("watchdog alerts appear unprompted", () => {
   const proactive = conversation.children.find((child) =>
     child.classList.contains("proactive"),
   );
@@ -512,13 +651,13 @@ check("watchdog alerts appear unprompted", () => {
   assert.ok(proactive.children[1].textContent.includes("battery is at 18%"));
 });
 
-check("watchdog alerts are spoken", () => {
+await check("watchdog alerts are spoken", () => {
   assert.ok(
     globalThis.speechSynthesis.spoken.includes("Sir, your battery is at 18%."),
   );
 });
 
-check("state changes drive the activity readout", () => {
+await check("state changes drive the activity readout", () => {
   assert.equal(element("activity").textContent, "THINKING");
 });
 
@@ -528,7 +667,7 @@ statePayload = { ...statePayload, online: false, mode: "offline", reason: "boom"
 await intervals[0].fn();
 await tick();
 
-check("an unreachable backend is flagged, never hidden", () => {
+await check("an unreachable backend is flagged, never hidden", () => {
   assert.equal(element("online-text").textContent, "OFFLINE");
   assert.ok(element("backend-note").textContent.includes("boom"));
 });
@@ -537,14 +676,14 @@ statePayload = { ...statePayload, online: true, mode: "simulation", reason: "dem
 await intervals[0].fn();
 await tick();
 
-check("simulation mode is labelled as a demo", () => {
+await check("simulation mode is labelled as a demo", () => {
   assert.equal(element("online-text").textContent, "SIMULATION");
   assert.ok(element("mode-label").textContent.includes("DEMO"));
 });
 
 /* ── controls ───────────────────────────────────────────── */
 
-check("the voice toggle flips and persists", async () => {
+await check("the voice toggle flips and persists", async () => {
   const toggle = element("speak-toggle");
   await toggle.fire("click");
   assert.equal(toggle.textContent, "VOICE: OFF");
@@ -556,7 +695,7 @@ check("the voice toggle flips and persists", async () => {
 await element("reset-chat").fire("click");
 await tick();
 
-check("reset clears the conversation and says so", () => {
+await check("reset clears the conversation and says so", () => {
   assert.ok(calls.some((call) => call.url === "/api/reset"));
   assert.equal(conversation.children.length, 1, "conversation was not cleared");
   assert.ok(rendered()[0].includes("Fresh start"));
@@ -566,7 +705,7 @@ check("reset clears the conversation and says so", () => {
 
 await new Promise((resolve) => realSetTimeout(resolve, 120));
 
-check("the reactor failed gracefully (no WebGL in node)", () => {
+await check("the reactor failed gracefully (no WebGL in node)", () => {
   assert.ok(
     body.classList.contains("no-webgl"),
     "the CSS fallback never engaged — a WebGL failure would leave a dead screen",
@@ -582,14 +721,14 @@ input.value = "systems check";
 await sendButton.fire("click");
 await tick();
 
-check("the interface still works after the reactor gave up", () => {
+await check("the interface still works after the reactor gave up", () => {
   assert.ok(
     rendered().some((line) => line.includes("All systems nominal")),
     "commands stopped working after the fallback",
   );
 });
 
-check("no runtime errors escaped", () => {
+await check("no runtime errors escaped", () => {
   assert.equal(rejections.length, 0, rejections.map(String).join("; "));
 });
 

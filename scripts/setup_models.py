@@ -202,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  offline_model_path set to: {target}")
 
     print()
-    print("Setup finished. Start KIRA with:  python main_window.py")
+    print("Setup finished. Start KIRA with:  python kira_app.py")
     return 0
 
 

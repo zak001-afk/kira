@@ -84,19 +84,18 @@ Everything runs on your machine. No cloud APIs, no API keys, no telemetry.
   timer that speaks back when it fires (English, French and Arabic).
 - **Configurable everything** — your own app aliases, websites and
   confirmation rules live in `kira_config.json`, not in code.
-- **3D holographic core** — the interface centrepiece is a real
-  perspective-projected orb: a 430-point depth-sorted sphere, six meridians
-  and four latitude rings (each shaded by depth), an equatorial scan ring,
-  3D orbiting satellites, and a glowing heart behind the KIRA wordmark —
-  all wrapped in **two layers of matrix rain** (dense/dim behind, sparse/
-  bright in front) so the sphere sits *inside* the rain. Six UI states drive
-  spin, tilt, pulse, rain speed and hue.
-- **Browser interface** — the same agent in a Three.js neural HUD
-  (`python kira_server.py`): a live reactor that reacts to what KIRA is doing,
-  matrix rain, real telemetry, the conversation with its thoughts, a
-  confirmation bar for sensitive actions, voice input through KIRA's own
-  microphone and replies spoken by the browser. Works on your phone over the
-  LAN too — `--host 0.0.0.0`.
+- **One interface, two ways to run it** — a Three.js neural HUD
+  (`python kira_app.py`, or `python kira_server.py` for a browser and your
+  phone over the LAN): a bloom-lit reactor that reacts to what KIRA is
+  doing, matrix rain, real telemetry, the conversation with its thoughts,
+  a state strip, a voice line, media controls, and a confirmation bar for
+  sensitive actions. `kira_app.py` shows that same HUD in a native window —
+  no second UI to keep in step, and nothing to re-learn.
+- **3D core** — the reactor is a real 3D object, not a decorated circle:
+  armour plates, orbital rings, a neural core and 450 depth-shaded
+  particles, lit by bloom whose strength follows KIRA's state. The same
+  geometry exists as pure Python in `kira_orb.py` (no UI dependencies,
+  fully unit-tested), which renders the artwork above offline.
 - **Safe by default** — sensitive actions (web search, mouse clicks, locking
   the PC) ask for voice confirmation; destructive steps fail loudly.
 
@@ -107,7 +106,8 @@ Everything runs on your machine. No cloud APIs, no API keys, no telemetry.
 | Windows 10/11 | Linux/macOS can run the parser/tests, but the full agent targets Windows |
 | Python 3.10+ | 64-bit |
 | [Ollama](https://ollama.com/download) | must be running (`ollama serve`) |
-| Microphone + speakers | for voice mode; the UI also accepts typed commands |
+| Microphone + speakers | for voice mode; the interface also accepts typed commands |
+| Edge WebView2 runtime | for the native window; it ships with Windows 10/11, and without it KIRA opens a browser window instead |
 
 ## Quick start
 
@@ -121,10 +121,10 @@ pip install -r requirements.txt
 # Pull the LLM/vision models and (optionally) an offline speech model:
 python scripts/setup_models.py
 
-# Run KIRA:
-python main_window.py
+# Run KIRA (native window; falls back to a browser window):
+python kira_app.py
 
-# ...or in a browser (same agent, different HUD):
+# ...or serve the same interface yourself, for a browser or your phone:
 python kira_server.py --open
 ```
 
@@ -331,8 +331,10 @@ counts, then a spoken briefing (time, date, battery, pending reminders).
 ![KIRA's 3D core](assets/orb_preview.png)
 
 The interface centrepiece is a genuinely 3D object, not a decorated circle.
-`kira_orb.py` holds the maths (pure Python, no UI dependencies, fully
-unit-tested) and `main_window.py` draws it with tkinter:
+The live core is the Three.js reactor in `ui/app.js` — a bloom-lit sphere of
+armour plates, orbits and particles. `kira_orb.py` holds the *same* geometry
+as pure, unit-tested Python, which is what renders the artwork above and lets
+the core be inspected without launching anything:
 
 | Layer | What it is |
 |---|---|
@@ -362,11 +364,33 @@ Render cost is bounded: `orb_quality` (`high` / `balanced` / `low`, default
 `balanced`) scales the sphere, rain and wireframe budgets, and the counts
 also shrink automatically on small canvases.
 
-## The browser interface
+## The interface
 
-KIRA also runs in a browser. `kira_server.py` is a small stdlib HTTP server
-that serves `ui/` and exposes a JSON API straight into the **same pipeline**
-the desktop UI and CLI use — parser → confirmation → execution → reflection:
+There is exactly one interface: the neural HUD in `ui/`. The desktop app is a
+shell that serves it and shows it in a native window:
+
+```powershell
+python kira_app.py                # native window (pywebview → Edge WebView2)
+python kira_app.py --simulate     # labelled demo, no agent, no hardware
+python kira_app.py --browser      # skip the native window on purpose
+python kira_app.py --port 8788    # a fixed port instead of an ephemeral one
+```
+
+`kira_app.py` starts `kira_server` on `127.0.0.1` with a port the OS hands it,
+puts that URL in the window, and shuts the server down when the window closes.
+It degrades instead of failing: no pywebview, or no WebView2 runtime, and KIRA
+opens an app-mode Edge/Chrome window; no browser either, and it uses the
+default one. The microphone, the confirmation flow and the command pipeline
+are identical in every case, because there is nothing left to keep in sync —
+`kira_server.py` is the only implementation of the routing.
+
+Why the desktop UI is no longer a second implementation: `main_window.py` was
+a parallel customtkinter copy of this HUD (its own panels, own state machine,
+own 400-line orb renderer). Every new panel and every fix had to be written
+twice, and the copies had already drifted — the browser confirmed only
+parser-planned actions, the desktop confirmed all of them. It is gone.
+
+Serving the same interface to a browser is still first-class:
 
 ```powershell
 python kira_server.py            # http://127.0.0.1:8788
@@ -384,7 +408,11 @@ Nothing is faked in the HUD:
 | Telemetry | Live CPU / memory / disk / battery (via `psutil`), the active model, learned skills, operation count and uptime — polled every 1.5 s |
 | Command bar | Real commands. Sensitive ones come back as *"Shall I…?"* with a CONFIRM / CANCEL bar instead of running |
 | MIC | KIRA's own offline speech recognition on the server — the browser asks, the mic is read by the agent |
-| Voice | Replies are spoken with the browser's Web Speech API, so they work on any OS; toggle with **VOICE: ON/OFF**. KIRA's Windows SAPI voice is left to the desktop UI so the two never talk over each other |
+| Voice | Replies are spoken with the browser's Web Speech API, so they work on any OS; toggle with **VOICE: ON/OFF** |
+| Rail | The module list from the desktop app: Chat, Voice, Commands, Vision, Files, Memory and Settings each do the job their name promises. **Tools is marked inert and says so** rather than pretending |
+| State strip | The five states the desktop app showed as cards — KIRA's real state lights one |
+| Voice line | A bar spectrum whose height follows the state, from the desktop core panel |
+| Media bar | Transport buttons that post real commands (`previous track`, `play pause`, `next track`) and a 24-hour clock + date |
 
 Design notes:
 
@@ -402,8 +430,8 @@ Design notes:
   home network, but understand what you are exposing: the API can drive your
   computer — keep it off public networks and off port-forwarding.
 - **Watchdog alerts reach the page.** The proactive monitor runs on the
-  server, so battery/CPU warnings appear in the browser conversation (and are
-  spoken) even when the desktop UI is closed.
+  server, so battery/CPU warnings appear in the conversation (and are spoken)
+  whichever way the interface is being shown.
 
 ## Building projects from an idea
 
@@ -491,13 +519,13 @@ Plain *"click"* and mouse moves always ask for voice confirmation.
 
 ```
 kira/
-├── main_window.py        # customtkinter UI (orb, state machine, chat panel)
+├── kira_app.py           # the application window: serves ui/ and shows it natively
 ├── kira_voice_agent.py   # backend: STT, parser, LLM routing, actions, vision, TTS
 ├── kira_thought.py       # the agent's mind: think → act → reflect, self-reports
 ├── kira_builder.py       # idea → planned, generated, tested, self-repaired project
 ├── kira_orb.py           # pure 3D geometry + matrix rain maths (no UI deps)
-├── kira_server.py        # browser interface: stdlib HTTP + JSON API into the agent
-├── ui/                   # the neural HUD the server serves (index/app.js/style.css)
+├── kira_server.py        # stdlib HTTP + JSON API into the agent (all front-ends use it)
+├── ui/                   # THE interface (index.html / app.js / style.css)
 │   └── vendor/           # Three.js r180, vendored so the reactor works offline
 ├── kira_calculator.py    # safe AST-whitelisted arithmetic (EN/FR/AR)
 ├── kira_reminders.py     # in-process spoken reminders with daemon timers
@@ -514,7 +542,7 @@ kira/
 ├── dev.py                # watch-and-restart development mode
 ├── scripts/
 │   ├── setup_models.py   # one-time model installer (Ollama + Vosk)
-│   └── render_orb_preview.py  # render the 3D core to a PNG (no display needed)
+│   └── render_orb_preview.py  # render the core artwork to a PNG (no display needed)
 ├── assets/               # icons
 ├── tests/                # pytest suite (runs anywhere — hardware is stubbed)
 ├── KIRA.spec             # PyInstaller spec (single source of truth for builds)
@@ -527,17 +555,17 @@ kira/
 dev_mode.bat        # auto-restarts KIRA whenever a source file changes
 
 pip install -r requirements-dev.txt
-pytest              # 709 unit tests — no mic, display or Ollama needed
+pytest              # 730 tests — no mic, display or Ollama needed
 ruff check .        # lint
-python -m compileall dev.py kira_memory.py kira_thought.py kira_voice_agent.py kira_server.py main_window.py scripts tests
+python -m compileall dev.py kira_memory.py kira_thought.py kira_voice_agent.py kira_server.py kira_app.py scripts tests
 ```
 
-The browser interface has its own headless check (Node 20+, no browser, no
-WebGL needed) — it runs the real `ui/app.js` against a fake DOM and a fake
-API, then against the vendored Three.js build:
+The interface has its own headless check (Node 20+, no browser, no WebGL
+needed) — it runs the real `ui/app.js` against a fake DOM and a fake API,
+then against the vendored Three.js build:
 
 ```powershell
-node scripts/check_ui.mjs    # 29 UI checks: boot, commands, thoughts, confirm, mic, alerts, fallback
+node scripts/check_ui.mjs    # 38 UI checks: boot, commands, thoughts, confirm, mic, alerts, modules, fallback
 ```
 
 Tests stub the hardware-facing modules (`pyautogui`, audio, Ollama, …) in
@@ -550,9 +578,9 @@ suite on Ubuntu + Windows, plus a Windows dependency-resolution check).
 build_kira.bat
 ```
 
-This runs PyInstaller with `KIRA.spec` (which bundles `customtkinter`, icons
-and the config), then copies `dist\KIRA` to your Desktop and creates a
-shortcut. You do **not** need to rebuild while developing — use dev mode.
+This runs PyInstaller with `KIRA.spec` (which bundles `ui/`, the icon and the
+config), then copies `dist\KIRA` to your Desktop and creates a shortcut. You
+do **not** need to rebuild while developing — use dev mode.
 
 ## Troubleshooting
 

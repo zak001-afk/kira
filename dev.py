@@ -4,10 +4,14 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-APP = ROOT / "main_window.py"
+APP = ROOT / "kira_app.py"
 
 # Files/folders that should trigger an automatic restart.
-WATCH_EXTENSIONS = {".py", ".json", ".png", ".jpg", ".jpeg", ".ico"}
+WATCH_EXTENSIONS = {
+    ".py", ".json", ".png", ".jpg", ".jpeg", ".ico",
+    # the interface is ui/, so editing it restarts the window and reloads it
+    ".html", ".css", ".js", ".mjs",
+}
 
 # Ignore generated/cache files.
 IGNORED_DIRS = {

@@ -7,3 +7,6 @@
 pytest>=8.2.0
 ruff>=0.6.0
 pyinstaller>=6.10.0
+
+# scripts/render_orb_preview.py draws the README's core artwork offline.
+Pillow>=10.4.0

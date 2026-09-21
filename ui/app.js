@@ -59,6 +59,9 @@ const confirmText = $("confirm-text");
 const onlineChip = $("online-chip");
 const onlineText = $("online-text");
 const modeLabel = $("mode-label");
+const stateStrip = $("state-strip");
+const modelChipText = $("model-name");
+const sidebarVersion = $("sidebar-version");
 
 /* =========================================================
    API CLIENT
@@ -198,6 +201,13 @@ function setActivity(state) {
   const row = $("activity-row");
   $("activity").textContent = style.label;
   row.className = `activity ${style.key}`;
+
+  // light the matching card in the state strip, clear the rest
+  if (stateStrip) {
+    for (const card of stateStrip.children) {
+      card.classList.toggle("active", card.dataset.state === state);
+    }
+  }
 }
 
 function setOnline(online, mode, reason) {
@@ -253,9 +263,14 @@ function applyTelemetry(data) {
     $("battery").textContent = "—";
   }
 
-  $("model").textContent = data.model && data.model !== "—" ? data.model : "LOCAL NEURAL ENGINE";
+  const modelName = data.model && data.model !== "—" ? data.model : "LOCAL NEURAL ENGINE";
+  $("model").textContent = modelName;
+  if (modelChipText) modelChipText.textContent = modelName;
   $("skills").textContent = data.skills ?? "—";
   $("episodes").textContent = data.episodes ?? "—";
+  if (sidebarVersion && data.version) {
+    sidebarVersion.textContent = `KIRA CORE • v${data.version}`;
+  }
 
   // unprompted messages (watchdog alerts, reminders) arrive through polling
   for (const message of data.queue || []) {
@@ -372,7 +387,8 @@ micButton.addEventListener("click", listenOnce);
 $("confirm-yes").addEventListener("click", () => answerConfirmation(true));
 $("confirm-no").addEventListener("click", () => answerConfirmation(false));
 
-document.querySelectorAll("#quick-actions button").forEach((button) => {
+/* every quick action and every media-transport button posts a real command */
+document.querySelectorAll("[data-command]").forEach((button) => {
   button.addEventListener("click", () => sendCommand(button.dataset.command));
 });
 
@@ -381,13 +397,73 @@ function renderSpeakToggle() {
   speakToggle.textContent = `VOICE: ${appState.speak ? "ON" : "OFF"}`;
   speakToggle.classList.toggle("active", appState.speak);
 }
-speakToggle.addEventListener("click", () => {
+function toggleSpeak() {
   appState.speak = !appState.speak;
   localStorage.setItem("kira.speak", appState.speak ? "on" : "off");
   if (!appState.speak && "speechSynthesis" in window) window.speechSynthesis.cancel();
   renderSpeakToggle();
-});
+}
+speakToggle.addEventListener("click", toggleSpeak);
 renderSpeakToggle();
+
+/* =========================================================
+   SIDEBAR NAV
+   The module list from the desktop app. Each entry does the
+   job the desktop's did — or says plainly that it does not.
+   ========================================================= */
+
+const NAV_COMMANDS = {
+  vision: "what is on my screen",
+  files: "open downloads",
+  memory: "what did you learn",
+};
+
+function setNavActive(name) {
+  const nav = $("sidebar-nav");
+  if (!nav) return;
+  for (const item of nav.children) {
+    item.classList.toggle("active", item.dataset.nav === name);
+  }
+}
+
+function handleNav(name) {
+  setNavActive(name);
+
+  if (name === "chat") {
+    commandInput.focus();
+    return;
+  }
+  if (name === "voice") {
+    listenOnce();
+    return;
+  }
+  if (name === "commands") {
+    commandInput.focus();
+    const row = $("quick-actions");
+    row.classList.add("hint");
+    window.setTimeout(() => row.classList.remove("hint"), 900);
+    return;
+  }
+  if (name === "settings") {
+    toggleSpeak();
+    addMessage("kira", `Voice output is now ${appState.speak ? "on" : "off"}.`, "note");
+    return;
+  }
+  if (name === "tools") {
+    addMessage("kira", "The Tools module is not wired up yet, sir.", "note");
+    return;
+  }
+
+  const command = NAV_COMMANDS[name];
+  if (command) sendCommand(command);
+}
+
+const sidebarNav = $("sidebar-nav");
+if (sidebarNav) {
+  for (const item of sidebarNav.children) {
+    item.addEventListener("click", () => handleNav(item.dataset.nav));
+  }
+}
 
 $("reset-chat").addEventListener("click", async () => {
   conversation.innerHTML = "";
@@ -398,6 +474,106 @@ $("reset-chat").addEventListener("click", async () => {
   }
   addMessage("kira", "Fresh start, sir.");
 });
+
+/* =========================================================
+   VOICE ACTIVITY LINE
+   The desktop core panel's waveform, drawn in the HUD: a bar
+   spectrum whose height follows KIRA's state. Silent when idle.
+   ========================================================= */
+
+const waveformCanvas = $("waveform");
+const waveformContext = waveformCanvas
+  ? waveformCanvas.getContext("2d")
+  : null;
+
+/* how hard the line moves per state — mirrors the desktop orb */
+const WAVE_STRENGTH = {
+  READY: 3,
+  LISTENING: 20,
+  THINKING: 13,
+  CONFIRM: 9,
+  EXECUTING: 19,
+  SPEAKING: 27,
+  ERROR: 9,
+};
+
+let wavePhase = 0;
+
+function resizeWaveform() {
+  if (!waveformCanvas || !waveformContext) return;
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const width = waveformCanvas.clientWidth || 420;
+  const height = waveformCanvas.clientHeight || 32;
+  waveformCanvas.width = Math.floor(width * ratio);
+  waveformCanvas.height = Math.floor(height * ratio);
+  waveformContext.setTransform(ratio, 0, 0, ratio, 0, 0);
+}
+
+function drawWaveform() {
+  if (!waveformContext) return;
+
+  const width = waveformCanvas.clientWidth || 420;
+  const height = waveformCanvas.clientHeight || 32;
+  const mid = height / 2;
+  const strength = WAVE_STRENGTH[appState.state] ?? 4;
+  const pulse = 0.5 + Math.sin(wavePhase * 1.7) * 0.5;
+
+  waveformContext.clearRect(0, 0, width, height);
+
+  // the idle line: flat, dim, unmistakably at rest
+  waveformContext.strokeStyle = "rgba(120, 20, 20, 0.5)";
+  waveformContext.lineWidth = 1;
+  waveformContext.beginPath();
+  waveformContext.moveTo(0, mid);
+  waveformContext.lineTo(width, mid);
+  waveformContext.stroke();
+
+  const bars = 41;
+  for (let i = 0; i < bars; i++) {
+    const x = 2 + (i * (width - 4)) / (bars - 1);
+    const movement = Math.abs(Math.sin(i * 0.52 + wavePhase * 3));
+    let amp = 3 + strength * movement * (0.45 + pulse * 0.8);
+    if (appState.state === "READY") amp = 2 + movement * 2;
+    amp = Math.min(amp, mid - 1);
+
+    waveformContext.strokeStyle =
+      i % 4 === 0 ? "rgba(255, 32, 32, 0.95)" : "rgba(122, 12, 12, 0.75)";
+    waveformContext.lineWidth = i % 4 === 0 ? 2 : 1;
+    waveformContext.beginPath();
+    waveformContext.moveTo(x, mid - amp);
+    waveformContext.lineTo(x, mid + amp);
+    waveformContext.stroke();
+  }
+
+  wavePhase += 0.03 + strength * 0.0016;
+}
+
+/* =========================================================
+   CLOCK
+   ========================================================= */
+
+const clockLabel = $("clock");
+const dateLabel = $("date");
+
+function tickClock() {
+  const now = new Date();
+  if (clockLabel) {
+    // built by hand so the clock reads the same in every locale (24-hour,
+    // like the desktop app's) instead of following the system's 12/24 choice
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    clockLabel.textContent = `${hours}:${minutes}`;
+  }
+  if (dateLabel) {
+    dateLabel.textContent = now
+      .toLocaleDateString([], {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+      })
+      .toUpperCase();
+  }
+}
 
 /* =========================================================
    MATRIX RAIN
@@ -885,9 +1061,19 @@ async function buildReactor() {
    MATRIX LOOP
    ========================================================= */
 
-function matrixLoop() {
-  requestAnimationFrame(matrixLoop);
+let lastClockMinute = -1;
+
+function hudLoop() {
+  requestAnimationFrame(hudLoop);
   drawMatrix();
+  drawWaveform();
+
+  // the clock only needs redrawing when the minute changes
+  const now = new Date();
+  if (now.getMinutes() !== lastClockMinute) {
+    lastClockMinute = now.getMinutes();
+    tickClock();
+  }
 }
 
 /* =========================================================
@@ -896,10 +1082,15 @@ function matrixLoop() {
 
 async function boot() {
   resizeMatrix();
-  window.addEventListener("resize", resizeMatrix);
+  resizeWaveform();
+  tickClock();
+  window.addEventListener("resize", () => {
+    resizeMatrix();
+    resizeWaveform();
+  });
 
   // visual layers first so the interface is alive immediately
-  matrixLoop();
+  hudLoop();
   startReactor();
 
   // restore the conversation the server already knows about

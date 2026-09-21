@@ -33,6 +33,7 @@ import json
 import mimetypes
 import os
 import queue
+import re
 import sys
 import threading
 import time
@@ -58,6 +59,29 @@ STATIC_EXTENSIONS = {
 STATIC_NAMES = {"LICENSE", "LICENSE.txt", "NOTICE", "NOTICE.txt"}
 
 MAX_BODY_BYTES = 64 * 1024
+
+_VERSION_FROM_FILE = ""
+
+
+def project_version() -> str:
+    """KIRA's version, read from pyproject.toml.
+
+    The offline interface still knows which build it is, and there is exactly
+    one place to change the number. (Reporting "sim" here would label a
+    half-installed agent as a demo.)
+    """
+    global _VERSION_FROM_FILE
+    if _VERSION_FROM_FILE:
+        return _VERSION_FROM_FILE
+    try:
+        text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    except OSError:
+        return "—"
+    match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    if not match:
+        return "—"
+    _VERSION_FROM_FILE = match.group(1)
+    return _VERSION_FROM_FILE
 
 
 # ── simulation (used by --simulate and by tests) ─────────────────────────────
@@ -112,6 +136,11 @@ class KiraService:
         return self.backend is not None or self.simulate
 
     @property
+    def watchdog_running(self) -> bool:
+        """True once start_background() has a watchdog thread behind it."""
+        return self._watchdog is not None
+
+    @property
     def mode(self) -> str:
         if self.simulate:
             return "simulation"
@@ -123,7 +152,7 @@ class KiraService:
             return "sim"
         if self.backend is not None:
             return str(getattr(self.backend, "VERSION", "?"))
-        return "sim"
+        return project_version()
 
     def start_background(self) -> None:
         """Start KIRA's watchdog so alerts land in the web conversation."""

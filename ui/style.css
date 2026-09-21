@@ -16,6 +16,9 @@
 
   --panel: rgba(5, 0, 0, 0.18);
   --border: rgba(255, 32, 32, 0.35);
+
+  /* the rail the HUD lays itself out around */
+  --sidebar: 216px;
 }
 
 * {
@@ -178,6 +181,198 @@ body.no-webgl #fallback-core {
 }
 
 /* =========================================================
+   SIDEBAR
+   Mirrors the desktop app's rail: brand, module list, the
+   LOCAL • PRIVATE card and the build footer.
+   ========================================================= */
+
+#sidebar {
+  position: fixed;
+
+  top: 0;
+  left: 0;
+  bottom: 0;
+
+  z-index: 6;
+
+  display: flex;
+
+  flex-direction: column;
+
+  width: var(--sidebar);
+
+  padding: 22px 14px 14px;
+
+  border-right: 1px solid var(--border);
+
+  background: rgba(6, 0, 0, 0.62);
+
+  backdrop-filter: blur(2px);
+}
+
+.sidebar-brand {
+  display: flex;
+
+  align-items: center;
+
+  gap: 10px;
+
+  padding: 0 6px 26px;
+}
+
+.brand-mark {
+  color: var(--red);
+
+  font-size: 26px;
+
+  line-height: 1;
+
+  text-shadow: 0 0 14px rgba(255, 32, 32, 0.65);
+}
+
+.sidebar-brand-text {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 3px;
+}
+
+.sidebar-title {
+  color: var(--white);
+
+  font-size: 21px;
+
+  font-weight: 700;
+
+  letter-spacing: 6px;
+}
+
+.sidebar-sub {
+  color: var(--muted);
+
+  font-family: Consolas, monospace;
+
+  font-size: 7px;
+
+  letter-spacing: 1px;
+}
+
+.sidebar-nav {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 3px;
+
+  pointer-events: auto;
+}
+
+.nav-item {
+  padding: 10px 12px;
+
+  border: 1px solid transparent;
+
+  border-radius: 10px;
+
+  background: transparent;
+
+  color: #8a8a8a;
+
+  font-family: Consolas, monospace;
+
+  font-size: 9px;
+
+  letter-spacing: 1px;
+
+  text-align: left;
+
+  cursor: pointer;
+
+  transition: 0.2s ease;
+}
+
+.nav-item:hover {
+  border-color: rgba(255, 32, 32, 0.35);
+
+  background: rgba(255, 32, 32, 0.07);
+
+  color: var(--red-bright);
+}
+
+.nav-item.active {
+  border-color: rgba(255, 32, 32, 0.4);
+
+  background: rgba(255, 32, 32, 0.12);
+
+  color: var(--red-bright);
+
+  box-shadow: inset 0 0 18px rgba(255, 32, 32, 0.12);
+}
+
+.nav-item.inert {
+  color: #4a4a4a;
+
+  cursor: not-allowed;
+}
+
+.nav-item.inert:hover {
+  border-color: rgba(120, 120, 120, 0.3);
+
+  background: transparent;
+
+  color: #6a6a6a;
+}
+
+.sidebar-card {
+  margin-top: auto;
+
+  padding: 13px 14px;
+
+  border: 1px solid rgba(255, 32, 32, 0.25);
+
+  border-radius: 14px;
+
+  background: rgba(12, 0, 0, 0.5);
+}
+
+.sidebar-card-label {
+  margin-bottom: 6px;
+
+  color: var(--red-bright);
+
+  font-family: Consolas, monospace;
+
+  font-size: 8px;
+
+  font-weight: 700;
+
+  letter-spacing: 1px;
+}
+
+.sidebar-card p {
+  color: var(--muted);
+
+  font-size: 9px;
+
+  line-height: 1.5;
+}
+
+.sidebar-footer {
+  padding: 12px 6px 4px;
+
+  color: #4a3a3a;
+
+  font-family: Consolas, monospace;
+
+  font-size: 7px;
+
+  letter-spacing: 1px;
+
+  text-transform: uppercase;
+}
+
+/* =========================================================
    HEADER
    ========================================================= */
 
@@ -185,7 +380,7 @@ body.no-webgl #fallback-core {
   position: absolute;
 
   top: 28px;
-  left: 32px;
+  left: calc(var(--sidebar) + 24px);
   right: 32px;
 
   display: flex;
@@ -231,6 +426,26 @@ body.no-webgl #fallback-core {
   gap: 14px;
 
   pointer-events: auto;
+}
+
+.header-chip {
+  padding: 5px 12px;
+
+  border: 1px solid rgba(255, 32, 32, 0.3);
+
+  border-radius: 12px;
+
+  background: rgba(5, 0, 0, 0.3);
+
+  color: var(--red-bright);
+
+  font-family: Consolas, monospace;
+
+  font-size: 8px;
+
+  letter-spacing: 1px;
+
+  text-transform: uppercase;
 }
 
 .chip-button {
@@ -343,7 +558,7 @@ body.no-webgl #fallback-core {
 
   width: 26%;
 
-  height: 47%;
+  height: 43%;
 
   padding: 20px;
 
@@ -373,7 +588,7 @@ body.no-webgl #fallback-core {
 }
 
 .conversation-panel {
-  left: 3.5%;
+  left: calc(var(--sidebar) + 2.5%);
 
   display: flex;
 
@@ -736,7 +951,7 @@ body.no-webgl #fallback-core {
 
   top: 19%;
 
-  left: 50%;
+  left: calc(50% + var(--sidebar) / 2);
 
   transform: translateX(-50%);
 
@@ -750,16 +965,96 @@ body.no-webgl #fallback-core {
 }
 
 /* =========================================================
+   STATE STRIP
+   The five states the desktop app showed as cards. They are
+   indicators, not switches: KIRA's real state lights one up.
+   ========================================================= */
+
+.state-strip {
+  display: flex;
+
+  align-self: center;
+
+  gap: 6px;
+}
+
+.state-card {
+  display: flex;
+
+  align-items: center;
+
+  gap: 6px;
+
+  padding: 5px 11px;
+
+  border: 1px solid rgba(255, 32, 32, 0.18);
+
+  border-radius: 10px;
+
+  background: rgba(6, 0, 0, 0.42);
+
+  color: #6a5555;
+
+  font-family: Consolas, monospace;
+
+  font-size: 7px;
+
+  letter-spacing: 1px;
+
+  transition: 0.25s ease;
+}
+
+.state-card b {
+  font-size: 10px;
+
+  font-weight: 400;
+}
+
+.state-card.active {
+  border-color: rgba(255, 32, 32, 0.75);
+
+  background: rgba(40, 2, 2, 0.7);
+
+  color: var(--red-bright);
+
+  box-shadow: 0 0 16px rgba(255, 32, 32, 0.25);
+}
+
+/* =========================================================
+   VOICE ACTIVITY LINE
+   ========================================================= */
+
+#waveform {
+  display: block;
+
+  align-self: center;
+
+  width: min(460px, 70%);
+
+  height: 32px;
+
+  pointer-events: none;
+
+  opacity: 0.75;
+}
+
+/* =========================================================
    COMMAND
    ========================================================= */
 
 .command-area {
   position: absolute;
 
-  left: 6.5%;
-  right: 6.5%;
+  left: calc(var(--sidebar) + 3%);
+  right: 3%;
 
-  bottom: 6%;
+  bottom: 3.5%;
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 8px;
 }
 
 .command-box {
@@ -872,9 +1167,9 @@ body.no-webgl #fallback-core {
 
   flex-wrap: wrap;
 
-  gap: 8px;
+  justify-content: center;
 
-  margin-top: 8px;
+  gap: 8px;
 
   pointer-events: auto;
 }
@@ -899,7 +1194,8 @@ body.no-webgl #fallback-core {
   transition: 0.2s ease;
 }
 
-.quick-actions button:hover {
+.quick-actions button:hover,
+.quick-actions.hint button {
   color: var(--red-bright);
 
   border-color: var(--red);
@@ -915,8 +1211,6 @@ body.no-webgl #fallback-core {
   align-items: center;
 
   gap: 12px;
-
-  margin-top: 10px;
 
   padding: 10px 16px;
 
@@ -972,10 +1266,159 @@ body.no-webgl #fallback-core {
 }
 
 /* =========================================================
+   MEDIA BAR + CLOCK
+   The desktop app's bottom bar: media transport on the left,
+   clock and date on the right. Every button posts a real
+   command — none of them are decorative.
+   ========================================================= */
+
+.media-bar {
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  gap: 18px;
+
+  padding: 7px 16px;
+
+  border: 1px solid rgba(255, 32, 32, 0.28);
+
+  border-radius: 14px;
+
+  background: rgba(6, 0, 0, 0.45);
+
+  pointer-events: auto;
+}
+
+.media-label {
+  display: flex;
+
+  align-items: center;
+
+  gap: 9px;
+}
+
+.media-icon {
+  color: var(--red);
+
+  font-size: 15px;
+}
+
+.media-label span {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 2px;
+
+  color: #b9b9b9;
+
+  font-family: Consolas, monospace;
+
+  font-size: 8px;
+
+  letter-spacing: 1px;
+}
+
+.media-label em {
+  color: #5c5c5c;
+
+  font-size: 7px;
+
+  font-style: normal;
+}
+
+.media-controls {
+  display: flex;
+
+  gap: 6px;
+}
+
+.media-controls button {
+  width: 44px;
+  height: 26px;
+
+  border: 1px solid rgba(255, 32, 32, 0.3);
+
+  border-radius: 8px;
+
+  background: transparent;
+
+  color: #b9b9b9;
+
+  font-size: 11px;
+
+  cursor: pointer;
+
+  transition: 0.2s ease;
+}
+
+.media-controls button:hover {
+  border-color: var(--red);
+
+  background: rgba(255, 32, 32, 0.14);
+
+  color: var(--red-bright);
+}
+
+.media-clock {
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: flex-end;
+
+  gap: 2px;
+}
+
+.media-clock strong {
+  color: var(--white);
+
+  font-family: Consolas, monospace;
+
+  font-size: 13px;
+
+  letter-spacing: 1px;
+}
+
+.media-clock span {
+  color: #5c5c5c;
+
+  font-family: Consolas, monospace;
+
+  font-size: 7px;
+
+  letter-spacing: 1px;
+}
+
+/* =========================================================
    RESPONSIVE
    ========================================================= */
 
+/* the rail costs width; below 1000px the HUD reclaims it */
 @media (max-width: 1000px) {
+  #sidebar {
+    display: none;
+  }
+
+  .top-bar {
+    left: 24px;
+  }
+
+  .conversation-panel {
+    left: 2%;
+  }
+
+  .command-area {
+    left: 3%;
+  }
+
+  .core-caption {
+    left: 50%;
+  }
+
   .brand-sub {
     display: none;
   }
@@ -984,15 +1427,42 @@ body.no-webgl #fallback-core {
     width: 30%;
   }
 
-  .conversation-panel {
-    left: 2%;
-  }
-
   .telemetry-panel {
     right: 2%;
   }
 
   .quick-actions button:nth-child(n + 4) {
+    display: none;
+  }
+}
+
+/* short windows: the panels and the command stack must not collide.
+   The worst case is the minimum window (1180x760); the numbers leave
+   ~10px of clearance there, and the strip/line drop out at 720px. */
+@media (max-height: 860px) {
+  .hud-panel {
+    height: 39%;
+  }
+
+  #waveform {
+    height: 26px;
+  }
+
+  .state-card {
+    padding: 4px 9px;
+  }
+}
+
+/* below 800px the voice line goes first: the activity readout and the
+   state strip both still show what KIRA is doing */
+@media (max-height: 800px) {
+  #waveform {
+    display: none;
+  }
+}
+
+@media (max-height: 720px) {
+  .state-strip {
     display: none;
   }
 }
