@@ -18,5 +18,8 @@
     ]
   },
   "vision_model": "qwen3-vl:2b",
-  "vision_click_confidence": 0.7
+  "vision_click_confidence": 0.7,
+  "personality": {
+    "humor": "charming"
+  }
 }

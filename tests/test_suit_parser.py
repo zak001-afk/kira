@@ -85,7 +85,10 @@ class TestExecutorRunners:
     def test_humor_configuration_is_read_safely(self, backend, monkeypatch):
         monkeypatch.setitem(backend.CONFIG, "personality", {"humor": "dry"})
         assert backend._humor() == "dry"
+        monkeypatch.setitem(backend.CONFIG, "personality", {"humor": "neutral"})
+        assert backend._humor() == "neutral"
+        # missing or bogus personality falls back to the charming default
         monkeypatch.setitem(backend.CONFIG, "personality", None)
-        assert backend._humor() == "neutral"
+        assert backend._humor() == "charming"
         monkeypatch.setitem(backend.CONFIG, "personality", {"humor": "bogus"})
-        assert backend._humor() == "neutral"
+        assert backend._humor() == "charming"

@@ -100,9 +100,13 @@ class TestReplies:
     def test_unknown_action_fallback(self, backend):
         assert backend.build_reply("en", "nonexistent-action") == "Done sir."
 
-    def test_acknowledgement(self, backend):
-        assert backend.build_acknowledgement("en") == "Understood sir. I am doing that now."
-        assert backend.build_acknowledgement("fr") == "Compris, monsieur. Je m en occupe maintenant."
+    def test_failed_action_speaks_kindly(self, backend, monkeypatch):
+        monkeypatch.setitem(backend.CONFIG, "personality", {"humor": "charming"})
+        assert "no trouble at all" in backend.build_reply("en", "none")
+        monkeypatch.setitem(backend.CONFIG, "personality", {"humor": "neutral"})
+        assert backend.build_reply("en", "none") == "I couldn't do that, sir."
+        monkeypatch.setitem(backend.CONFIG, "personality", {"humor": "formal"})
+        assert "regret" in backend.build_reply("en", "none")
 
 
 class TestAddress:

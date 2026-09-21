@@ -198,7 +198,7 @@ conversational chat mode with your stored memories as context.
       {"action": "open_app", "target": "chrome"}
     ]
   },
-  "personality": { "humor": "neutral" },  // neutral | dry | formal
+  "personality": { "humor": "charming" }, // charming | neutral | dry | formal
   "skill_promote_after": 10,      // successes before KIRA offers a shortcut
   "lab_passphrase": "",           // optional passphrase for "unlock the lab"
   "monitor": {                    // proactive watchdog (all optional)
@@ -288,9 +288,14 @@ control:
   `lab_passphrase`); *"eyes down"* shows the desktop and mutes; *"take that
   back"* reverses the last reversible action (typing → Ctrl+Z, volume, mute,
   media, show-desktop) from a bounded undo stack.
-- **Personality** — `personality.humor`: `neutral`, `dry` (restrained wit:
-  *"Consider it done."*, *"Working late, sir?"*) or `formal`. Variants are
-  picked deterministically, so KIRA sounds consistent.
+- **Personality** — `personality.humor`: `charming` (warm and reassuring,
+  the default: *"Consider it done, sir."*, *"Good morning sir. I hope you
+  slept well."*, failures handled gently), `neutral`, `dry` (restrained wit:
+  *"Working late, sir?"*) or `formal`. Variants are picked deterministically,
+  so KIRA sounds consistent. The charming voice is chosen the same way: the
+  sweetest installed English SAPI voice (Windows 11 natural voices first,
+  then Aria/Michelle/Zira...) at a calmer rate; the pyttsx3 fallback gets the
+  same treatment.
 - **Optional bridges** — weather via `wttr.in` and Home Assistant control are
   completely inert until configured; nothing else in the project touches the
   network.
@@ -358,7 +363,7 @@ kira/
 dev_mode.bat        # auto-restarts KIRA whenever a source file changes
 
 pip install -r requirements-dev.txt
-pytest              # 476 unit tests — no mic, display or Ollama needed
+pytest              # 501 unit tests — no mic, display or Ollama needed
 ruff check .        # lint
 python -m compileall dev.py kira_memory.py kira_thought.py kira_voice_agent.py main_window.py scripts tests
 ```

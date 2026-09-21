@@ -18,7 +18,7 @@ import kira_weather
 import kira_homeassist
 import re
 
-VERSION = "2.3.0"
+VERSION = "2.3.1"
 import subprocess
 import time
 import webbrowser
@@ -39,7 +39,33 @@ from ollama import chat
 DEFAULT_MODEL = "qwen3:0.6b"
 DEFAULT_VISION_MODEL = "qwen3-vl:2b"
 WAKE_WORD = "kira"
-SAPI_VOICE = "Microsoft Zira Desktop"
+# Spoken voice, ordered from sweetest to plainest. Windows 11's natural
+# "Online" voices are the smoothest; older desktop voices are the fallbacks.
+SAPI_VOICE_CANDIDATES = (
+    "Microsoft Aria Online (Natural) - English (United States)",
+    "Microsoft Jenny Online (Natural) - English (United States)",
+    "Microsoft Michelle Online (Natural) - English (United States)",
+    "Microsoft Aria Desktop",
+    "Microsoft Michelle Desktop",
+    "Microsoft Zira Desktop",
+    "Microsoft Hazel Desktop",
+)
+SAPI_VOICE = SAPI_VOICE_CANDIDATES[-3]  # kept for backwards compatibility
+
+# pyttsx3 voice names that sound warm rather than robotic, best first.
+SMOOTH_VOICE_ORDER = (
+    "aria",
+    "jenny",
+    "michelle",
+    "emma",
+    "ava",
+    "sonia",
+    "samantha",
+    "zira",
+    "hazel",
+    "female",
+    "woman",
+)
 PREFERRED_MICROPHONE = "headset microphone (realtek"
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "kira_config.json")
 LOG_PATH = os.path.join(os.path.dirname(__file__), "kira.log")
@@ -53,7 +79,7 @@ DEFAULT_CONFIG = {
     "app_aliases": {},
     "websites": {},
     "require_confirmation": ["search", "mouse_move", "click", "lock_pc"],
-    "personality": {"humor": "neutral"},
+    "personality": {"humor": "charming"},
     "monitor": {},
     "lab_passphrase": "",
     "home_assistant": {},
@@ -199,12 +225,13 @@ kira_learning.set_save_shortcut(_save_shortcut)
 
 
 def _humor():
+    """The configured personality level, charmed by default."""
     try:
         return kira_personality.normalize(
-            (CONFIG.get("personality") or {}).get("humor", "neutral")
+            (CONFIG.get("personality") or {}).get("humor")
         )
     except (AttributeError, TypeError):
-        return "neutral"
+        return kira_personality.DEFAULT_LEVEL
 
 
 # ── suit-mode session state ──────────────────────────────────────────────────
@@ -609,51 +636,82 @@ def call_ollama(messages, options):
     raise last_error
 
 
+def voice_score(name: str, lang_str: str = "en", humor: str = "charming") -> int:
+    """Score a pyttsx3 voice for a warm, smooth delivery. Pure function."""
+    name = (name or "").lower()
+    lang_str = str(lang_str or "").lower()
+    score = 0
+    if any(token in lang_str for token in ["en-us", "en-gb", "en"]):
+        score += 60
+    elif "fr" in lang_str:
+        score -= 80
+    for rank, token in enumerate(SMOOTH_VOICE_ORDER):
+        if token in name:
+            # the smoother the voice, the bigger the bonus; charm favours
+            # the top of the list more strongly
+            weight = 40 if humor != "charming" else (60 - 4 * rank)
+            score += max(weight, 12)
+            break
+    if any(token in name for token in ["france", "french", "francais"]):
+        score -= 60
+    return score
+
+
+def pick_voice_name(names, humor: str = "charming", languages=None) -> "str | None":
+    """Choose the best voice name from ``names`` (pure — used by tests)."""
+    best_name, best_score = None, float("-inf")
+    for index, name in enumerate(names or []):
+        lang = ""
+        if languages is not None and index < len(languages):
+            lang = str(languages[index] or "")
+        score = voice_score(name, lang, humor)
+        if score > best_score:
+            best_name, best_score = name, score
+    return best_name
+
+
 def select_voice(engine):
     try:
         voices = engine.getProperty("voices") or []
         if not voices:
             return
 
-        best_voice = None
-        best_score = float("-inf")
-
+        names = [(getattr(voice, "name", "") or "") for voice in voices]
+        langs = []
         for voice in voices:
-            name = (getattr(voice, "name", "") or "").lower()
-            lang = (getattr(voice, "languages", [""]) or [""])[0]
-            lang_str = str(lang).lower()
+            raw = getattr(voice, "languages", [""]) or [""]
+            langs.append(str(raw[0]) if raw else "")
 
-            score = 0
-            if any(token in lang_str for token in ["en-us", "en-gb", "en"]):
-                score += 60
-            elif "fr" in lang_str or "fr-fr" in lang_str:
-                score -= 80
-
-            if any(
-                token in name
-                for token in [
-                    "zira",
-                    "samantha",
-                    "sonia",
-                    "hazel",
-                    "jenny",
-                    "aria",
-                    "female",
-                    "woman",
-                ]
-            ):
-                score += 40
-            if any(token in name for token in ["france", "french", "francais"]):
-                score -= 60
-
-            if score > best_score:
-                best_score = score
-                best_voice = voice
-
-        if best_voice is not None:
-            engine.setProperty("voice", best_voice.id)
+        chosen = pick_voice_name(names, _humor(), langs)
+        if chosen is None:
+            return
+        for voice in voices:
+            if (getattr(voice, "name", "") or "") == chosen:
+                engine.setProperty("voice", voice.id)
+                return
     except Exception:
         pass
+
+
+def speech_rate(humor: str = "charming") -> int:
+    """Words per minute — relaxed for the charming persona, brisk otherwise."""
+    return 160 if humor == "charming" else 180
+
+
+def sapi_rate(humor: str = "charming") -> int:
+    """PowerShell SAPI rate offset (-10..10) — a touch slower reads warmer."""
+    return -1 if humor == "charming" else 0
+
+
+def sapi_voice_script(humor: str = "charming") -> str:
+    """PowerShell snippet that selects the sweetest installed voice."""
+    candidates = ", ".join(f"'{name}'" for name in SAPI_VOICE_CANDIDATES)
+    return (
+        f"$voices = @({candidates}); "
+        "foreach ($v in $voices) { "
+        "  try { $speaker.SelectVoice($v); break } catch { } "
+        "}"
+    )
 
 
 def get_or_create_speech_engine():
@@ -661,7 +719,7 @@ def get_or_create_speech_engine():
     if _SPEECH_ENGINE is None:
         try:
             _SPEECH_ENGINE = pyttsx3.init()
-            _SPEECH_ENGINE.setProperty("rate", 180)
+            _SPEECH_ENGINE.setProperty("rate", speech_rate(_humor()))
             select_voice(_SPEECH_ENGINE)
         except Exception:
             _SPEECH_ENGINE = None
@@ -697,11 +755,12 @@ def _speak_locked(text: str):
         if not speech_text:
             return
         encoded_text = base64.b64encode(speech_text.encode("utf-8")).decode("ascii")
+        humor = _humor()
         command = (
             "Add-Type -AssemblyName System.Speech; "
             "$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-            f"$speaker.SelectVoice('{SAPI_VOICE}'); "
-            "$speaker.Volume = 100; $speaker.Rate = 0; "
+            f"{sapi_voice_script(humor)} "
+            f"$speaker.Volume = 100; $speaker.Rate = {sapi_rate(humor)}; "
             "$text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"
             f"{encoded_text}')); $speaker.Speak($text); $speaker.Dispose()"
         )
@@ -786,6 +845,9 @@ def detect_language(text: str) -> str:
 
 
 def build_reply(language: str, action: str, target: str = "") -> str:
+    if action == "none":
+        # a cancelled or failed action deserves an honest, kind line
+        return kira_personality.failed_reply(language, _humor())
     if language == "fr":
         if action == "open_app":
             return f"J'ouvre {target or 'l application'} maintenant, monsieur."
@@ -957,14 +1019,6 @@ def build_reply(language: str, action: str, target: str = "") -> str:
     if action == "exit":
         return f"Goodbye {user_title}."
     return f"Done {user_title}."
-
-
-def build_acknowledgement(language: str) -> str:
-    if language == "fr":
-        return "Compris, monsieur. Je m en occupe maintenant."
-    if language == "ar":
-        return "فهمت، سيدي. سأنفذ ذلك الآن."
-    return f"Understood {address_for_language(language)}. I am doing that now."
 
 
 def parse_simple_command(command: str):

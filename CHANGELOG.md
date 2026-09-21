@@ -3,6 +3,34 @@
 All notable changes to KIRA are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.3.1] — 2026-09-21
+
+### Changed
+- **Charming is the new default personality** (`personality.humor: "charming"`):
+  warm acknowledgements ("Consider it done, sir.", "Right away, sir.",
+  "With pleasure, sir."), caring time-aware greetings ("Good morning sir. I
+  hope you slept well — everything is ready for you.", "It's late, sir...
+  do rest soon."), a welcoming boot closer, and gentle failure lines
+  ("That didn't quite work, sir — no trouble at all, we'll find another
+  way."). `neutral`, `dry` and `formal` remain available; unknown values
+  fall back to charming.
+- **A voice to match**: KIRA now selects the sweetest installed English
+  voice — Windows 11 *Natural* voices first (Aria, Jenny, Michelle), then
+  the older desktop voices — instead of a single hardcoded voice, and speaks
+  slightly slower in charming mode (SAPI rate −1, pyttsx3 160 wpm vs 180).
+  Voice scoring and pacing are pure, unit-tested functions.
+
+### Fixed
+- A failed or cancelled action now says so kindly instead of falling through
+  to a default "Done" line (`build_reply("none")` was mis-routed).
+
+### Removed
+- Dead `build_acknowledgement()` helper (superseded by the personality
+  layer's acknowledgement variants).
+
+### Tests
+- 13 new voice tests plus expanded personality coverage. **501 passing.**
+
 ## [2.3.0] — 2026-09-21
 
 ### Added — "suit mode": the JARVIS layer
