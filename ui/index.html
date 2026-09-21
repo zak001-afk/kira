@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>KIRA // Neural Interface</title>
+
+    <link rel="stylesheet" href="./style.css" />
+
+    <!--
+      Three.js r180, vendored in ./vendor so the reactor works offline.
+      MIT licensed — see ./vendor/LICENSE. The HUD works without it: if the
+      module ever fails to load, app.js falls back to a CSS core.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three.module.min.js",
+          "three/addons/": "./vendor/jsm/"
+        }
+      }
+    </script>
+  </head>
+
+  <body>
+    <!-- ================================================= -->
+    <!-- 3D BACKGROUND                                     -->
+    <!-- ================================================= -->
+
+    <div id="scene-container"></div>
+
+    <!-- CSS fallback core, shown if WebGL / Three.js is unavailable -->
+    <div id="fallback-core" aria-hidden="true">
+      <div class="fallback-orb"></div>
+    </div>
+
+    <!-- ================================================= -->
+    <!-- MATRIX OVERLAY                                    -->
+    <!-- ================================================= -->
+
+    <canvas id="matrix"></canvas>
+
+    <!-- ================================================= -->
+    <!-- HUD                                               -->
+    <!-- ================================================= -->
+
+    <main id="hud">
+      <!-- HEADER -->
+
+      <header class="top-bar">
+        <div class="brand">
+          <span class="brand-name">K I R A</span>
+
+          <span class="brand-sub">
+            NEURAL COMPUTER AGENT // <span id="mode-label">LOCAL INSTANCE</span>
+          </span>
+        </div>
+
+        <div class="status-cluster">
+          <button id="speak-toggle" class="chip-button" title="Speak replies aloud">
+            VOICE: ON
+          </button>
+
+          <button id="reset-chat" class="chip-button" title="Clear the conversation">
+            CLEAR
+          </button>
+
+          <div class="online" id="online-chip">
+            <span class="online-dot"></span>
+            <span id="online-text">CONNECTING</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- LEFT PANEL -->
+
+      <section class="hud-panel conversation-panel">
+        <div class="panel-title">CONVERSATION</div>
+
+        <div class="panel-line"></div>
+
+        <div class="conversation" id="conversation">
+          <div class="msg kira">
+            <div class="msg-meta">KIRA&nbsp; // &nbsp;<span class="msg-time">--:--</span></div>
+            <div class="msg-text">
+              Hello sir.<br />
+              I am ready for your orders.
+            </div>
+          </div>
+        </div>
+
+        <div class="thinking" id="thinking" hidden>
+          <span class="thinking-dot"></span>
+          <span class="thinking-dot"></span>
+          <span class="thinking-dot"></span>
+          <span id="thinking-label">PROCESSING</span>
+        </div>
+      </section>
+
+      <!-- RIGHT PANEL -->
+
+      <section class="hud-panel telemetry-panel">
+        <div class="panel-title">SYSTEM TELEMETRY</div>
+
+        <div class="panel-line"></div>
+
+        <div class="telemetry-row">
+          <span>CPU</span>
+          <strong id="cpu">—</strong>
+        </div>
+        <div class="meter"><i id="cpu-bar"></i></div>
+
+        <div class="telemetry-row">
+          <span>MEMORY</span>
+          <strong id="memory">—</strong>
+        </div>
+        <div class="meter"><i id="memory-bar"></i></div>
+
+        <div class="telemetry-row">
+          <span>DISK</span>
+          <strong id="disk">—</strong>
+        </div>
+
+        <div class="telemetry-row">
+          <span>BATTERY</span>
+          <strong id="battery">—</strong>
+        </div>
+
+        <div class="telemetry-divider"></div>
+
+        <div class="panel-label">CORE</div>
+
+        <div class="core-name" id="model">LOCAL NEURAL ENGINE</div>
+
+        <div class="panel-label activity-label">ACTIVITY</div>
+
+        <div class="activity" id="activity-row">
+          <span class="activity-dot"></span>
+          <span id="activity">STANDBY</span>
+        </div>
+
+        <div class="panel-label">MEMORY BANK</div>
+
+        <div class="stat-line">
+          <span id="skills">—</span> skills learned
+          <span class="stat-sep">//</span>
+          <span id="episodes">—</span> operations
+        </div>
+
+        <div class="stat-line dim" id="backend-note"></div>
+      </section>
+
+      <!-- CORE LABEL -->
+
+      <div class="core-caption">KIRA // NEURAL PROCESSOR</div>
+
+      <!-- COMMAND -->
+
+      <section class="command-area">
+        <div class="command-box">
+          <button id="mic" class="mic-button" title="Hold a thought and speak (uses KIRA's microphone)">
+            MIC
+          </button>
+
+          <input
+            id="command"
+            type="text"
+            placeholder="ASK KIRA..."
+            autocomplete="off"
+          />
+
+          <button id="send" title="Send">➤</button>
+        </div>
+
+        <div class="quick-actions" id="quick-actions">
+          <button data-command="open chrome">OPEN CHROME</button>
+          <button data-command="what is on my screen">ANALYZE SCREEN</button>
+          <button data-command="systems check">SYSTEM STATUS</button>
+          <button data-command="what did you learn">WHAT DID YOU LEARN</button>
+        </div>
+
+        <!-- CONFIRMATION (actions that need a yes) -->
+
+        <div class="confirm-bar" id="confirm-bar" hidden>
+          <span id="confirm-text">Confirm that action?</span>
+          <button id="confirm-yes">CONFIRM</button>
+          <button id="confirm-no">CANCEL</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- ================================================= -->
+    <!-- APPLICATION                                       -->
+    <!-- ================================================= -->
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

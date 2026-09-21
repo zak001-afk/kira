@@ -91,6 +91,12 @@ Everything runs on your machine. No cloud APIs, no API keys, no telemetry.
   all wrapped in **two layers of matrix rain** (dense/dim behind, sparse/
   bright in front) so the sphere sits *inside* the rain. Six UI states drive
   spin, tilt, pulse, rain speed and hue.
+- **Browser interface** — the same agent in a Three.js neural HUD
+  (`python kira_server.py`): a live reactor that reacts to what KIRA is doing,
+  matrix rain, real telemetry, the conversation with its thoughts, a
+  confirmation bar for sensitive actions, voice input through KIRA's own
+  microphone and replies spoken by the browser. Works on your phone over the
+  LAN too — `--host 0.0.0.0`.
 - **Safe by default** — sensitive actions (web search, mouse clicks, locking
   the PC) ask for voice confirmation; destructive steps fail loudly.
 
@@ -117,6 +123,9 @@ python scripts/setup_models.py
 
 # Run KIRA:
 python main_window.py
+
+# ...or in a browser (same agent, different HUD):
+python kira_server.py --open
 ```
 
 `scripts/setup_models.py` checks that Ollama is up (starts it if needed),
@@ -353,6 +362,49 @@ Render cost is bounded: `orb_quality` (`high` / `balanced` / `low`, default
 `balanced`) scales the sphere, rain and wireframe budgets, and the counts
 also shrink automatically on small canvases.
 
+## The browser interface
+
+KIRA also runs in a browser. `kira_server.py` is a small stdlib HTTP server
+that serves `ui/` and exposes a JSON API straight into the **same pipeline**
+the desktop UI and CLI use — parser → confirmation → execution → reflection:
+
+```powershell
+python kira_server.py            # http://127.0.0.1:8788
+python kira_server.py --open     # ...and open the browser
+python kira_server.py --simulate # labelled demo, no agent, no hardware
+python kira_server.py --host 0.0.0.0   # reachable from your phone on the LAN
+```
+
+Nothing is faked in the HUD:
+
+| Panel | What it actually shows |
+|---|---|
+| Reactor | A Three.js scene (bloom, armour, orbits, 450 particles) whose spin, bloom and energy follow KIRA's real state: STANDBY / LISTENING / THINKING / AWAITING CONFIRM / EXECUTING / SPEAKING / FAULT |
+| Conversation | KIRA's replies, your lines, its **inner monologue** (the thinking layer's thoughts, labelled `INNER MONOLOGUE` and never spoken), failures, and unprompted watchdog alerts |
+| Telemetry | Live CPU / memory / disk / battery (via `psutil`), the active model, learned skills, operation count and uptime — polled every 1.5 s |
+| Command bar | Real commands. Sensitive ones come back as *"Shall I…?"* with a CONFIRM / CANCEL bar instead of running |
+| MIC | KIRA's own offline speech recognition on the server — the browser asks, the mic is read by the agent |
+| Voice | Replies are spoken with the browser's Web Speech API, so they work on any OS; toggle with **VOICE: ON/OFF**. KIRA's Windows SAPI voice is left to the desktop UI so the two never talk over each other |
+
+Design notes:
+
+- **No new dependencies.** The server is `http.server` + `json` only, and the
+  page is hand-written JS/CSS.
+- **Offline by default.** Three.js r180 is vendored in `ui/vendor/`
+  (MIT — see `ui/vendor/LICENSE`), so the reactor needs no CDN. If WebGL is
+  unavailable the reactor degrades to a CSS core and the HUD keeps working.
+- **Fails honestly.** If the agent's dependencies are missing (wrong OS,
+  half-installed), the page still loads, the chip reads `OFFLINE`, and every
+  command answers with the real import error instead of a fake reply.
+  `--simulate` is the *only* mode that invents answers, and it says so in
+  the header and in each reply.
+- **Local by default.** It binds `127.0.0.1`. `--host 0.0.0.0` is fine on a
+  home network, but understand what you are exposing: the API can drive your
+  computer — keep it off public networks and off port-forwarding.
+- **Watchdog alerts reach the page.** The proactive monitor runs on the
+  server, so battery/CPU warnings appear in the browser conversation (and are
+  spoken) even when the desktop UI is closed.
+
 ## Building projects from an idea
 
 Say *"build me a project that tracks my expenses"* (or type it) and KIRA runs
@@ -444,6 +496,9 @@ kira/
 ├── kira_thought.py       # the agent's mind: think → act → reflect, self-reports
 ├── kira_builder.py       # idea → planned, generated, tested, self-repaired project
 ├── kira_orb.py           # pure 3D geometry + matrix rain maths (no UI deps)
+├── kira_server.py        # browser interface: stdlib HTTP + JSON API into the agent
+├── ui/                   # the neural HUD the server serves (index/app.js/style.css)
+│   └── vendor/           # Three.js r180, vendored so the reactor works offline
 ├── kira_calculator.py    # safe AST-whitelisted arithmetic (EN/FR/AR)
 ├── kira_reminders.py     # in-process spoken reminders with daemon timers
 ├── kira_personality.py   # humor levels, time-aware greetings, boot theater
@@ -472,9 +527,17 @@ kira/
 dev_mode.bat        # auto-restarts KIRA whenever a source file changes
 
 pip install -r requirements-dev.txt
-pytest              # 629 unit tests — no mic, display or Ollama needed
+pytest              # 709 unit tests — no mic, display or Ollama needed
 ruff check .        # lint
-python -m compileall dev.py kira_memory.py kira_thought.py kira_voice_agent.py main_window.py scripts tests
+python -m compileall dev.py kira_memory.py kira_thought.py kira_voice_agent.py kira_server.py main_window.py scripts tests
+```
+
+The browser interface has its own headless check (Node 20+, no browser, no
+WebGL needed) — it runs the real `ui/app.js` against a fake DOM and a fake
+API, then against the vendored Three.js build:
+
+```powershell
+node scripts/check_ui.mjs    # 29 UI checks: boot, commands, thoughts, confirm, mic, alerts, fallback
 ```
 
 Tests stub the hardware-facing modules (`pyautogui`, audio, Ollama, …) in

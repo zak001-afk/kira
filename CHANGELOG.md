@@ -3,6 +3,62 @@
 All notable changes to KIRA are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.6.0] — 2026-09-21
+
+### Added — the browser interface (`kira_server.py` + `ui/`)
+- **KIRA now runs in a browser**, and it is the *same* agent: commands go
+  through `normalize_command → lab gate → parser / think_about →
+  confirmation → execute_action → learn_from`, then flow into the learning
+  and undo subsystems. The page is a HUD, not a mock-up.
+- **`kira_server.py`** — stdlib-only (`http.server`, threading) JSON API:
+  `/api/state`, `/api/history`, `/api/health`, `/api/command`, `/api/listen`,
+  `/api/reset`, plus static serving of `ui/` with a traversal guard.
+  Flags: `--host`, `--port`, `--simulate`, `--open`, `--no-watchdog`.
+- **A neural HUD in the Three.js style** (`ui/index.html`, `app.js`,
+  `style.css`): a bloom-lit reactor of armour plates, orbital rings, a
+  neural core and 450 particles over matrix rain — its spin, bloom, energy
+  and rain speed follow KIRA's real state (READY / LISTENING / THINKING /
+  CONFIRM / EXECUTING / SPEAKING / ERROR).
+- **A conversation that tells the truth**: replies, your lines, the
+  thinking layer's **inner monologue** (labelled, never spoken), failures in
+  their own colour, and the system watchdog's unprompted alerts.
+- **Real telemetry** — live CPU / memory / disk / battery, the active model,
+  learned skills, operations and uptime, polled every 1.5 s.
+- **Confirmation in the page** — sensitive actions come back as a question
+  with CONFIRM / CANCEL instead of executing behind your back.
+- **Voice both ways** — the MIC button uses KIRA's own offline recognition on
+  the server; replies are spoken by the browser's Web Speech API, so voice
+  works on any OS without extra dependencies (and without two voices talking
+  over each other). Toggle: VOICE: ON/OFF.
+- **Offline-first** — Three.js r180 is vendored in `ui/vendor/` (MIT),
+  so no CDN is required. If the module or WebGL is missing, the reactor
+  degrades to a CSS core and the HUD keeps working. `--simulate` is the only
+  mode that invents replies, and it labels them everywhere.
+- **Honest failure** — without the desktop dependencies the page still
+  loads, the chip reads OFFLINE, and each command answers with the real
+  import error.
+
+### Fixed
+- Confirming an action over HTTP now actually runs it (the browser sends an
+  empty `text` with `confirm: true`, which used to be swallowed by the
+  empty-command guard); confirmed executions are also recorded in history
+  and return the correct mode/state.
+- `--simulate` no longer loads the real backend, so demo mode is a true
+  simulation even on a machine where the agent imports fine.
+- Aborted browser requests (reloads, cancelled polls) no longer raise inside
+  the server's request thread.
+
+### Tests
+- 80 new tests: the service routing pipeline against a fake backend (lab
+  gate, chat fallback, LLM/memory plans, confirmation, learning promotion,
+  failure handling), simulation and offline modes, the watchdog alert
+  callback, telemetry shape, real HTTP endpoints over a live socket,
+  traversal/extension defence, preview headers, aborted clients, vendored
+  module graph (every import resolves, nothing reaches a CDN), markup
+  structure and click-through CSS. A Node smoke check
+  (`scripts/check_ui.mjs`, 29 checks) drives the real `ui/app.js` headlessly.
+  **709 passing.**
+
 ## [2.5.0] — 2026-09-21
 
 ### Added — 3D holographic core (`kira_orb.py`)
