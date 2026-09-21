@@ -7,7 +7,17 @@ import kira_memory
 import kira_calculator
 import kira_reminders
 import kira_thought
+import kira_personality
+import kira_monitor
+import kira_briefing
+import kira_security
+import kira_undo
+import kira_learning
+import kira_weather
+import kira_homeassist
 import re
+
+VERSION = "2.3.0"
 import subprocess
 import time
 import webbrowser
@@ -42,6 +52,11 @@ DEFAULT_CONFIG = {
     "app_aliases": {},
     "websites": {},
     "require_confirmation": ["search", "mouse_move", "click", "lock_pc"],
+    "personality": {"humor": "neutral"},
+    "monitor": {},
+    "lab_passphrase": "",
+    "home_assistant": {},
+    "skill_promote_after": 10,
     "shortcuts": {
         "work mode": [
             {"action": "open_app", "target": "vscode"},
@@ -152,6 +167,145 @@ ADDRESS_OPTIONS = {
 _SPEECH_ENGINE = None
 _CONVERSATION_MODE = bool(CONFIG.get("conversation_mode", False))
 _SESSION_ID = kira_memory.new_session_id()
+
+kira_homeassist.configure(CONFIG.get("home_assistant"))
+
+
+def save_config():
+    """Persist CONFIG atomically (write-temp-then-replace: crash-safe)."""
+    try:
+        os.makedirs(os.path.dirname(CONFIG_PATH) or ".", exist_ok=True)
+        temp_path = CONFIG_PATH + ".tmp"
+        with open(temp_path, "w", encoding="utf-8") as config_file:
+            json.dump(CONFIG, config_file, indent=2, ensure_ascii=False)
+        os.replace(temp_path, CONFIG_PATH)
+        return True
+    except (OSError, TypeError, ValueError):
+        logging.warning("Could not save configuration")
+        return False
+
+
+def _save_shortcut(name, steps):
+    """Persist a promoted or recorded skill as a config shortcut."""
+    shortcuts = CONFIG.get("shortcuts")
+    if not isinstance(shortcuts, dict):
+        shortcuts = CONFIG["shortcuts"] = {}
+    shortcuts[name] = steps
+    return save_config()
+
+
+kira_learning.set_save_shortcut(_save_shortcut)
+
+
+def _humor():
+    try:
+        return kira_personality.normalize(
+            (CONFIG.get("personality") or {}).get("humor", "neutral")
+        )
+    except (AttributeError, TypeError):
+        return "neutral"
+
+
+# ── suit-mode session state ──────────────────────────────────────────────────
+_LAST_COMMAND = None
+_LAST_ACTION = None
+
+
+def _models_online() -> bool:
+    """Ping the local model with a throwaway request (used by systems check)."""
+    try:
+        chat(
+            model=MODEL,
+            messages=[{"role": "user", "content": "ping"}],
+            options={"num_predict": 1},
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _sample_suit_telemetry():
+    """psutil-backed sampler for the watchdog (sandbox-stub friendly)."""
+    disk_path = "C:\\" if os.name == "nt" else "/"
+    return kira_monitor.sample(psutil, disk_path)
+
+
+def start_watchdog(language: str = "en") -> bool:
+    """Start the global system watchdog with spoken, throttled alerts."""
+    watchdog = kira_monitor.start(
+        sampler=_sample_suit_telemetry,
+        on_alert=lambda message: speak(personalize_address(message)),
+        config=CONFIG.get("monitor", {}),
+        language=language,
+    )
+    return watchdog is not None
+
+
+def start_background_tasks() -> None:
+    """Start passive suit services (watchdog). Idempotent by design."""
+    language = str(USER_MEMORY.get("language", "en") or "en")
+    start_watchdog(language=language)
+
+
+def lab_gate(cleaned: str):
+    """Locked-lab gate: only unlock attempts get through. Returns a spoken
+    reply, or None when the lab is open and the command may proceed."""
+    if not kira_security.is_locked():
+        return None
+    language = detect_language(cleaned)
+    verdict = kira_security.extract_unlock(
+        cleaned, str(CONFIG.get("lab_passphrase", "") or "")
+    )
+    if verdict == "unlock":
+        kira_security.unlock()
+        return personalize_address(kira_security.unlock_reply(language))
+    if verdict == "deny":
+        return personalize_address(kira_security.deny_reply(language))
+    return personalize_address(kira_security.locked_notice(language))
+
+
+_SUIT_REPLIES = {
+    "monitor_on": {
+        "en": "Watchdog engaged, sir. I'll speak up if the systems strain.",
+        "fr": "Surveillance activée, monsieur. Je préviendrai si les systèmes forcent.",
+        "ar": "تم تفعيل المراقبة، سيدي. سأنبهك عند أي ضغط على الأنظمة.",
+    },
+    "monitor_off": {
+        "en": "Watchdog disengaged, sir.",
+        "fr": "Surveillance désactivée, monsieur.",
+        "ar": "تم إيقاف المراقبة، سيدي.",
+    },
+    "lab_not_locked": {
+        "en": "The lab isn't locked right now, sir.",
+        "fr": "Le labo n'est pas verrouillé pour le moment, monsieur.",
+        "ar": "المختبر غير مقفل الآن، سيدي.",
+    },
+    "undo_nothing": {
+        "en": "There's nothing reversible to take back, sir.",
+        "fr": "Rien de réversible à annuler, monsieur.",
+        "ar": "لا يوجد شيء قابل للتراجع عنه، سيدي.",
+    },
+    "undo_failed": {
+        "en": "I tried to undo it sir, but the reversal failed.",
+        "fr": "J'ai tenté d'annuler, monsieur, mais le retour en arrière a échoué.",
+        "ar": "حاولت التراجع عنه، سيدي، لكن فشل الإرجاع.",
+    },
+    "undo_done": {
+        "en": "Consider it undone, sir — I reversed '{command}'.",
+        "fr": "C'est annulé, monsieur — j'ai inversé '{command}'.",
+        "ar": "اعتبرها متراجعاً عنها، سيدي — ألغيت '{command}'.",
+    },
+    "routine_save_failed": {
+        "en": "Sir, I couldn't persist that routine to the configuration.",
+        "fr": "Monsieur, je n'ai pas pu enregistrer cette routine dans la configuration.",
+        "ar": "سيدي، تعذر حفظ هذه الحركة في الإعدادات.",
+    },
+}
+
+
+def _suit_reply(key, language="en", **kwargs):
+    template = _SUIT_REPLIES[key].get(language) or _SUIT_REPLIES[key]["en"]
+    return template.format(**kwargs) if kwargs else template
 
 _CHAT_HISTORY = kira_memory.load_recent_messages(
     limit=max(4, int(CONFIG.get("chat_history_limit", 12)))
@@ -1126,6 +1280,131 @@ def parse_simple_command(command: str):
     }:
         return {"action": "agent_forget", "language": detect_language(text)}
 
+    # ── the suit: JARVIS-style operator controls ─────────────────────
+    mind_language = detect_language(text)
+
+    if lower in {
+        "systems check", "system status report", "status report",
+        "how are you", "how are you feeling",
+        "comment vas-tu", "comment vous sentez-vous",
+        "كيف حالك", "كيف تشعر",
+    }:
+        return {"action": "self_report", "language": mind_language}
+
+    if lower in {
+        "review your day", "review the day", "daily review",
+        "how did you do today", "how was your day",
+        "bilan de ta journée", "fais le bilan de ta journée",
+        "راجع يومك", "كيف كان يومك",
+    }:
+        return {"action": "self_review", "language": mind_language}
+
+    if lower in {
+        "what do i usually do now", "what do i usually do right now",
+        "any habits for now", "what am i usually doing now",
+        "que fais-je d'habitude maintenant",
+        "qu'est-ce que je fais d'habitude maintenant",
+        "ماذا أفعل عادة الآن",
+    }:
+        return {"action": "habit_hint", "language": mind_language}
+
+    if lower in {
+        "enable watchdog", "start watchdog", "turn on the watchdog",
+        "watch the systems", "activate system watch",
+        "active la surveillance", "démarre la surveillance",
+        "شغل المراقبة", "فعّل المراقبة",
+    }:
+        return {"action": "monitor_on", "language": mind_language}
+
+    if lower in {
+        "disable watchdog", "stop watchdog", "turn off the watchdog",
+        "stop watching the systems",
+        "arrête la surveillance", "désactive la surveillance",
+        "أوقف المراقبة", "عطّل المراقبة",
+    }:
+        return {"action": "monitor_off", "language": mind_language}
+
+    if lower in {
+        "eyes down", "privacy mode", "blur the lab", "privacy blur",
+        "mode discrétion", "baisse les yeux",
+        "وضع الخصوصية", "اخفض عينيك",
+    }:
+        return {"action": "privacy_blur", "language": mind_language}
+
+    if lower in {
+        "secure the lab", "lock down the lab", "lockdown", "secure lab",
+        "verrouille le labo", "sécurise le labo",
+        "أمّن المختبر", "أمن المختبر", "اقفل المختبر",
+    }:
+        return {"action": "secure_lab", "language": mind_language}
+
+    if lower in {
+        "take that back", "undo that", "undo", "undo my last action",
+        "revert that",
+        "annule ça", "annule la dernière action", "reviens en arrière",
+        "تراجع", "تراجع عن ذلك", "الغ ما فعلت",
+    }:
+        return {"action": "undo_last", "language": mind_language}
+
+    if lower in {
+        "learn this routine", "start learning", "watch and learn",
+        "record this routine", "learn a routine",
+        "apprends cette routine", "apprendre cette routine",
+        "regarde et apprends",
+        "تعلم هذه الحركة", "راقب وتعلم", "سجل هذه الحركة",
+    }:
+        return {"action": "routine_start", "language": mind_language}
+
+    if lower in {
+        "stop learning", "cancel learning", "forget this routine",
+        "cancel the routine",
+        "arrête d'apprendre", "annule l'apprentissage",
+        "توقف عن التعلم", "ألغ التعلم", "الغ التعلم",
+    }:
+        return {"action": "routine_stop", "language": mind_language}
+
+    routine_name = kira_learning.extract_routine_name(text)
+    if routine_name is not None:
+        return {
+            "action": "routine_name",
+            "name": routine_name,
+            "language": mind_language,
+        }
+
+    if lower in {
+        "no not that one", "no, not that one", "that's wrong",
+        "that is wrong", "wrong one", "you did it wrong",
+        "pas celle-là", "pas celle la", "c'est faux", "ce n'est pas ça",
+        "ليس هذا", "هذا خطأ",
+    }:
+        return {"action": "correct_last", "language": mind_language}
+
+    if lower in {
+        "make it a shortcut", "make that a shortcut", "add the shortcut",
+        "yes make it a shortcut", "save it as a shortcut",
+        "crée ce raccourci", "ajoute ce raccourci",
+        "أضف الاختصار", "احفظه كاختصار",
+    }:
+        return {"action": "skill_promote", "language": mind_language}
+
+    if lower in {
+        "skip the shortcut", "don't add it", "do not add it",
+        "no shortcut",
+        "laisse tomber le raccourci", "pas de raccourci",
+        "تجاهل الاختصار", "لا تضف الاختصار",
+    }:
+        return {"action": "skill_skip", "language": mind_language}
+
+    unlock_verdict = kira_security.extract_unlock(
+        text, str(CONFIG.get("lab_passphrase", "") or "")
+    )
+    if unlock_verdict is not None:
+        return {
+            "action": "unlock_lab",
+            "verdict": unlock_verdict,
+            "language": mind_language,
+        }
+
     if (
         lower.startswith("open folder ")
         or lower.startswith("open the folder ")
@@ -1255,6 +1534,39 @@ def parse_simple_command(command: str):
         prefix, _ = phrase
         if lower.startswith(prefix):
             return {"action": "search", "query": text[len(prefix) :].strip()}
+
+    # ── optional bridges: weather + smart home ───────────────────────
+    # Placed AFTER the open/search branches: "search weather in …" stays
+    # a web search, and "open <app>" always wins over home control.
+    if kira_weather.is_weather_command(text):
+        city = kira_weather.extract_city(text)
+        return {"action": "weather", "target": city, "language": detect_language(text)}
+
+    if kira_homeassist.is_configured():
+        for prefix, turn_on in (
+            ("turn on ", True),
+            ("turn off ", False),
+            ("switch on ", True),
+            ("switch off ", False),
+            ("allume ", True),
+            ("éteins ", False),
+            ("eteins ", False),
+            ("شغل ", True),
+            ("اطفي ", False),
+            ("أطفئ ", False),
+        ):
+            if lower.startswith(prefix):
+                candidate = text[len(prefix) :].strip()
+                if not candidate:
+                    break
+                if kira_homeassist.find_entity(candidate):
+                    return {
+                        "action": "home_control",
+                        "name": candidate,
+                        "mode": "on" if turn_on else "off",
+                        "language": detect_language(text),
+                    }
+                break
 
     if lower.startswith("type "):
         return {"action": "type", "text": text[5:].strip()}
@@ -1875,13 +2187,35 @@ def last_thought() -> "kira_thought.Thought | None":
     return kira_thought.last_thought()
 
 
-def learn_from(command: str, action: dict, source: str, succeeded: bool):
-    """Record an episode and strengthen/demote the learning behind it."""
+def learn_from(command: str, action: dict, source: str, succeeded: bool, language: str = "en"):
+    """Record an episode and strengthen/demote the learning behind it.
+
+    Returns an optional follow-up: once a learning reaches the configured
+    success streak, KIRA offers to consolidate it into a permanent shortcut.
+    """
+    normalized = kira_memory.normalize_agent_command(command)
     kira_thought.reflect(
-        kira_memory.normalize_agent_command(command),
+        normalized,
         action,
         source,
         "success" if succeeded else "failed",
+    )
+    if not succeeded:
+        return None
+    recalled = kira_memory.recall_action(normalized)
+    if not isinstance(recalled, dict):
+        return None
+    try:
+        promote_after = int(
+            CONFIG.get("skill_promote_after", kira_learning.PROMOTE_AFTER)
+        )
+    except (TypeError, ValueError):
+        promote_after = kira_learning.PROMOTE_AFTER
+    offer = kira_learning.check_promotion(normalized, recalled, promote_after)
+    if not offer:
+        return None
+    return kira_learning.say(
+        "promotion_offer", language, command=normalized, count=promote_after
     )
 
 
@@ -2434,11 +2768,7 @@ def set_address(target: str):
     if key not in ADDRESS_OPTIONS:
         return False
     CONFIG["preferred_address"] = key
-    try:
-        with open(CONFIG_PATH, "w", encoding="utf-8") as config_file:
-            json.dump(CONFIG, config_file, indent=2, ensure_ascii=False)
-    except OSError:
-        logging.warning("Could not save preferred address")
+    save_config()
     speak(f"Understood. I will address you as {ADDRESS_OPTIONS[key]}.")
     return True
 
@@ -2656,6 +2986,142 @@ def execute_action(action_data):
             kira_thought.cleared_message(cleared, language)
         )
 
+    # ── the suit: self-awareness, monitoring, security, learning ─────
+    alang = str(action_data.get("language", "en") or "en")
+
+    if action == "self_report":
+        return personalize_address(
+            kira_thought.self_report(alang, models_online=_models_online())
+        )
+
+    if action == "self_review":
+        return personalize_address(kira_thought.self_review(alang))
+
+    if action == "habit_hint":
+        return personalize_address(kira_thought.habit_hint(language=alang))
+
+    if action == "monitor_on":
+        start_watchdog(language=alang)
+        return personalize_address(_suit_reply("monitor_on", alang))
+
+    if action == "monitor_off":
+        kira_monitor.stop()
+        return personalize_address(_suit_reply("monitor_off", alang))
+
+    if action == "privacy_blur":
+        execute_action({"action": "show_desktop"})
+        execute_action({"action": "mute"})
+        return personalize_address(kira_security.blur_reply(alang))
+
+    if action == "secure_lab":
+        kira_security.lock()
+        execute_action({"action": "lock_pc"})
+        return personalize_address(kira_security.lock_reply(alang))
+
+    if action == "unlock_lab":
+        verdict = str(action_data.get("verdict", "unlock"))
+        if verdict == "deny":
+            return personalize_address(kira_security.deny_reply(alang))
+        if not kira_security.is_locked():
+            return personalize_address(_suit_reply("lab_not_locked", alang))
+        kira_security.unlock()
+        return personalize_address(kira_security.unlock_reply(alang))
+
+    if action == "undo_last":
+        entry = kira_undo.take_last()
+        if entry is None:
+            return personalize_address(_suit_reply("undo_nothing", alang))
+        inverse = entry.get("inverse") or {}
+        if not inverse or not execute_action(inverse):
+            return personalize_address(_suit_reply("undo_failed", alang))
+        kira_undo.record(str(entry.get("command", "")), inverse)
+        return personalize_address(
+            _suit_reply("undo_done", alang, command=str(entry.get("command", "")))
+        )
+
+    if action == "press_combo":
+        keys = [str(k).strip() for k in action_data.get("keys", []) if str(k).strip()]
+        if not keys:
+            return False
+        pyautogui.hotkey(*keys)
+        return personalize_address(f"Pressed {'+'.join(keys)} sir.")
+
+    if action == "routine_start":
+        if kira_learning.is_recording():
+            return personalize_address(
+                kira_learning.say(
+                    "recording_already",
+                    alang,
+                    count=len(kira_learning.recorded_steps()),
+                )
+            )
+        kira_learning.start_recording()
+        return personalize_address(kira_learning.say("recording_started", alang))
+
+    if action == "routine_stop":
+        if not kira_learning.is_recording():
+            return personalize_address(kira_learning.say("not_recording", alang))
+        kira_learning.cancel_recording()
+        return personalize_address(kira_learning.say("recording_cancelled", alang))
+
+    if action == "routine_name":
+        name = str(action_data.get("name", "")).strip()
+        if not kira_learning.is_recording():
+            return personalize_address(kira_learning.say("not_recording", alang))
+        steps = kira_learning.recorded_steps()
+        if not steps or not name:
+            kira_learning.cancel_recording()
+            return personalize_address(kira_learning.say("recording_empty", alang))
+        ok, saved_name = kira_learning.finish_recording(name)
+        if not ok:
+            return personalize_address(_suit_reply("routine_save_failed", alang))
+        return personalize_address(
+            kira_learning.say(
+                "recording_saved", alang, name=saved_name, count=len(steps)
+            )
+        )
+
+    if action == "correct_last":
+        global _LAST_COMMAND, _LAST_ACTION
+        if not _LAST_COMMAND or _LAST_ACTION is None:
+            return personalize_address(kira_learning.say("correction_none", alang))
+        kira_memory.learn_from_outcome(
+            kira_memory.normalize_agent_command(_LAST_COMMAND), _LAST_ACTION, False
+        )
+        _LAST_COMMAND, _LAST_ACTION = None, None
+        return personalize_address(kira_learning.say("correction_ack", alang))
+
+    if action == "skill_promote":
+        pending = kira_learning.pending_promotion()
+        if not isinstance(pending, dict):
+            return personalize_address(kira_learning.say("promotion_none", alang))
+        promoted_action = pending.get("action")
+        steps = [promoted_action] if isinstance(promoted_action, dict) else []
+        promoted = _save_shortcut(pending["command"], steps)
+        kira_learning.clear_promotion()
+        if not promoted:
+            return personalize_address(_suit_reply("routine_save_failed", alang))
+        return personalize_address(
+            kira_learning.say("promotion_saved", alang, name=pending["command"])
+        )
+
+    if action == "skill_skip":
+        if kira_learning.pending_promotion() is None:
+            return personalize_address(kira_learning.say("promotion_none", alang))
+        kira_learning.clear_promotion()
+        return personalize_address(kira_learning.say("promotion_skipped", alang))
+
+    if action == "weather":
+        city = str(action_data.get("target") or "")
+        return personalize_address(kira_weather.report(city, alang))
+
+    if action == "home_control":
+        name = str(action_data.get("name", "")).strip()
+        turn_on = str(action_data.get("mode", "on")).lower() != "off"
+        if not name:
+            return False
+        return personalize_address(kira_homeassist.control(name, turn_on, alang))
+
     return False
 
 
@@ -2779,13 +3245,41 @@ def should_process_command(command: str) -> bool:
     return True
 
 
+def _battery_percentage():
+    """Battery level for the briefing; None when unreadable or on desktop."""
+    try:
+        battery = psutil.sensors_battery()
+    except Exception:
+        return None
+    return float(battery.percent) if battery is not None else None
+
+
 def startup_sequence():
-    speak(personalize_address(" Hello sir."))
-    speak(personalize_address("Listening for your command sir."))
+    """Boot theater: calibration-style banner, then a spoken briefing."""
+    learnings = kira_memory.learnings_summary()
+    counts = {
+        "memories": len(kira_memory.load_memories()),
+        "learnings": learnings["count"],
+        "episodes": kira_memory.episode_counts()["total"],
+        "model": MODEL,
+        "vision": VISION_MODEL,
+    }
+    for line in kira_personality.boot_lines(VERSION, counts, humor=_humor()):
+        print(f"  > {line}")
+    language = str(USER_MEMORY.get("language", "en") or "en")
+    speak(
+        personalize_address(
+            kira_briefing.briefing(
+                language=language,
+                humor=_humor(),
+                battery_percent=_battery_percentage(),
+            )
+        )
+    )
 
 
 def main():
-    global _CONVERSATION_MODE
+    global _CONVERSATION_MODE, _LAST_COMMAND, _LAST_ACTION
     print("=" * 60)
     print("KIRA VOICE AGENT")
     print("Local Windows assistant with voice controls")
@@ -2794,6 +3288,7 @@ def main():
 
     try:
         startup_sequence()
+        start_background_tasks()
 
         while True:
             command = listen_for_command(timeout=20, phrase_timeout=10)
@@ -2820,6 +3315,11 @@ def main():
             if lower in {"exit", "quit", "goodbye", "bye"}:
                 speak(personalize_address("Goodbye sir."))
                 break
+
+            gate_reply = lab_gate(cleaned)
+            if gate_reply is not None:
+                speak(gate_reply)
+                continue
 
             result = parse_simple_command(cleaned)
             planned_by = "parser"
@@ -2878,51 +3378,60 @@ def main():
 
             lang = detect_language(cleaned)
             success = execute_action(result)
+            promotion_note = None
             if planned_by in {"llm", "memory"}:
                 # reflect: episodes + strengthen/demote the learning
-                learn_from(cleaned, result, planned_by, bool(success))
+                _LAST_COMMAND, _LAST_ACTION = cleaned, result
+                promotion_note = learn_from(
+                    cleaned, result, planned_by, bool(success), language=lang
+                )
             if success:
+                # suit bookkeeping: macro recording + undo stack
+                kira_learning.capture(result)
+                kira_undo.record(cleaned, result)
                 action_name = str(action).lower()
                 # Actions returning a string speak their own result
                 # (time, date, system info, clipboard, help, sequences,
                 # calculations, reminders).
                 if isinstance(success, str):
                     speak(success)
-                    continue
-                target_text = ""
-                if action == "open_app":
-                    target_text = str((result or {}).get("target", "app"))
-                elif action == "open_url":
-                    target_text = str((result or {}).get("target", "site"))
-                elif action == "search":
-                    target_text = str((result or {}).get("query", "request"))
-                elif action == "press":
-                    target_text = str((result or {}).get("target", "key"))
-                elif action == "close_window":
-                    target_text = "window"
-                elif action == "minimize_window":
-                    target_text = "window"
-                elif action == "maximize_window":
-                    target_text = "window"
-                elif action == "switch_app":
-                    target_text = "application"
-                elif action == "screenshot":
-                    target_text = "screenshot"
-                elif action == "open_folder":
-                    target_text = str((result or {}).get("target", "folder"))
-
-                if action_name == "close_window":
-                    speak(build_reply(lang, "close_window", target_text))
-                elif action_name == "minimize_window":
-                    speak(build_reply(lang, "minimize_window", target_text))
-                elif action_name == "maximize_window":
-                    speak(build_reply(lang, "maximize_window", target_text))
-                elif action_name == "switch_app":
-                    speak(build_reply(lang, "switch_app", target_text))
-                elif action_name == "screenshot":
-                    speak(build_reply(lang, "screenshot", target_text))
                 else:
-                    speak(build_reply(lang, action_name, target_text))
+                    target_text = ""
+                    if action == "open_app":
+                        target_text = str((result or {}).get("target", "app"))
+                    elif action == "open_url":
+                        target_text = str((result or {}).get("target", "site"))
+                    elif action == "search":
+                        target_text = str((result or {}).get("query", "request"))
+                    elif action == "press":
+                        target_text = str((result or {}).get("target", "key"))
+                    elif action == "close_window":
+                        target_text = "window"
+                    elif action == "minimize_window":
+                        target_text = "window"
+                    elif action == "maximize_window":
+                        target_text = "window"
+                    elif action == "switch_app":
+                        target_text = "application"
+                    elif action == "screenshot":
+                        target_text = "screenshot"
+                    elif action == "open_folder":
+                        target_text = str((result or {}).get("target", "folder"))
+
+                    if action_name == "close_window":
+                        speak(build_reply(lang, "close_window", target_text))
+                    elif action_name == "minimize_window":
+                        speak(build_reply(lang, "minimize_window", target_text))
+                    elif action_name == "maximize_window":
+                        speak(build_reply(lang, "maximize_window", target_text))
+                    elif action_name == "switch_app":
+                        speak(build_reply(lang, "switch_app", target_text))
+                    elif action_name == "screenshot":
+                        speak(build_reply(lang, "screenshot", target_text))
+                    else:
+                        speak(build_reply(lang, action_name, target_text))
+                if promotion_note:
+                    speak(promotion_note)
             else:
                 lang = detect_language(cleaned)
                 speak(build_reply(lang, "none"))

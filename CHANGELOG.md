@@ -3,6 +3,48 @@
 All notable changes to KIRA are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.3.0] — 2026-09-21
+
+### Added — "suit mode": the JARVIS layer
+- **Proactive watchdog** (`kira_monitor.py`): daemon thread sampling battery,
+  CPU, memory and disk with localized spoken alerts, sustained-CPU logic and
+  per-alert cooldowns. `enable/disable watchdog` commands; fully configurable
+  under `monitor` in the config.
+- **Self-awareness** (`kira_thought`): `systems check` (uptime, operations,
+  success rate, skills, facts, model connectivity), `review your day` (daily
+  episode review that names failures), `what do I usually do now?` (habit
+  hint from episode hour distribution).
+- **Learning on demand** (`kira_learning.py`): `learn this routine` records
+  executed actions, `call it <name>` persists them as an atomic config
+  shortcut, `stop learning` discards. `no, not that one` demotes the last
+  learning (human-side reflexion).
+- **Skill consolidation**: at `skill_promote_after` successful uses KIRA
+  offers to promote a learning to a permanent shortcut; `make it a shortcut`
+  / `skip the shortcut`.
+- **Lab protocols** (`kira_security.py`): `secure the lab` locks the
+  workstation and gates all commands behind a voice unlock with optional
+  `lab_passphrase`; `eyes down` shows the desktop and mutes.
+- **Undo** (`kira_undo.py`): `take that back` reverses the last reversible
+  action (typing → Ctrl+Z, volume, mute, media, show-desktop) from a
+  bounded stack.
+- **Personality** (`kira_personality.py`): `personality.humor` —
+  neutral / dry / formal; time-aware greetings; boot banner with memory
+  counts followed by a spoken **morning briefing** (time, date, battery,
+  pending reminders, `kira_briefing.py`).
+- **Optional bridges**: `weather in <city>` via wttr.in (the only network
+  feature, injectable for tests) and **Home Assistant** device control
+  (`turn on the desk lamp`) — inert until configured.
+- Backend/UI/gate integration: promotion follow-ups, macro capture, undo
+  recording, watchdog lifecycle (`start_background_tasks`), locked-lab gate
+  in both the CLI and the GUI routing.
+
+### Changed
+- Config additions (all optional): `personality`, `monitor`,
+  `lab_passphrase`, `home_assistant`, `skill_promote_after`.
+- `set_address` now persists through the new atomic `save_config()` helper.
+- Startup sequence: status banner + briefing instead of two fixed lines.
+- **153 new tests — 476 passing**, still fully stubbed hardware.
+
 ## [2.2.0] — 2026-09-21
 
 ### Added

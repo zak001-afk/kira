@@ -679,4 +679,89 @@ def clear_episodes() -> int:
         return 0
 
 
+# ── analytics the mind reads about itself ────────────────────────────────────
+
+def episode_counts() -> dict:
+    """Aggregate counts for the self-report command."""
+    try:
+        with _connect() as connection:
+            total, success, failed = connection.execute(
+                """
+                SELECT COUNT(*),
+                       SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN outcome = 'failed' THEN 1 ELSE 0 END)
+                FROM agent_episodes
+                """
+            ).fetchone()
+        return {
+            "total": total or 0,
+            "success": success or 0,
+            "failed": failed or 0,
+        }
+    except sqlite3.Error:
+        return {"total": 0, "success": 0, "failed": 0}
+
+
+def learnings_summary() -> dict:
+    try:
+        with _connect() as connection:
+            count, uses, failures = connection.execute(
+                """
+                SELECT COUNT(*), SUM(success_count), SUM(failure_count)
+                FROM agent_learnings
+                """
+            ).fetchone()
+        return {
+            "count": count or 0,
+            "uses": uses or 0,
+            "failures": failures or 0,
+        }
+    except sqlite3.Error:
+        return {"count": 0, "uses": 0, "failures": 0}
+
+
+def episodes_on(day_iso: str):
+    """All episodes for one calendar day (``YYYY-MM-DD``)."""
+    try:
+        with _connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT command_text, outcome, created_at
+                FROM agent_episodes
+                WHERE created_at LIKE ?
+                ORDER BY id DESC
+                """,
+                (day_iso + "%",),
+            ).fetchall()
+        return [
+            {"command": command, "outcome": outcome, "created_at": created_at}
+            for command, outcome, created_at in rows
+        ]
+    except sqlite3.Error:
+        return []
+
+
+def successful_episode_hours() -> list:
+    """(command, hour) pairs — raw material for habit anticipation."""
+    try:
+        with _connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT command_text, created_at
+                FROM agent_episodes
+                WHERE outcome = 'success'
+                """
+            ).fetchall()
+    except sqlite3.Error:
+        return []
+    pairs = []
+    for command, created_at in rows:
+        try:
+            hour = int(str(created_at)[11:13])
+        except (ValueError, IndexError):
+            continue
+        pairs.append((command, hour))
+    return pairs
+
+
 initialize()

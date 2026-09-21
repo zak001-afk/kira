@@ -85,7 +85,8 @@ class TestCalculatorRouting:
         # "what is ..." is a chat pattern, but arithmetic must win
         assert backend.parse_simple_command("what is 7 times 8")["action"] == "calc"
         # …while non-arithmetic questions still fall through to chat
-        assert backend.parse_simple_command("what is the weather") is None
+        # (weather requests now route to the weather command on purpose)
+        assert backend.parse_simple_command("what is your favorite color") is None
 
 
 class TestReminderRouting:

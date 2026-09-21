@@ -219,7 +219,6 @@ class TestUnrecognized:
             "search",
             "press",
             "hello there",
-            "what is the weather like today",
             "tell me a joke",
         ],
     )

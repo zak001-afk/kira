@@ -44,6 +44,31 @@ Everything runs on your machine. No cloud APIs, no API keys, no telemetry.
 - **Layered command routing** — a fast deterministic parser handles ~100
   built-in phrases; anything ambiguous falls to the thinking mind, and
   questions fall to the chat personality.
+- **Proactive watchdog** — a lightweight background monitor watches battery,
+  CPU, memory and disk, and *speaks up unasked* when something strains
+  ("Sir, I should mention the battery is at 15 percent."), with cooldowns so
+  it never nags. Toggle with **"enable/disable watchdog"**.
+- **Morning briefing & self-awareness** — KIRA boots with a status banner and
+  a spoken briefing (time, date, battery, pending reminders), answers
+  **"systems check"** with its own uptime/success-rate/skill count,
+  **"review your day"** with an honest daily recap, and
+  **"what do I usually do now?"** with habits detected from its episodes.
+- **Teach KIRA a trick** — say **"learn this routine"**, perform a series of
+  commands, then **"call it deploy mode"**: the whole sequence becomes a
+  named shortcut. Wrong action? **"no, not that one"** demotes it (reflexion
+  from the human side). After enough successes KIRA offers to promote a
+  learning into a permanent shortcut — answer **"make it a shortcut"** or
+  **"skip the shortcut"**.
+- **Lab protocols** — **"secure the lab"** locks the workstation behind a
+  voice gate (optional passphrase); **"eyes down"** hides everything for
+  privacy; **"take that back"** reverses reversible actions (typing, volume,
+  mute, media).
+- **Personality with a dial** — `personality.humor` in the config chooses
+  *neutral*, *dry* (JARVIS-style wit) or *formal*; greetings follow the time
+  of day.
+- **Optional bridges** — ask the weather (`wttr.in`, opt-in), or control
+  Home Assistant devices by name ("turn on the desk lamp") — both are
+  completely inert until configured.
 - **Screen vision with verification** — "find the save button and click it":
   KIRA screenshots, asks the vision model for coordinates, clicks at ≥70%
   confidence, then compares before/after screenshots to confirm it worked.
@@ -122,6 +147,21 @@ after the wake word is fine: *"kira, open chrome"*, *"kira: open chrome"*.
 | conversation mode / stop conversation | mode conversation | وضع المحادثة | toggle chat mode |
 | what did you learn | qu'as-tu appris | ماذا تعلمت | KIRA reports its learned commands |
 | forget what you learned | oublie ce que tu as appris | انس ما تعلمته | wipe the agent's learnings |
+| systems check / how are you | comment vas-tu | كيف حالك | KIRA reports its own status |
+| review your day | bilan de ta journée | راجع يومك | daily self-review of episodes |
+| what do i usually do now | que fais-je d'habitude maintenant | ماذا أفعل عادة الآن | habit hint from episode history |
+| enable / disable watchdog | active / arrête la surveillance | شغل / أوقف المراقبة | background system monitor |
+| learn this routine | apprends cette routine | تعلم هذه الحركة | begin macro recording |
+| call it <name> | appelle-la <nom> | سمها <اسم> | save the recording as a shortcut |
+| stop learning | arrête d'apprendre | توقف عن التعلم | discard the recording |
+| no, not that one | pas celle-là | ليس هذا | correct the last action (demotes it) |
+| make it a shortcut / skip the shortcut | crée ce raccourci / pas de raccourci | أضف الاختصار / تجاهل الاختصار | answer the promotion offer |
+| secure the lab | verrouille le labo | أمّن المختبر | lock behind the voice gate |
+| unlock the lab <passphrase> | déverrouille le labo <phrase> | افتح المختبر <كلمة> | leave the locked lab |
+| eyes down / privacy mode | mode discrétion | وضع الخصوصية | hide everything + mute |
+| take that back / undo | annule ça | تراجع | reverse the last reversible action |
+| weather in <city> | météo à <ville> | الطقس في <مدينة> | opt-in weather report |
+| turn on / off <device> | allume / éteins <appareil> | اطفئ <جهاز> | Home Assistant (when configured) |
 | calculate 2 to the power of 10 | calcule dix fois trois | كم يساوي ١٢ ضرب ٢ | safe local arithmetic (words & % work) |
 | open github / gmail / netflix | ouvrir netflix | — | known websites (extendable in config) |
 | remind me in 5 minutes to call mom | rappelle-moi dans 2 heures de … | ذكرني بعد 10 دقائق … | set a spoken reminder |
@@ -157,6 +197,24 @@ conversational chat mode with your stored memories as context.
       {"action": "open_app", "target": "vscode"},
       {"action": "open_app", "target": "chrome"}
     ]
+  },
+  "personality": { "humor": "neutral" },  // neutral | dry | formal
+  "skill_promote_after": 10,      // successes before KIRA offers a shortcut
+  "lab_passphrase": "",           // optional passphrase for "unlock the lab"
+  "monitor": {                    // proactive watchdog (all optional)
+    "enabled": true,
+    "interval_seconds": 60,
+    "battery_below": 20,          // percent, only while discharging
+    "cpu_above": 90.0,            // percent…
+    "cpu_sustained_checks": 3,    // …for this many consecutive samples
+    "memory_above": 92.0,
+    "disk_below_gb": 5.0,
+    "cooldown_seconds": 600       // per-alert silence period
+  },
+  "home_assistant": {             // optional, inert until filled in
+    "url": "http://homeassistant.local:8123",
+    "token": "long-lived-access-token",
+    "entities": { "desk lamp": "light.desk_lamp", "fan": "switch.fan" }
   }
 }
 ```
@@ -166,6 +224,12 @@ Notes:
 - `require_wake_word: true` is now actually enforced — only phrases
   containing "kira" are handled (conversation mode keeps the channel open).
 - Set `require_confirmation: []` to disable confirmation prompts entirely.
+- The watchdog **only** samples every `interval_seconds` and stays silent
+  unless a threshold is crossed *and* its cooldown elapsed.
+- Weather uses `wttr.in` and is the only feature that contacts the network;
+  it is skipped entirely if you never ask for it.
+- Home Assistant control is local-network only and inert until `url` +
+  `entities` are configured.
 
 Environment variables `KIRA_MODEL` / `KIRA_VISION_MODEL` override the model
 names (see `.env.example`).
@@ -194,6 +258,45 @@ the model and pray" — it runs an explicit loop in `kira_thought.py`:
 
 Nothing is learned from deterministic parser commands — only from the
 planner's own decisions.
+
+## Suit mode: the JARVIS layer
+
+On top of the mind, KIRA now behaves like an operator rather than a remote
+control:
+
+- **Proactivity** — `kira_monitor.py` runs a watchdog thread that samples the
+  machine and speaks up *unasked* when the battery drops below 20% while
+  discharging, CPU stays above 90% for three consecutive checks, memory is
+  above 92%, or disk space is under 5 GB. Every alert has a cooldown, so KIRA
+  raises a concern once, not sixty times. "Enable/disable watchdog" toggles it.
+- **Self-awareness** — *"systems check"* makes KIRA read its own mind:
+  uptime, operations handled, success rate, learned skills, remembered facts
+  and model connectivity (`kira_thought.self_report`). *"review your day"*
+  reflects over the day's episodes and names its own failures; *"what do I
+  usually do now?"* looks for commands recurring around the current hour and
+  offers them back (`habit_hint`).
+- **Learning on demand** — *"learn this routine"* starts macro recording;
+  each successfully executed command is captured; *"call it deploy mode"*
+  saves the sequence into `shortcuts` in the config (atomically). *"stop
+  learning"* discards it. *"no, not that one"* records a failure against the
+  last planned action, feeding the reflexion loop.
+- **Skill consolidation** — when a learning reaches `skill_promote_after`
+  successes (default 10), KIRA offers to make it a permanent shortcut.
+  *"make it a shortcut"* persists it; *"skip the shortcut"* declines once.
+- **Lab protocols** — *"secure the lab"* locks the workstation and gates the
+  whole command surface behind a voice unlock (optionally with
+  `lab_passphrase`); *"eyes down"* shows the desktop and mutes; *"take that
+  back"* reverses the last reversible action (typing → Ctrl+Z, volume, mute,
+  media, show-desktop) from a bounded undo stack.
+- **Personality** — `personality.humor`: `neutral`, `dry` (restrained wit:
+  *"Consider it done."*, *"Working late, sir?"*) or `formal`. Variants are
+  picked deterministically, so KIRA sounds consistent.
+- **Optional bridges** — weather via `wttr.in` and Home Assistant control are
+  completely inert until configured; nothing else in the project touches the
+  network.
+
+Startup is now a small boot sequence: a calibration-style banner with memory
+counts, then a spoken briefing (time, date, battery, pending reminders).
 
 ## Persistent memory
 
@@ -227,10 +330,18 @@ Plain *"click"* and mouse moves always ask for voice confirmation.
 kira/
 ├── main_window.py        # customtkinter UI (orb, state machine, chat panel)
 ├── kira_voice_agent.py   # backend: STT, parser, LLM routing, actions, vision, TTS
-├── kira_thought.py       # the agent's mind: think → act → reflect
+├── kira_thought.py       # the agent's mind: think → act → reflect, self-reports
 ├── kira_calculator.py    # safe AST-whitelisted arithmetic (EN/FR/AR)
 ├── kira_reminders.py     # in-process spoken reminders with daemon timers
-├── kira_memory.py        # SQLite persistence (facts + conversations)
+├── kira_personality.py   # humor levels, time-aware greetings, boot theater
+├── kira_monitor.py       # proactive watchdog: battery/CPU/RAM/disk alerts
+├── kira_briefing.py      # morning briefing composition
+├── kira_security.py      # lab lock + passphrase + privacy blur
+├── kira_undo.py          # 'take that back' inverse-action stack
+├── kira_learning.py      # macro recording, corrections, skill promotion
+├── kira_weather.py       # opt-in wttr.in weather (injectable fetcher)
+├── kira_homeassist.py    # optional Home Assistant bridge (inert by default)
+├── kira_memory.py        # SQLite persistence (facts, conversations, agent mind)
 ├── kira_config.json      # user configuration (see above)
 ├── dev.py                # watch-and-restart development mode
 ├── scripts/
@@ -247,9 +358,9 @@ kira/
 dev_mode.bat        # auto-restarts KIRA whenever a source file changes
 
 pip install -r requirements-dev.txt
-pytest              # 169 unit tests — no mic, display or Ollama needed
+pytest              # 476 unit tests — no mic, display or Ollama needed
 ruff check .        # lint
-python -m compileall dev.py kira_memory.py kira_voice_agent.py main_window.py scripts tests
+python -m compileall dev.py kira_memory.py kira_thought.py kira_voice_agent.py main_window.py scripts tests
 ```
 
 Tests stub the hardware-facing modules (`pyautogui`, audio, Ollama, …) in

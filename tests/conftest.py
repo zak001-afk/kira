@@ -109,7 +109,7 @@ class _FakePsutil(types.ModuleType):
     def __init__(self):
         super().__init__("psutil")
         self._vm = types.SimpleNamespace(percent=37.0)
-        self._battery = types.SimpleNamespace(percent=91)
+        self._battery = types.SimpleNamespace(percent=91, power_plugged=True)
 
     def virtual_memory(self):
         return self._vm
@@ -191,6 +191,15 @@ def backend():
     STUBS["pyttsx3"].engine.spoken = []
     STUBS["ollama"].requests = []
     kira_voice_agent._CHAT_HISTORY.clear()
+    # reset suit-mode session state
+    kira_voice_agent._LAST_COMMAND = None
+    kira_voice_agent._LAST_ACTION = None
+    kira_voice_agent.kira_security.unlock()
+    kira_voice_agent.kira_learning.cancel_recording()
+    kira_voice_agent.kira_learning.clear_promotion()
+    kira_voice_agent.kira_undo.clear()
+    kira_voice_agent.kira_homeassist.configure(None)
+    kira_voice_agent.kira_monitor.stop()
     return kira_voice_agent
 
 

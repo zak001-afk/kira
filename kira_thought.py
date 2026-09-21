@@ -44,6 +44,11 @@ ALLOWED_ACTIONS = frozenset(
         "reminders_list", "reminders_clear", "conversation_on",
         "conversation_off", "chat_reset", "mode_info", "agent_learnings",
         "agent_forget",
+        "self_report", "self_review", "habit_hint", "monitor_on",
+        "monitor_off", "privacy_blur", "secure_lab", "unlock_lab",
+        "undo_last", "routine_start", "routine_stop", "routine_cancel",
+        "routine_name", "correct_last", "skill_promote", "skill_skip",
+        "weather", "home_control", "press_combo",
     }
 )
 
@@ -309,4 +314,141 @@ def cleared_message(count: int, language: str = "en") -> str:
         "en": f"Done sir. I have forgotten all {count} learned command{'s' if count != 1 else ''}.",
         "fr": f"C'est fait, monsieur. J'ai oublié les {count} commandes apprises.",
         "ar": f"تم، سيدي. لقد نسيت {count} أمراً متعلماً.",
+    }.get(language)
+
+
+# ── self-awareness: reports, reviews and habit anticipation ──────────────────
+
+import time as _time
+
+_STARTED_AT = _time.time()
+
+
+def _rate(success: int, failed: int) -> int:
+    total = success + failed
+    return round(100 * success / total) if total else 0
+
+
+def self_report(language: str = "en", models_online: bool = True) -> str:
+    """'How are you feeling, KIRA?' — the agent reads its own mind aloud."""
+    counts = kira_memory.episode_counts()
+    learnings = kira_memory.learnings_summary()
+    facts = kira_memory.load_memories()
+    uptime_minutes = max(1, int((_time.time() - _STARTED_AT) // 60))
+    rate = _rate(counts["success"], counts["failed"])
+
+    if language == "fr":
+        report = (
+            f"Tous les systèmes sont nominaux, monsieur. En service depuis "
+            f"{uptime_minutes} minutes, {counts['total']} opérations exécutées "
+            f"avec un taux de réussite de {rate}%. J'ai appris {learnings['count']} "
+            f"compétences et je retiens {len(facts)} faits vous concernant. "
+            f"{'Modèles locaux opérationnels.' if models_online else 'Mes modèles locaux sont injoignables pour le moment.'}"
+        )
+    elif language == "ar":
+        report = (
+            f"جميع الأنظمة تعمل بشكل طبيعي، سيدي. في الخدمة منذ "
+            f"{uptime_minutes} دقيقة، نفذت {counts['total']} عملية "
+            f"بنسبة نجاح {rate}%. تعلمت {learnings['count']} مهارات "
+            f"وأتذكر {len(facts)} حقائق عنك. "
+            f"{'النماذج المحلية متصلة.' if models_online else 'النماذج المحلية غير متاحة حالياً.'}"
+        )
+    else:
+        report = (
+            f"All systems nominal, sir. {uptime_minutes} minutes on duty, "
+            f"{counts['total']} operations handled with a {rate}% success rate. "
+            f"I currently hold {learnings['count']} learned skills and "
+            f"{len(facts)} remembered facts about you. "
+            f"{'Local models responding normally.' if models_online else 'My local models are unreachable right now — commands still work, thinking does not.'}"
+        )
+    return report
+
+
+def self_review(language: str = "en", today_iso: str = "") -> str:
+    """End-of-day reflection: rates today, names failures, keeps it honest."""
+    from datetime import datetime as _dt
+
+    day = today_iso or _dt.now().date().isoformat()
+    episodes = kira_memory.episodes_on(day)
+    success = sum(1 for e in episodes if e["outcome"] == "success")
+    failed = sum(1 for e in episodes if e["outcome"] == "failed")
+    rate = _rate(success, failed)
+    failures = [e["command"] for e in episodes if e["outcome"] == "failed"][:3]
+
+    if not episodes:
+        return {
+            "en": "A quiet day so far, sir — nothing on record yet.",
+            "fr": "Une journée calme jusqu'ici, monsieur — rien d'enregistré.",
+            "ar": "يوم هادئ حتى الآن، سيدي — لا شيء مسجل بعد.",
+        }.get(language)
+
+    if language == "fr":
+        text = (
+            f"Bilan du jour, monsieur : {len(episodes)} opérations, "
+            f"{success} réussies, taux de {rate}%."
+        )
+        if failures:
+            text += (
+                f" Points d'échec : {', '.join(failures)}. "
+                "Je les ai rétrogradés — je les aborderai différemment la prochaine fois."
+            )
+        else:
+            text += " Aucun échec aujourd'hui. Journée impeccable."
+    elif language == "ar":
+        text = (
+            f"مراجعة اليوم، سيدي: {len(episodes)} عملية، "
+            f"{success} ناجحة، بنسبة {rate}%."
+        )
+        if failures:
+            text += f" إخفاقات في: {'، '.join(failures)}. خفضت أولويتها وسأتصرف بشكل مختلف لاحقاً."
+        else:
+            text += " لا إخفاقات اليوم. يوم مثالي."
+    else:
+        text = (
+            f"Today's review, sir: {len(episodes)} operations, {success} successful, "
+            f"{rate}% success rate."
+        )
+        if failures:
+            text += (
+                f" Failures involved: {', '.join(failures)}. "
+                "I've demoted those approaches — I'll play them differently next time."
+            )
+        else:
+            text += " Not a single failure today. A clean sheet, sir."
+    return text
+
+
+def habit_hint(language: str = "en", hour: "int | None" = None) -> str:
+    """'What do I usually do right now?' — patterns from successful episodes."""
+    from collections import Counter
+    from datetime import datetime as _dt
+
+    now_hour = _dt.now().hour if hour is None else hour
+    pairs = kira_memory.successful_episode_hours()
+    by_command = Counter(command for command, _ in pairs)
+    if not by_command:
+        return {
+            "en": "I don't have enough history to spot a habit yet, sir.",
+            "fr": "Pas encore assez d'historique pour détecter une habitude, monsieur.",
+            "ar": "لا يوجد سجل كافٍ لتمييز عادة بعد، سيدي.",
+        }.get(language)
+
+    candidates = []
+    for command, uses in by_command.most_common():
+        hours = [h for c, h in pairs if c == command]
+        hour_hits = sum(1 for h in hours if abs(h - now_hour) <= 1)
+        if uses >= 3 and hour_hits >= (uses + 1) // 2:
+            candidates.append((command, uses, hour_hits))
+    if not candidates:
+        return {
+            "en": "No clear habit for this hour has emerged yet, sir.",
+            "fr": "Aucune habitude claire pour cette heure pour l'instant, monsieur.",
+            "ar": "لم تظهر عادة واضحة لهذه الساعة بعد، سيدي.",
+        }.get(language)
+
+    command, uses, hour_hits = candidates[0]
+    return {
+        "en": f"Pattern detected, sir: around this time you usually say '{command}' — {hour_hits} of {uses} times. Shall I?",
+        "fr": f"Habitude repérée, monsieur : à cette heure vous dites souvent '{command}' — {hour_hits} fois sur {uses}. Je le fais ?",
+        "ar": f"لاحظت نمطاً، سيدي: في هذا الوقت عادة تقول '{command}' — {hour_hits} من {uses} مرات. هل أنفذ؟",
     }.get(language)

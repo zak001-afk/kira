@@ -1085,6 +1085,9 @@ class KiraUI(ctk.CTk):
         cleaned = backend.normalize_command(text)
         if not cleaned:
             return ""
+        gate_reply = backend.lab_gate(cleaned)
+        if gate_reply is not None:
+            return gate_reply
         result = backend.parse_simple_command(cleaned)
         if result is None and backend.is_chat_question(cleaned):
             ok, d = self._ensure_ollama()
@@ -1132,24 +1135,40 @@ class KiraUI(ctk.CTk):
 
         success = backend.execute_action(result)
 
+        promotion_note = None
         if planned_by in {"llm", "memory"}:
-            # reflect on what just happened
-            backend.learn_from(cleaned, result, planned_by, bool(success))
+            # reflect on what just happened and notice repeatable skills
+            backend._LAST_COMMAND, backend._LAST_ACTION = cleaned, result
+            promotion_note = backend.learn_from(
+                cleaned,
+                result,
+                planned_by,
+                bool(success),
+                language=backend.detect_language(cleaned),
+            )
+
+        if success:
+            # suit bookkeeping: macro recording + undo stack
+            backend.kira_learning.capture(result)
+            backend.kira_undo.record(cleaned, result)
 
         if isinstance(success, str):
-            return success
+            reply = success
+        elif not success:
+            reply = backend.build_reply(backend.detect_language(cleaned), "none")
+        else:
+            target = ""
 
-        if not success:
-            return backend.build_reply(backend.detect_language(cleaned), "none")
+            if action in {"open_app", "open_url", "open_folder", "press"}:
+                target = str(result.get("target", ""))
+            elif action == "search":
+                target = str(result.get("query", ""))
 
-        target = ""
+            reply = backend.build_reply(backend.detect_language(cleaned), action, target)
 
-        if action in {"open_app", "open_url", "open_folder", "press"}:
-            target = str(result.get("target", ""))
-        elif action == "search":
-            target = str(result.get("query", ""))
-
-        return backend.build_reply(backend.detect_language(cleaned), action, target)
+        if promotion_note:
+            reply = f"{reply}\n\n{promotion_note}"
+        return reply
 
     def _speak(self, text):
         self.events.put(("speaking_start", None))
@@ -1767,4 +1786,8 @@ class KiraUI(ctk.CTk):
 
 if __name__ == "__main__":
     app = KiraUI()
+    try:
+        backend.start_background_tasks()
+    except Exception:
+        pass
     app.mainloop()
