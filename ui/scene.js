@@ -1,17 +1,12 @@
 // ═══════════════════════════════════════════════════════════════
-// KIRA — Realistic Human Face with Matrix Skin
-// Complete rewrite for best visual result
+// KIRA — Slimy Robot in Space
 // ═══════════════════════════════════════════════════════════════
 
 let scene, camera, renderer;
-let head, eyes = [], lips, nose, eyebrows = [];
-let digitalRain, skinCircuits, dataParticles, hairMesh;
+let robot, robotGroup;
+let stars, nebula, slimeParticles, energyField;
 let clock = new THREE.Clock();
 let currentActivity = 'standby';
-let blinkTimer = 0;
-let nextBlink = 3 + Math.random() * 4;
-let isBlinking = false;
-let blinkProgress = 0;
 
 // ═══════════════════════════════════════════════════════════════
 // Scene Setup
@@ -19,11 +14,11 @@ let blinkProgress = 0;
 
 function initScene() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000800, 0.008);
+  scene.background = new THREE.Color(0x000011);
+  scene.fog = new THREE.FogExp2(0x000022, 0.0008);
 
-  camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 0.5, 7.5);
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+  camera.position.set(0, 2, 12);
   camera.lookAt(0, 0, 0);
 
   const canvas = document.getElementById('scene');
@@ -31,592 +26,385 @@ function initScene() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.3;
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMappingExposure = 1.5;
 
   setupLighting();
-  createDigitalRain();
-  createHead();
-  createEars();
-  createNose();
-  createEyes();
-  createEyebrows();
-  createLips();
-  createHair();
-  createSkinCircuits();
-  createDataParticles();
-  createGrid();
+  createStarfield();
+  createNebula();
+  createRobot();
+  createSlimeParticles();
+  createEnergyField();
 
   window.addEventListener('resize', onWindowResize);
   animate();
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Professional Lighting
+// Lighting
 // ═══════════════════════════════════════════════════════════════
 
 function setupLighting() {
-  // Ambient
-  scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+  // Ambient space light
+  scene.add(new THREE.AmbientLight(0x222244, 0.3));
 
-  // Key light (main)
-  const key = new THREE.DirectionalLight(0xfff5ee, 1.3);
-  key.position.set(4, 5, 6);
-  key.castShadow = true;
+  // Key light (blue-white)
+  const key = new THREE.DirectionalLight(0x88aaff, 1.2);
+  key.position.set(5, 5, 5);
   scene.add(key);
 
-  // Fill light (soft blue)
-  const fill = new THREE.DirectionalLight(0x8899bb, 0.5);
-  fill.position.set(-5, 2, 4);
-  scene.add(fill);
-
-  // Rim light (Matrix green for edge highlight)
-  const rim = new THREE.DirectionalLight(0x00ff41, 0.7);
-  rim.position.set(0, 3, -6);
+  // Rim light (cyan for edge highlight)
+  const rim = new THREE.DirectionalLight(0x00ffff, 0.8);
+  rim.position.set(-5, 2, -5);
   scene.add(rim);
 
-  // Bottom fill (subtle green uplight)
-  const bottom = new THREE.PointLight(0x00ff41, 0.25, 15);
-  bottom.position.set(0, -4, 3);
+  // Bottom accent (green for slime glow)
+  const bottom = new THREE.PointLight(0x00ff88, 0.6, 20);
+  bottom.position.set(0, -5, 3);
   scene.add(bottom);
 
-  // Side accent
-  const side = new THREE.PointLight(0x00cc33, 0.3, 12);
-  side.position.set(-4, 0, 2);
+  // Side accent (purple)
+  const side = new THREE.PointLight(0xff00ff, 0.4, 15);
+  side.position.set(-8, 0, 2);
   scene.add(side);
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Digital Rain
+// Starfield
 // ═══════════════════════════════════════════════════════════════
 
-function createDigitalRain() {
-  const count = 3000;
+function createStarfield() {
+  const count = 5000;
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(count * 3);
-  const vel = new Float32Array(count);
+  const colors = new Float32Array(count * 3);
   const sizes = new Float32Array(count);
 
+  const color = new THREE.Color();
+
   for (let i = 0; i < count; i++) {
-    pos[i * 3]     = (Math.random() - 0.5) * 70;
-    pos[i * 3 + 1] = Math.random() * 50 - 15;
-    pos[i * 3 + 2] = -5 - Math.random() * 40;
-    vel[i] = 0.04 + Math.random() * 0.15;
-    sizes[i] = 0.05 + Math.random() * 0.1;
+    // Random position in a large sphere
+    const radius = 200 + Math.random() * 800;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+
+    pos[i * 3]     = radius * Math.sin(phi) * Math.cos(theta);
+    pos[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+    pos[i * 3 + 2] = radius * Math.cos(phi);
+
+    // Star colors (white, blue-white, yellow-white)
+    const hue = Math.random() < 0.7 ? 0 : (Math.random() < 0.5 ? 0.6 : 0.15);
+    const saturation = Math.random() * 0.3;
+    const lightness = 0.7 + Math.random() * 0.3;
+    color.setHSL(hue, saturation, lightness);
+
+    colors[i * 3]     = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+
+    sizes[i] = 0.5 + Math.random() * 2;
   }
 
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-  digitalRain = new THREE.Points(geo, new THREE.PointsMaterial({
-    color: 0x00ff41,
-    size: 0.08,
+  stars = new THREE.Points(geo, new THREE.PointsMaterial({
+    size: 1.5,
+    vertexColors: true,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.8,
+    sizeAttenuation: true
+  }));
+  scene.add(stars);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Nebula (colorful space cloud)
+// ═══════════════════════════════════════════════════════════════
+
+function createNebula() {
+  const count = 800;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+
+  const color = new THREE.Color();
+
+  for (let i = 0; i < count; i++) {
+    // Cluster nebula particles
+    const radius = 50 + Math.random() * 100;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+
+    pos[i * 3]     = radius * Math.sin(phi) * Math.cos(theta) + (Math.random() - 0.5) * 30;
+    pos[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta) * 0.3 + (Math.random() - 0.5) * 20;
+    pos[i * 3 + 2] = radius * Math.cos(phi) - 100;
+
+    // Nebula colors (purple, blue, cyan, pink)
+    const hue = 0.7 + Math.random() * 0.3;
+    color.setHSL(hue, 0.8, 0.5);
+
+    colors[i * 3]     = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+  }
+
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  nebula = new THREE.Points(geo, new THREE.PointsMaterial({
+    size: 8,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.15,
     blending: THREE.AdditiveBlending,
     sizeAttenuation: true
   }));
-  digitalRain.userData.velocities = vel;
-  scene.add(digitalRain);
+  scene.add(nebula);
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Skin Material
+// Slimy Robot
 // ═══════════════════════════════════════════════════════════════
 
-function createSkinMaterial() {
-  return new THREE.MeshPhysicalMaterial({
-    color: 0xf5c6a0,
-    emissive: 0x000000,
-    emissiveIntensity: 0,
-    metalness: 0.0,
-    roughness: 0.65,
-    clearcoat: 0.15,
-    clearcoatRoughness: 0.5,
-    sheen: 0.8,
-    sheenRoughness: 0.4,
-    sheenColor: new THREE.Color(0xff9977),
-  });
-}
+function createRobot() {
+  robotGroup = new THREE.Group();
 
-// ═══════════════════════════════════════════════════════════════
-// Human Head
-// ═══════════════════════════════════════════════════════════════
+  // Main body (oval/sphere shape)
+  const bodyGeo = new THREE.SphereGeometry(2, 32, 32);
+  bodyGeo.scale(1, 1.3, 0.9); // Make it oval
 
-function createHead() {
-  const geo = new THREE.SphereGeometry(2, 80, 80);
-  const p = geo.attributes.position;
-
-  for (let i = 0; i < p.count; i++) {
-    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const ny = y / 2;
-
-    // Vertical elongation
-    y *= 1.28;
-
-    // Narrow sides
-    x *= 0.90;
-
-    // Forehead: slightly wider and more prominent
-    if (ny > 0.5 && z > 0) {
-      z *= 1.08;
-      x *= 1.02;
-    }
-
-    // Cheekbones
-    if (ny > -0.2 && ny < 0.2 && Math.abs(x) > 1.0 && z > 0.3) {
-      x *= 1.08;
-      z *= 1.04;
-    }
-
-    // Jaw taper
-    if (ny < -0.2) {
-      const t = Math.min(1, Math.abs(ny + 0.2) * 1.2);
-      x *= 1 - t * 0.45;
-      z *= 1 - t * 0.25;
-    }
-
-    // Chin
-    if (ny < -0.7 && z > 0.3) {
-      z *= 1.05;
-    }
-
-    // Back of head flatter
-    if (z < -0.5) z *= 0.82;
-
-    // Eye socket depressions
-    const leye = Math.sqrt((x + 0.55) ** 2 + (y / 1.28 - 0.35) ** 2);
-    const reye = Math.sqrt((x - 0.55) ** 2 + (y / 1.28 - 0.35) ** 2);
-    if (leye < 0.4 && z > 1.0) z -= (0.4 - leye) * 0.3;
-    if (reye < 0.4 && z > 1.0) z -= (0.4 - reye) * 0.3;
-
-    // Nose bridge area
-    if (Math.abs(x) < 0.2 && ny > -0.3 && ny < 0.2 && z > 1.2) {
-      z += 0.15;
-    }
-
-    p.setXYZ(i, x, y, z);
-  }
-
-  geo.computeVertexNormals();
-  head = new THREE.Mesh(geo, createSkinMaterial());
-  scene.add(head);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Ears
-// ═══════════════════════════════════════════════════════════════
-
-function createEars() {
-  const earGeo = new THREE.SphereGeometry(0.3, 16, 16);
-  const skinMat = createSkinMaterial();
-
-  [-1, 1].forEach(side => {
-    const ear = new THREE.Mesh(earGeo, skinMat);
-    ear.position.set(side * 1.75, 0.1, 0.2);
-    ear.scale.set(0.5, 1.2, 0.8);
-    head.add(ear);
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Nose
-// ═══════════════════════════════════════════════════════════════
-
-function createNose() {
-  const skinMat = createSkinMaterial();
-
-  // Bridge
-  const bridge = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.10, 0.16, 0.9, 16),
-    skinMat
-  );
-  bridge.position.set(0, -0.05, 1.95);
-  bridge.rotation.x = Math.PI / 2;
-  head.add(bridge);
-
-  // Tip
-  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 16), skinMat);
-  tip.position.set(0, -0.48, 2.08);
-  tip.scale.set(1.1, 0.75, 1.15);
-  head.add(tip);
-
-  // Nostrils
-  [-1, 1].forEach(side => {
-    const nostril = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 12), skinMat);
-    nostril.position.set(side * 0.12, -0.52, 2.0);
-    head.add(nostril);
-  });
-
-  nose = bridge;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Eyes (detailed)
-// ═══════════════════════════════════════════════════════════════
-
-function createEyes() {
-  const positions = [
-    { x: -0.55, y: 0.38, z: 1.72 },
-    { x:  0.55, y: 0.38, z: 1.72 }
-  ];
-
-  positions.forEach(pos => {
-    // Eyelid (skin-colored cover for blinking)
-    const lidGeo = new THREE.SphereGeometry(0.34, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
-    const lid = new THREE.Mesh(lidGeo, createSkinMaterial());
-    lid.position.set(pos.x, pos.y, pos.z - 0.05);
-    lid.scale.set(1, 0.75, 0.6);
-    lid.rotation.x = Math.PI;
-    lid.visible = false;
-    head.add(lid);
-
-    // Eyeball
-    const eyeball = new THREE.Mesh(
-      new THREE.SphereGeometry(0.28, 32, 32),
-      new THREE.MeshPhysicalMaterial({
-        color: 0xfafafa,
-        metalness: 0,
-        roughness: 0.15,
-        clearcoat: 1,
-        clearcoatRoughness: 0.05
-      })
-    );
-    eyeball.position.set(pos.x, pos.y, pos.z);
-    eyeball.scale.set(1, 0.72, 0.6);
-    head.add(eyeball);
-
-    // Limbal ring (dark ring around iris)
-    const limbal = new THREE.Mesh(
-      new THREE.SphereGeometry(0.175, 32, 32),
-      new THREE.MeshBasicMaterial({ color: 0x003311, transparent: true, opacity: 0.9 })
-    );
-    limbal.position.set(pos.x, pos.y, pos.z + 0.14);
-    limbal.scale.set(1, 0.72, 0.4);
-    head.add(limbal);
-
-    // Iris (Matrix green)
-    const iris = new THREE.Mesh(
-      new THREE.SphereGeometry(0.155, 32, 32),
-      new THREE.MeshBasicMaterial({ color: 0x00ff41, transparent: true, opacity: 0.95 })
-    );
-    iris.position.set(pos.x, pos.y, pos.z + 0.15);
-    iris.scale.set(1, 0.72, 0.4);
-    head.add(iris);
-    eyes.push(iris);
-
-    // Pupil
-    const pupil = new THREE.Mesh(
-      new THREE.SphereGeometry(0.07, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0x000000 })
-    );
-    pupil.position.set(pos.x, pos.y, pos.z + 0.19);
-    pupil.scale.set(1, 0.72, 0.4);
-    head.add(pupil);
-
-    // Light reflection on eye
-    const reflection = new THREE.Mesh(
-      new THREE.SphereGeometry(0.03, 8, 8),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 })
-    );
-    reflection.position.set(pos.x + 0.05, pos.y + 0.05, pos.z + 0.22);
-    head.add(reflection);
-
-    // Glow
-    const glow = new THREE.Mesh(
-      new THREE.SphereGeometry(0.24, 16, 16),
-      new THREE.MeshBasicMaterial({
-        color: 0x00ff41, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending
-      })
-    );
-    glow.position.set(pos.x, pos.y, pos.z + 0.08);
-    glow.scale.set(1, 0.72, 0.5);
-    head.add(glow);
-
-    iris.userData.glow = glow;
-    iris.userData.lid = lid;
-    iris.userData.eyeball = eyeball;
-    iris.userData.pupil = pupil;
-    iris.userData.reflection = reflection;
-    iris.userData.limbal = limbal;
-    iris.userData.basePos = { ...pos };
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Eyebrows
-// ═══════════════════════════════════════════════════════════════
-
-function createEyebrows() {
-  const configs = [
-    { x: -0.55, y: 0.78, z: 1.68, rz: -0.15 },
-    { x:  0.55, y: 0.78, z: 1.68, rz:  0.15 }
-  ];
-
-  configs.forEach(c => {
-    // Use multiple small segments for a more natural brow
-    const group = new THREE.Group();
-    const mat = new THREE.MeshPhysicalMaterial({ color: 0x2a1a10, roughness: 0.8 });
-
-    for (let i = 0; i < 5; i++) {
-      const seg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.08), mat);
-      seg.position.x = (i - 2) * 0.11;
-      seg.position.y = -Math.abs(i - 2) * 0.02;
-      group.add(seg);
-    }
-
-    group.position.set(c.x, c.y, c.z);
-    group.rotation.z = c.rz;
-    head.add(group);
-    eyebrows.push(group);
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Lips
-// ═══════════════════════════════════════════════════════════════
-
-function createLips() {
-  const lipMat = new THREE.MeshPhysicalMaterial({
-    color: 0xcc7777,
-    metalness: 0,
-    roughness: 0.25,
-    clearcoat: 0.9,
-    clearcoatRoughness: 0.15
-  });
-
-  // Upper lip
-  const upper = new THREE.Mesh(
-    new THREE.TorusGeometry(0.28, 0.07, 16, 32, Math.PI),
-    lipMat
-  );
-  upper.position.set(0, -0.87, 1.88);
-  upper.rotation.x = Math.PI;
-  upper.scale.set(1, 0.5, 1);
-  head.add(upper);
-
-  // Lower lip
-  const lower = new THREE.Mesh(
-    new THREE.TorusGeometry(0.30, 0.09, 16, 32, Math.PI),
-    lipMat
-  );
-  lower.position.set(0, -0.97, 1.88);
-  lower.scale.set(1, 0.55, 1);
-  head.add(lower);
-
-  // Mouth line (dark gap)
-  const line = new THREE.Mesh(
-    new THREE.BoxGeometry(0.55, 0.015, 0.05),
-    new THREE.MeshBasicMaterial({ color: 0x331111 })
-  );
-  line.position.set(0, -0.92, 1.92);
-  head.add(line);
-
-  lips = { upper, lower, line, baseUpperY: -0.87, baseLowerY: -0.97 };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Hair
-// ═══════════════════════════════════════════════════════════════
-
-function createHair() {
-  const hairGeo = new THREE.SphereGeometry(2.08, 64, 64);
-  const p = hairGeo.attributes.position;
-
-  for (let i = 0; i < p.count; i++) {
-    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const ny = y / 2;
-
-    // Only keep top and sides of hair
-    if (ny < 0.15 && z > 0.5) {
-      p.setXYZ(i, 0, 0, 0);
-      continue;
-    }
-
-    // Shape hair
-    y *= 1.3;
-    x *= 0.95;
-
-    if (z < -0.3) z *= 0.88;
-    if (ny > 0.5) { y *= 1.05; z *= 1.05; }
-
-    p.setXYZ(i, x, y, z);
-  }
-
-  hairGeo.computeVertexNormals();
-
-  hairMesh = new THREE.Mesh(hairGeo, new THREE.MeshPhysicalMaterial({
-    color: 0x1a0f08,
-    metalness: 0.3,
-    roughness: 0.4,
-    clearcoat: 0.6,
-    clearcoatRoughness: 0.2,
-    sheen: 1,
+  const bodyMat = new THREE.MeshPhysicalMaterial({
+    color: 0x224466,
+    metalness: 0.7,
+    roughness: 0.2,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.1,
+    emissive: 0x001133,
+    emissiveIntensity: 0.2,
+    sheen: 1.0,
     sheenRoughness: 0.3,
-    sheenColor: new THREE.Color(0x332211)
-  }));
+    sheenColor: new THREE.Color(0x00ffaa)
+  });
 
-  head.add(hairMesh);
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  robotGroup.add(body);
+
+  // Head (smaller sphere on top)
+  const headGeo = new THREE.SphereGeometry(1.2, 32, 32);
+  const head = new THREE.Mesh(headGeo, bodyMat.clone());
+  head.position.y = 2.5;
+  robotGroup.add(head);
+
+  // Eyes (glowing cyan spheres)
+  const eyeGeo = new THREE.SphereGeometry(0.3, 16, 16);
+  const eyeMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffff,
+    emissive: 0x00ffff,
+    emissiveIntensity: 1
+  });
+
+  const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+  leftEye.position.set(-0.4, 2.7, 1);
+  robotGroup.add(leftEye);
+
+  const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+  rightEye.position.set(0.4, 2.7, 1);
+  robotGroup.add(rightEye);
+
+  // Eye glow
+  const eyeGlowGeo = new THREE.SphereGeometry(0.4, 16, 16);
+  const eyeGlowMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffff,
+    transparent: true,
+    opacity: 0.3,
+    blending: THREE.AdditiveBlending
+  });
+
+  const leftGlow = new THREE.Mesh(eyeGlowGeo, eyeGlowMat);
+  leftGlow.position.copy(leftEye.position);
+  robotGroup.add(leftGlow);
+
+  const rightGlow = new THREE.Mesh(eyeGlowGeo, eyeGlowMat);
+  rightGlow.position.copy(rightEye.position);
+  robotGroup.add(rightGlow);
+
+  // Antenna
+  const antennaGeo = new THREE.CylinderGeometry(0.05, 0.08, 1.5, 8);
+  const antennaMat = new THREE.MeshPhysicalMaterial({
+    color: 0x444444,
+    metalness: 0.9,
+    roughness: 0.3
+  });
+  const antenna = new THREE.Mesh(antennaGeo, antennaMat);
+  antenna.position.y = 3.8;
+  robotGroup.add(antenna);
+
+  // Antenna tip (glowing)
+  const tipGeo = new THREE.SphereGeometry(0.15, 16, 16);
+  const tipMat = new THREE.MeshBasicMaterial({
+    color: 0xff0088,
+    emissive: 0xff0088,
+    emissiveIntensity: 1
+  });
+  const tip = new THREE.Mesh(tipGeo, tipMat);
+  tip.position.y = 4.6;
+  robotGroup.add(tip);
+
+  // Arms (cylinders)
+  const armGeo = new THREE.CylinderGeometry(0.15, 0.2, 2, 8);
+  const armMat = bodyMat.clone();
+
+  const leftArm = new THREE.Mesh(armGeo, armMat);
+  leftArm.position.set(-2.2, 0, 0);
+  leftArm.rotation.z = Math.PI / 6;
+  robotGroup.add(leftArm);
+
+  const rightArm = new THREE.Mesh(armGeo, armMat);
+  rightArm.position.set(2.2, 0, 0);
+  rightArm.rotation.z = -Math.PI / 6;
+  robotGroup.add(rightArm);
+
+  // Hands (spheres)
+  const handGeo = new THREE.SphereGeometry(0.3, 16, 16);
+  const leftHand = new THREE.Mesh(handGeo, armMat);
+  leftHand.position.set(-2.8, -0.9, 0);
+  robotGroup.add(leftHand);
+
+  const rightHand = new THREE.Mesh(handGeo, armMat);
+  rightHand.position.set(2.8, -0.9, 0);
+  robotGroup.add(rightHand);
+
+  // Panel details on body
+  const panelGeo = new THREE.BoxGeometry(0.8, 0.4, 0.1);
+  const panelMat = new THREE.MeshPhysicalMaterial({
+    color: 0x111111,
+    metalness: 0.8,
+    roughness: 0.4,
+    emissive: 0x00ff88,
+    emissiveIntensity: 0.3
+  });
+
+  const panel1 = new THREE.Mesh(panelGeo, panelMat);
+  panel1.position.set(0, 0.5, 1.8);
+  robotGroup.add(panel1);
+
+  const panel2 = new THREE.Mesh(panelGeo, panelMat);
+  panel2.position.set(0, -0.5, 1.8);
+  robotGroup.add(panel2);
+
+  // Store references
+  robot = {
+    group: robotGroup,
+    body,
+    head,
+    leftEye,
+    rightEye,
+    leftGlow,
+    rightGlow,
+    antenna,
+    tip,
+    leftArm,
+    rightArm,
+    leftHand,
+    rightHand,
+    panel1,
+    panel2
+  };
+
+  scene.add(robotGroup);
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Matrix Skin Circuits
+// Slime Particles (dripping effect)
 // ═══════════════════════════════════════════════════════════════
 
-function createSkinCircuits() {
-  skinCircuits = new THREE.Group();
-
-  const lineMat = new THREE.LineBasicMaterial({
-    color: 0x00ff41, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending
-  });
-
-  const circuits = [
-    // Forehead
-    [[-0.7, 1.5, 1.45], [-0.4, 1.55, 1.55], [0, 1.6, 1.58], [0.4, 1.55, 1.55], [0.7, 1.5, 1.45]],
-    [[-0.5, 1.3, 1.55], [-0.25, 1.35, 1.6], [0.25, 1.35, 1.6], [0.5, 1.3, 1.55]],
-    [[-0.3, 1.15, 1.62], [0, 1.2, 1.65], [0.3, 1.15, 1.62]],
-
-    // Temples
-    [[-1.55, 0.8, 0.85], [-1.6, 0.5, 0.78], [-1.55, 0.2, 0.72], [-1.5, -0.1, 0.65]],
-    [[1.55, 0.8, 0.85], [1.6, 0.5, 0.78], [1.55, 0.2, 0.72], [1.5, -0.1, 0.65]],
-
-    // Cheeks
-    [[-1.25, 0.0, 1.35], [-1.3, -0.3, 1.28], [-1.25, -0.6, 1.18]],
-    [[1.25, 0.0, 1.35], [1.3, -0.3, 1.28], [1.25, -0.6, 1.18]],
-
-    // Jaw
-    [[-0.7, -1.3, 1.25], [-0.35, -1.5, 1.35], [0, -1.6, 1.42], [0.35, -1.5, 1.35], [0.7, -1.3, 1.25]],
-
-    // Nose bridge accent
-    [[-0.15, 0.2, 1.95], [0, 0.0, 2.0], [0.15, 0.2, 1.95]],
-
-    // Under-eye accents
-    [[-0.75, 0.15, 1.65], [-0.55, 0.08, 1.7], [-0.35, 0.15, 1.65]],
-    [[0.75, 0.15, 1.65], [0.55, 0.08, 1.7], [0.35, 0.15, 1.65]],
-  ];
-
-  circuits.forEach(pts => {
-    const points = pts.map(p => new THREE.Vector3(...p));
-    const geo = new THREE.BufferGeometry().setFromPoints(points);
-    skinCircuits.add(new THREE.Line(geo, lineMat.clone()));
-  });
-
-  // Nodes
-  const nodeMat = new THREE.MeshBasicMaterial({
-    color: 0x00ff88, transparent: true, opacity: 0.85
-  });
-
-  const nodes = [
-    [-0.7, 1.5, 1.45], [0.7, 1.5, 1.45], [0, 1.6, 1.58],
-    [-1.55, 0.8, 0.85], [1.55, 0.8, 0.85],
-    [-1.25, 0.0, 1.35], [1.25, 0.0, 1.35],
-    [-0.7, -1.3, 1.25], [0.7, -1.3, 1.25], [0, -1.6, 1.42],
-    [-0.55, 0.08, 1.7], [0.55, 0.08, 1.7],
-    [0, 0.0, 2.0]
-  ];
-
-  nodes.forEach(pos => {
-    const node = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), nodeMat.clone());
-    node.position.set(...pos);
-    skinCircuits.add(node);
-  });
-
-  scene.add(skinCircuits);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Data Particles (flow along circuits)
-// ═══════════════════════════════════════════════════════════════
-
-function createDataParticles() {
-  const count = 200;
+function createSlimeParticles() {
+  const count = 300;
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(count * 3);
-  const meta = [];
+  const vel = new Float32Array(count * 3);
 
   for (let i = 0; i < count; i++) {
-    // Random position near the face surface
+    // Start near robot surface
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
     const r = 2 + Math.random() * 0.5;
 
     pos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
-    pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 1.28;
-    pos[i * 3 + 2] = r * Math.cos(phi);
+    pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 1.3;
+    pos[i * 3 + 2] = r * Math.cos(phi) * 0.9;
+
+    vel[i * 3]     = (Math.random() - 0.5) * 0.02;
+    vel[i * 3 + 1] = -0.02 - Math.random() * 0.03;
+    vel[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
+  }
+
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+
+  slimeParticles = new THREE.Points(geo, new THREE.PointsMaterial({
+    color: 0x00ff88,
+    size: 0.15,
+    transparent: true,
+    opacity: 0.6,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true
+  }));
+  slimeParticles.userData.velocities = vel;
+  scene.add(slimeParticles);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Energy Field (orbiting particles)
+// ═══════════════════════════════════════════════════════════════
+
+function createEnergyField() {
+  const count = 500;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const meta = [];
+
+  const color = new THREE.Color();
+
+  for (let i = 0; i < count; i++) {
+    const radius = 3 + Math.random() * 2;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+
+    pos[i * 3]     = radius * Math.sin(phi) * Math.cos(theta);
+    pos[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+    pos[i * 3 + 2] = radius * Math.cos(phi);
+
+    // Cyan to purple gradient
+    const hue = 0.5 + Math.random() * 0.3;
+    color.setHSL(hue, 0.9, 0.6);
+
+    colors[i * 3]     = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
 
     meta.push({
-      theta, phi, r,
+      radius,
+      theta,
+      phi,
       speed: 0.2 + Math.random() * 0.5,
       offset: Math.random() * Math.PI * 2
     });
   }
 
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-  dataParticles = new THREE.Points(geo, new THREE.PointsMaterial({
-    color: 0x00ff88,
-    size: 0.06,
+  energyField = new THREE.Points(geo, new THREE.PointsMaterial({
+    size: 0.12,
+    vertexColors: true,
     transparent: true,
-    opacity: 0.8,
+    opacity: 0.7,
     blending: THREE.AdditiveBlending,
     sizeAttenuation: true
   }));
-  dataParticles.userData.meta = meta;
-  scene.add(dataParticles);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Grid Floor
-// ═══════════════════════════════════════════════════════════════
-
-function createGrid() {
-  const grid = new THREE.GridHelper(80, 80, 0x00ff41, 0x003300);
-  grid.position.y = -4.5;
-  grid.material.opacity = 0.12;
-  grid.material.transparent = true;
-  scene.add(grid);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Blink Animation
-// ═══════════════════════════════════════════════════════════════
-
-function updateBlink(dt) {
-  blinkTimer += dt;
-
-  if (!isBlinking && blinkTimer >= nextBlink) {
-    isBlinking = true;
-    blinkProgress = 0;
-    blinkTimer = 0;
-    nextBlink = 2.5 + Math.random() * 5;
-  }
-
-  if (isBlinking) {
-    blinkProgress += dt * 8; // Speed of blink
-
-    if (blinkProgress >= 2) {
-      isBlinking = false;
-      blinkProgress = 0;
-      eyes.forEach(eye => {
-        if (eye.userData.lid) eye.userData.lid.visible = false;
-        if (eye.userData.eyeball) eye.userData.eyeball.visible = true;
-      });
-      return;
-    }
-
-    // Blink curve: close then open
-    const t = blinkProgress < 1 ? blinkProgress : 2 - blinkProgress;
-
-    eyes.forEach(eye => {
-      if (eye.userData.lid) {
-        eye.userData.lid.visible = true;
-        eye.userData.lid.scale.y = 0.75 * t;
-      }
-      if (eye.userData.eyeball) {
-        eye.userData.eyeball.visible = t < 0.8;
-      }
-    });
-  }
+  energyField.userData.meta = meta;
+  scene.add(energyField);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -626,86 +414,99 @@ function updateBlink(dt) {
 function animate() {
   requestAnimationFrame(animate);
 
-  const dt = clock.getDelta();
   const time = clock.getElapsedTime();
 
-  // Digital rain
-  if (digitalRain) {
-    const pos = digitalRain.geometry.attributes.position.array;
-    const vel = digitalRain.userData.velocities;
+  // Robot floating motion
+  if (robotGroup) {
+    robotGroup.position.y = Math.sin(time * 0.5) * 0.5;
+    robotGroup.rotation.y = Math.sin(time * 0.3) * 0.2;
+    robotGroup.rotation.x = Math.sin(time * 0.2) * 0.05;
+    robotGroup.rotation.z = Math.sin(time * 0.4) * 0.08;
+  }
+
+  // Eye pulsing
+  if (robot) {
+    const pulse = 0.8 + Math.sin(time * 3) * 0.2;
+    robot.leftEye.material.emissiveIntensity = pulse;
+    robot.rightEye.material.emissiveIntensity = pulse;
+    robot.leftGlow.material.opacity = 0.2 + Math.sin(time * 3) * 0.1;
+    robot.rightGlow.material.opacity = 0.2 + Math.sin(time * 3) * 0.1;
+
+    // Antenna tip blinking
+    robot.tip.material.emissiveIntensity = (Math.sin(time * 5) > 0.5) ? 1 : 0.2;
+
+    // Arm movement
+    robot.leftArm.rotation.x = Math.sin(time * 0.8) * 0.3;
+    robot.rightArm.rotation.x = Math.sin(time * 0.8 + Math.PI) * 0.3;
+
+    // Panel glow
+    robot.panel1.material.emissiveIntensity = 0.2 + Math.sin(time * 2) * 0.1;
+    robot.panel2.material.emissiveIntensity = 0.2 + Math.sin(time * 2 + 1) * 0.1;
+  }
+
+  // Slime particles dripping
+  if (slimeParticles) {
+    const pos = slimeParticles.geometry.attributes.position.array;
+    const vel = slimeParticles.userData.velocities;
+
     for (let i = 0; i < pos.length / 3; i++) {
-      pos[i * 3 + 1] -= vel[i];
-      if (pos[i * 3 + 1] < -15) {
-        pos[i * 3 + 1] = 35;
-        pos[i * 3]     = (Math.random() - 0.5) * 70;
-        pos[i * 3 + 2] = -5 - Math.random() * 40;
+      pos[i * 3]     += vel[i * 3];
+      pos[i * 3 + 1] += vel[i * 3 + 1];
+      pos[i * 3 + 2] += vel[i * 3 + 2];
+
+      // Reset when particle falls too far
+      if (pos[i * 3 + 1] < -8) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = 2 + Math.random() * 0.5;
+
+        pos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+        pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 1.3;
+        pos[i * 3 + 2] = r * Math.cos(phi) * 0.9;
+
+        vel[i * 3]     = (Math.random() - 0.5) * 0.02;
+        vel[i * 3 + 1] = -0.02 - Math.random() * 0.03;
+        vel[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
       }
     }
-    digitalRain.geometry.attributes.position.needsUpdate = true;
+
+    slimeParticles.geometry.attributes.position.needsUpdate = true;
   }
 
-  // Head breathing + subtle movement
-  if (head) {
-    const breathe = Math.sin(time * 1.2) * 0.03;
-    head.rotation.y = Math.sin(time * 0.25) * 0.1;
-    head.rotation.x = Math.sin(time * 0.18) * 0.03 + breathe * 0.1;
-    head.position.y = 0 + breathe;
-  }
-
-  // Skin circuits follow head
-  if (skinCircuits && head) {
-    skinCircuits.rotation.copy(head.rotation);
-    skinCircuits.position.copy(head.position);
-
-    // Pulse circuit lines
-    skinCircuits.children.forEach((child, i) => {
-      if (child.material && child.material.opacity !== undefined) {
-        const base = child.isLine ? 0.5 : 0.7;
-        child.material.opacity = base + Math.sin(time * 3 + i * 0.7) * 0.2;
-      }
-    });
-  }
-
-  // Data particles orbit
-  if (dataParticles) {
-    const pos = dataParticles.geometry.attributes.position.array;
-    const meta = dataParticles.userData.meta;
+  // Energy field orbiting
+  if (energyField) {
+    const pos = energyField.geometry.attributes.position.array;
+    const meta = energyField.userData.meta;
 
     for (let i = 0; i < meta.length; i++) {
       const m = meta[i];
       const t = time * m.speed + m.offset;
-      const theta = m.theta + t * 0.3;
-      const phi = m.phi + Math.sin(t * 0.5) * 0.2;
-      const r = m.r + Math.sin(t * 2) * 0.1;
+      const theta = m.theta + t * 0.5;
+      const phi = m.phi + Math.sin(t * 0.3) * 0.2;
 
-      pos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
-      pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 1.28;
-      pos[i * 3 + 2] = r * Math.cos(phi);
+      pos[i * 3]     = m.radius * Math.sin(phi) * Math.cos(theta);
+      pos[i * 3 + 1] = m.radius * Math.sin(phi) * Math.sin(theta);
+      pos[i * 3 + 2] = m.radius * Math.cos(phi);
     }
-    dataParticles.geometry.attributes.position.needsUpdate = true;
+
+    energyField.geometry.attributes.position.needsUpdate = true;
   }
 
-  // Eye pulsing
-  eyes.forEach((eye, i) => {
-    const pulse = 1 + Math.sin(time * 2.5 + i) * 0.06;
-    eye.scale.set(pulse, pulse * 0.72, pulse * 0.4);
-    if (eye.userData.glow) {
-      eye.userData.glow.material.opacity = 0.2 + Math.sin(time * 2.5) * 0.1;
-    }
-  });
+  // Slow star rotation
+  if (stars) {
+    stars.rotation.y = time * 0.01;
+  }
 
-  // Eyebrow subtle movement
-  eyebrows.forEach((brow, i) => {
-    brow.position.y = 0.78 + Math.sin(time * 0.4 + i) * 0.015;
-  });
+  // Nebula drift
+  if (nebula) {
+    nebula.rotation.y = time * 0.005;
+    nebula.rotation.x = Math.sin(time * 0.01) * 0.1;
+  }
 
-  // Blink
-  updateBlink(dt);
-
-  // Camera gentle sway
-  camera.position.x = Math.sin(time * 0.08) * 0.25;
-  camera.position.y = 0.5 + Math.sin(time * 0.12) * 0.15;
-  camera.lookAt(0, 0.2, 0);
+  // Camera gentle movement
+  camera.position.x = Math.sin(time * 0.1) * 2;
+  camera.position.y = 2 + Math.sin(time * 0.15) * 1;
+  camera.lookAt(0, 0, 0);
 
   renderer.render(scene, camera);
 }
@@ -726,73 +527,40 @@ function onWindowResize() {
 
 function setSceneActivity(state) {
   currentActivity = state;
-  if (!head || !eyes.length) return;
+  if (!robot) return;
 
   const eyeColor = new THREE.Color();
-  let lipSep = 0;
-  let circuitBoost = 1;
+  let tipColor = new THREE.Color(0xff0088);
 
   switch (state) {
     case 'thinking':
-      eyeColor.setHex(0x88ff88);
-      circuitBoost = 1.6;
-      eyebrows.forEach(eb => { eb.position.y = 0.82; });
+      eyeColor.setHex(0xffff00); // Yellow
+      tipColor.setHex(0xffff00);
       break;
 
     case 'speaking':
-      eyeColor.setHex(0x00ff88);
-      circuitBoost = 1.4;
-      lipSep = 0.06 + Math.sin(Date.now() * 0.018) * 0.04;
-      eyebrows.forEach(eb => { eb.position.y = 0.78; });
+      eyeColor.setHex(0x00ff88); // Green
+      tipColor.setHex(0x00ff88);
       break;
 
     case 'active':
-      eyeColor.setHex(0x00ff41);
-      circuitBoost = 1.3;
-      eyebrows.forEach(eb => { eb.position.y = 0.79; });
+      eyeColor.setHex(0x00ffff); // Cyan
+      tipColor.setHex(0x00ffff);
       break;
 
-    default:
-      eyeColor.setHex(0x00aa00);
-      circuitBoost = 0.9;
-      eyebrows.forEach(eb => { eb.position.y = 0.78; });
+    default: // standby
+      eyeColor.setHex(0x00ffff); // Cyan
+      tipColor.setHex(0xff0088); // Pink
   }
 
-  eyes.forEach(eye => {
-    eye.material.color.copy(eyeColor);
-    if (eye.userData.glow) eye.userData.glow.material.color.copy(eyeColor);
-  });
-
-  if (lips) {
-    lips.upper.position.y = lips.baseUpperY - lipSep;
-    lips.lower.position.y = lips.baseLowerY + lipSep;
-    lips.line.scale.y = 1 + lipSep * 15;
-  }
-
-  if (skinCircuits) {
-    skinCircuits.children.forEach(child => {
-      if (child.material) {
-        const base = child.isLine ? 0.5 : 0.7;
-        child.material.opacity = Math.min(1, base * circuitBoost);
-      }
-    });
-  }
-
-  // Speaking: animate lips continuously
-  if (state === 'speaking') {
-    const animateLips = () => {
-      if (currentActivity !== 'speaking') return;
-      const t = Date.now() * 0.018;
-      const sep = 0.06 + Math.sin(t) * 0.04;
-      if (lips) {
-        lips.upper.position.y = lips.baseUpperY - sep;
-        lips.lower.position.y = lips.baseLowerY + sep;
-        lips.line.scale.y = 1 + sep * 15;
-      }
-      requestAnimationFrame(animateLips);
-    };
-    animateLips();
-  }
+  robot.leftEye.material.color.copy(eyeColor);
+  robot.leftEye.material.emissive.copy(eyeColor);
+  robot.rightEye.material.color.copy(eyeColor);
+  robot.rightEye.material.emissive.copy(eyeColor);
+  robot.leftGlow.material.color.copy(eyeColor);
+  robot.rightGlow.material.color.copy(eyeColor);
+  robot.tip.material.color.copy(tipColor);
+  robot.tip.material.emissive.copy(tipColor);
 }
 
 // Initialize
