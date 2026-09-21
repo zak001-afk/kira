@@ -1649,43 +1649,51 @@ class KiraUI(ctk.CTk):
         if self.closing:
             return
 
+        # Use frame counter for throttling expensive operations
+        if not hasattr(self, '_frame_count'):
+            self._frame_count = 0
+        self._frame_count += 1
+
         self._draw_matrix()
 
-        if hasattr(self, "conversation_matrix"):
-            self._draw_panel_matrix(
-                self.conversation_matrix,
-                0,
-            )
+        # Panel matrix animations run at half framerate for efficiency
+        if self._frame_count % 2 == 0:
+            if hasattr(self, "conversation_matrix"):
+                self._draw_panel_matrix(
+                    self.conversation_matrix,
+                    0,
+                )
 
-        if hasattr(self, "system_matrix"):
-            self._draw_panel_matrix(
-                self.system_matrix,
-                120,
-            )
+            if hasattr(self, "system_matrix"):
+                self._draw_panel_matrix(
+                    self.system_matrix,
+                    120,
+                )
 
         self._draw_orb()
 
         now = datetime.now()
 
-        # The minimal UI does not require a visible clock/date.
-        # Keep these updates optional so the animation can never crash
-        # if a compact layout omits one of the legacy telemetry widgets.
-        if hasattr(self, "clock_label"):
-            self.clock_label.configure(text=now.strftime("%H:%M:%S"))
-        if hasattr(self, "date_label"):
-            self.date_label.configure(text=now.strftime("%a, %d %b %Y"))
+        # Clock/date updates every second (22 frames at 45ms)
+        if self._frame_count % 22 == 0:
+            if hasattr(self, "clock_label"):
+                self.clock_label.configure(text=now.strftime("%H:%M:%S"))
+            if hasattr(self, "date_label"):
+                self.date_label.configure(text=now.strftime("%a, %d %b %Y"))
 
-        try:
-            import psutil
-
-            if hasattr(self, "cpu_label"):
-                self.cpu_label.configure(
-                    text=f"{psutil.cpu_percent(interval=None):.0f}%"
-                )
-            if hasattr(self, "ram_label"):
-                self.ram_label.configure(text=f"{psutil.virtual_memory().percent:.0f}%")
-        except Exception:
-            pass
+        # System stats update every 2 seconds (44 frames at 45ms)
+        if self._frame_count % 44 == 0:
+            try:
+                if hasattr(self, "cpu_label") or hasattr(self, "ram_label"):
+                    import psutil
+                    if hasattr(self, "cpu_label"):
+                        self.cpu_label.configure(
+                            text=f"{psutil.cpu_percent(interval=None):.0f}%"
+                        )
+                    if hasattr(self, "ram_label"):
+                        self.ram_label.configure(text=f"{psutil.virtual_memory().percent:.0f}%")
+            except Exception:
+                pass
 
         self._animation_job = self.after(45, self._animate)
 

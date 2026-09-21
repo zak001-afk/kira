@@ -4,6 +4,8 @@ import logging
 import os
 import platform
 import kira_memory
+import kira_tasks
+import kira_plugins
 import re
 import subprocess
 import time
@@ -746,6 +748,10 @@ def build_reply(language: str, action: str, target: str = "") -> str:
         return f"Here is the system status {user_title}."
     if action == "exit":
         return f"Goodbye {user_title}."
+    if action == "reminder_set":
+        return f"Reminder set for {target or 'later'} {user_title}."
+    if action == "todo_added":
+        return f"Todo added: {target} {user_title}."
     return f"Done {user_title}."
 
 
@@ -776,6 +782,30 @@ def parse_simple_command(command: str):
         "غادر",
     }:
         return {"action": "exit"}
+
+    # ── Task / Reminder / Timer commands ──
+    reminder = kira_tasks.parse_reminder_command(text)
+    if reminder:
+        return {
+            "action": "add_reminder",
+            "title": reminder["title"],
+            "due_at": reminder["due_at"],
+        }
+
+    todo_text = kira_tasks.parse_todo_command(text)
+    if todo_text:
+        return {"action": "add_todo", "title": todo_text}
+
+    if lower in {"list tasks", "show tasks", "my tasks", "list todos", "show todos"}:
+        return {"action": "list_tasks"}
+
+    if lower in {"clear completed", "clear completed tasks", "delete completed"}:
+        return {"action": "clear_completed_tasks"}
+
+    # ── Plugin command parsing ──
+    plugin_result = kira_plugins.try_parse_command(text)
+    if plugin_result:
+        return plugin_result
 
     if lower.startswith("remember "):
         rest = text[9:].strip()
@@ -994,7 +1024,6 @@ def parse_simple_command(command: str):
         "حالة النظام",
         "حالة الكمبيوتر",
     }:
-        return {"action": "system_info"}
         return {"action": "system_info"}
 
     if lower in {
@@ -2507,6 +2536,60 @@ def execute_action(action_data):
 
         return True
 
+    # ── Task management actions ──
+    if action == "add_reminder":
+        title = str(action_data.get("title", "")).strip()
+        due_at = str(action_data.get("due_at", "")).strip()
+        if not title:
+            return False
+        task_id = kira_tasks.add_task(
+            title=title,
+            task_type="reminder",
+            due_at=due_at,
+        )
+        lang = "en"
+        if due_at:
+            speak(build_reply(lang, "reminder_set", title))
+        else:
+            speak(f"Reminder added: {title}")
+        return True
+
+    if action == "add_todo":
+        title = str(action_data.get("title", "")).strip()
+        if not title:
+            return False
+        kira_tasks.add_task(title=title, task_type="todo")
+        speak(f"Todo added: {title}")
+        return True
+
+    if action == "list_tasks":
+        tasks = kira_tasks.list_tasks(completed=False, limit=10)
+        if not tasks:
+            speak("You have no pending tasks.")
+        else:
+            count = len(tasks)
+            speak(f"You have {count} pending task{'s' if count != 1 else ''}.")
+            for i, task in enumerate(tasks[:5], 1):
+                speak(f"{i}. {task['title']}")
+        return True
+
+    if action == "clear_completed_tasks":
+        count = kira_tasks.clear_completed()
+        if count > 0:
+            speak(f"Cleared {count} completed task{'s' if count != 1 else ''}.")
+        else:
+            speak("No completed tasks to clear.")
+        return True
+
+    # ── Plugin action handlers ──
+    plugin_handler = kira_plugins.get_action_handler(action)
+    if plugin_handler:
+        try:
+            return plugin_handler(action_data)
+        except Exception as exc:
+            logging.error("Plugin action %s failed: %s", action, exc)
+            return False
+
 
 def describe_action(action_data):
     if not isinstance(action_data, dict):
@@ -2633,10 +2716,29 @@ def should_process_command(command: str) -> bool:
     ):
         return True
 
-    return True
+    # In unified mode, process all commands; otherwise require wake word
+    if not CONFIG.get("require_wake_word", False):
+        return True
+
+    return False
+
+
+def _on_task_notification(task_id: str, title: str, task_type: str):
+    """Callback when a reminder/timer fires."""
+    if task_type == "reminder":
+        speak(f"Reminder: {title}")
+    else:
+        speak(f"Task completed: {title}")
 
 
 def startup_sequence():
+    # Restore any pending timers from previous session
+    kira_tasks.restore_timers()
+    # Register task notification callback
+    kira_tasks.register_callback(_on_task_notification)
+    # Load plugins
+    kira_plugins.load_all_plugins()
+
     speak(personalize_address(" Hello sir."))
     speak(personalize_address("Listening for your command sir."))
 
@@ -2666,13 +2768,7 @@ def main():
             if not cleaned:
                 continue
 
-            if cleaned.lower() in {"exit", "quit", "goodbye", "bye"}:
-                speak(personalize_address("Goodbye sir."))
-                break
             lower = cleaned.lower()
-
-            if not cleaned:
-                continue
 
             if lower in {"exit", "quit", "goodbye", "bye"}:
                 speak(personalize_address("Goodbye sir."))

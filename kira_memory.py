@@ -16,8 +16,10 @@ def _connect():
         timeout=5,
     )
 
-    connection.execute("PRAGMA journal_mode=DELETE")
+    connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA synchronous=NORMAL")
+    connection.execute("PRAGMA temp_store=MEMORY")
+    connection.execute("PRAGMA cache_size=-2000")  # 2MB cache
 
     return connection
 
@@ -411,4 +413,46 @@ def update_memory(category, key, value, confidence=1.0) -> bool:
         value=value,
         confidence=confidence,
     )
+
+
+def prune_old_conversations(keep_days=30):
+    """Delete conversations older than the given number of days."""
+    try:
+        cutoff = (
+            datetime.now()
+            - __import__("datetime").timedelta(days=keep_days)
+        ).isoformat(timespec="seconds")
+
+        with _connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM conversations WHERE created_at < ?",
+                (cutoff,),
+            )
+            return cursor.rowcount
+    except (sqlite3.Error, Exception):
+        return 0
+
+
+def conversation_count():
+    """Return the total number of stored conversation messages."""
+    try:
+        with _connect() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()
+            return row[0] if row else 0
+    except sqlite3.Error:
+        return 0
+
+
+def build_memory_context(category=None, limit=20):
+    """Build a text summary of stored memories for chat context injection."""
+    memories = load_memories(category=category)
+    if not memories:
+        return ""
+
+    lines = ["KIRA MEMORY CONTEXT:"]
+    for mem in memories[:limit]:
+        lines.append(f"- [{mem['category']}] {mem['key']}: {mem['value']}")
+    return "\n".join(lines)
+
+
 initialize()
