@@ -6,6 +6,7 @@ import platform
 import kira_memory
 import kira_calculator
 import kira_reminders
+import kira_thought
 import re
 import subprocess
 import time
@@ -1103,6 +1104,28 @@ def parse_simple_command(command: str):
     }:
         return {"action": "mode_info"}
 
+    # ── the agent's own mind ─────────────────────────────────────────
+    if lower in {
+        "what did you learn",
+        "what have you learned",
+        "show me what you learned",
+        "what do you remember doing",
+        "qu'as-tu appris",
+        "qu'as tu appris",
+        "ماذا تعلمت",
+    }:
+        return {"action": "agent_learnings", "language": detect_language(text)}
+
+    if lower in {
+        "forget what you learned",
+        "forget everything you learned",
+        "clear your learnings",
+        "oublie ce que tu as appris",
+        "efface tes apprentissages",
+        "انس ما تعلمته",
+    }:
+        return {"action": "agent_forget", "language": detect_language(text)}
+
     if (
         lower.startswith("open folder ")
         or lower.startswith("open the folder ")
@@ -1813,6 +1836,10 @@ def analyze_screen(question: str = "Describe what is visible on my screen.") -> 
 
 
 def ask_agent(command: str):
+    """Legacy one-shot planner (no thought, no learning).
+
+    Kept for backwards compatibility; the main loop now uses think_about().
+    """
     try:
         response = call_ollama(
             messages=[
@@ -1837,6 +1864,25 @@ def ask_agent(command: str):
     except Exception as exc:
         print(f"KIRA: Local model unavailable or returned invalid JSON: {exc}")
         return {"action": "none"}
+
+
+def think_about(command: str) -> kira_thought.Thought:
+    """The mind's thinking pass: recall → LLM plan (with a thought trace)."""
+    return kira_thought.think(command, call_ollama)
+
+
+def last_thought() -> "kira_thought.Thought | None":
+    return kira_thought.last_thought()
+
+
+def learn_from(command: str, action: dict, source: str, succeeded: bool):
+    """Record an episode and strengthen/demote the learning behind it."""
+    kira_thought.reflect(
+        kira_memory.normalize_agent_command(command),
+        action,
+        source,
+        "success" if succeeded else "failed",
+    )
 
 
 def ask_chat(command: str):
@@ -2597,6 +2643,19 @@ def execute_action(action_data):
             kira_reminders.cleared_message(cancelled, language)
         )
 
+    if action == "agent_learnings":
+        language = str(action_data.get("language", "en"))
+        return personalize_address(
+            kira_thought.describe_learnings(language=language)
+        )
+
+    if action == "agent_forget":
+        language = str(action_data.get("language", "en"))
+        cleared = kira_memory.clear_learnings()
+        return personalize_address(
+            kira_thought.cleared_message(cleared, language)
+        )
+
     return False
 
 
@@ -2763,11 +2822,18 @@ def main():
                 break
 
             result = parse_simple_command(cleaned)
+            planned_by = "parser"
             if result is None and is_chat_question(cleaned):
                 speak(ask_chat(cleaned))
                 continue
             if result is None:
-                result = ask_agent(cleaned)
+                # think before acting: recall past learnings, then plan
+                # with the local model inside a thought envelope
+                thought = think_about(cleaned)
+                if thought.text:
+                    print(f"[thinking] {thought.text}")
+                result = thought.action
+                planned_by = thought.source
             action = (result or {}).get("action", "none")
 
             if action == "conversation_on":
@@ -2812,6 +2878,9 @@ def main():
 
             lang = detect_language(cleaned)
             success = execute_action(result)
+            if planned_by in {"llm", "memory"}:
+                # reflect: episodes + strengthen/demote the learning
+                learn_from(cleaned, result, planned_by, bool(success))
             if success:
                 action_name = str(action).lower()
                 # Actions returning a string speak their own result

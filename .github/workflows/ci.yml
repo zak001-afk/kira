@@ -25,7 +25,7 @@ jobs:
       - name: Ruff
         run: ruff check .
       - name: Compile check
-        run: python -m compileall dev.py kira_memory.py kira_voice_agent.py main_window.py kira_calculator.py kira_reminders.py scripts tests
+        run: python -m compileall dev.py kira_memory.py kira_thought.py kira_voice_agent.py main_window.py kira_calculator.py kira_reminders.py scripts tests
       - name: Tests
         run: pytest
 

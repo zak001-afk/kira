@@ -3,6 +3,34 @@
 All notable changes to KIRA are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.2.0] — 2026-09-21
+
+### Added
+- **The agent's mind** (`kira_thought.py`): commands the parser can't handle
+  now run through an explicit *think → act → reflect* loop.
+  - **Think**: recall agent memory first (exact + fuzzy command matching),
+    then plan with the local LLM inside a `{"thought", "action"}` envelope.
+    Every action — including nested sequence steps — is validated against a
+    whitelist before execution. The thought is displayed in the UI as a dim
+    `MIND` chat line (and in `kira.log`), never spoken.
+  - **Agent memory** (new SQLite tables): `agent_episodes` (understanding,
+    plan, action, outcome per command) and `agent_learnings` (command →
+    action with success/failure counters).
+  - **Reflect**: successes strengthen a mapping — the next identical or
+    similar command is executed instantly with *no model call*. Failures
+    demote it, and once failures level with successes the mapping becomes
+    ineligible again: KIRA stops repeating mistakes (reflexion).
+- New commands: **"what did you learn"** (lists learned commands, EN/FR/AR)
+  and **"forget what you learned"** (wipes the learnings).
+- 33 new tests: episode/learning CRUD, fuzzy recall, envelope parsing,
+  reflexion (tie-breaking against reuse), end-to-end plan→act→learn→recall,
+  and the new voice commands. **323 tests passing.**
+
+### Changed
+- UI chat panel gains a `MIND` (muted) line type for the thought trace;
+  the legacy one-shot `ask_agent` planner remains for compatibility but the
+  CLI and UI loops now think via `kira_thought`.
+
 ## [2.1.0] — 2026-09-21
 
 ### Added

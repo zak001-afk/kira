@@ -12,9 +12,16 @@ Everything runs on your machine. No cloud APIs, no API keys, no telemetry.
  you ──► mic ──► Vosk/Google STT ──► rule-based parser ─┬─► action done ✓
                         │                               │
                         │                         no match? ▼
-                        │                     Ollama LLM (qwen3) ──► action done ✓
-                        │                               │
-                        └────────── chat question ──────►
+                        │                        THINK: recall agent memory
+                        │                          │ no hit ▼
+                        │                       plan via Ollama LLM (qwen3)
+                        │                          │ thought → action ✓
+                        │                        ACT ──► execute
+                        │                          │
+                        │                        REFLECT ──► episode log +
+                        │                     strengthen/demote the learning
+                        │
+                        └────────── chat question ──────► chat LLM
                                         SQLite memory ◄──┤
 ```
 
@@ -24,9 +31,19 @@ Everything runs on your machine. No cloud APIs, no API keys, no telemetry.
   default), vision via `qwen3-vl:2b`, offline speech recognition via Vosk,
   offline text-to-speech via Windows SAPI (`pyttsx3` fallback).
 - **Trilingual** — commands and conversation in English, French and Arabic.
+- **A real thinking process** — commands the parser can't handle go through
+  *think → act → reflect*: KIRA recalls similar past successes first, plans
+  with the local model inside an explicit `{"thought", "action"}` envelope
+  (the thought appears in the UI/log, never spoken), validates every plan
+  against an action whitelist, then reflects on the outcome.
+- **Its own agent memory** — separate from user facts. KIRA keeps *episodes*
+  (what it understood, did, and how it went) and *learnings* (command →
+  action mappings that worked). Repeated successes get instant recall;
+  failures demote a mapping so it stops repeating mistakes (reflexion).
+  Ask it: **"what did you learn?"** — reset with **"forget what you learned"**.
 - **Layered command routing** — a fast deterministic parser handles ~100
-  built-in phrases; anything ambiguous falls to the local LLM, and questions
-  fall to the chat personality.
+  built-in phrases; anything ambiguous falls to the thinking mind, and
+  questions fall to the chat personality.
 - **Screen vision with verification** — "find the save button and click it":
   KIRA screenshots, asks the vision model for coordinates, clicks at ≥70%
   confidence, then compares before/after screenshots to confirm it worked.
@@ -103,6 +120,8 @@ after the wake word is fine: *"kira, open chrome"*, *"kira: open chrome"*.
 | what's on my screen | qu'est-ce qu'il y a sur mon écran | ماذا يوجد على الشاشة | vision: describe the screen |
 | find the save button and click it | trouve le bouton et clique | — | vision: locate → click → verify |
 | conversation mode / stop conversation | mode conversation | وضع المحادثة | toggle chat mode |
+| what did you learn | qu'as-tu appris | ماذا تعلمت | KIRA reports its learned commands |
+| forget what you learned | oublie ce que tu as appris | انس ما تعلمته | wipe the agent's learnings |
 | calculate 2 to the power of 10 | calcule dix fois trois | كم يساوي ١٢ ضرب ٢ | safe local arithmetic (words & % work) |
 | open github / gmail / netflix | ouvrir netflix | — | known websites (extendable in config) |
 | remind me in 5 minutes to call mom | rappelle-moi dans 2 heures de … | ذكرني بعد 10 دقائق … | set a spoken reminder |
@@ -151,6 +170,31 @@ Notes:
 Environment variables `KIRA_MODEL` / `KIRA_VISION_MODEL` override the model
 names (see `.env.example`).
 
+## How KIRA thinks (the agent mind)
+
+For anything the deterministic parser can't answer, KIRA doesn't just "ask
+the model and pray" — it runs an explicit loop in `kira_thought.py`:
+
+1. **Recall** — checks the agent's own memory first. An exact or fuzzy match
+   (`"open the project folder"` ≈ `"open project folder"`) with more
+   successes than failures is reused **without consulting the model**.
+2. **Think** — otherwise the local LLM must answer with one JSON envelope:
+   `{"thought": "what the user wants and how", "action": {...}}`. The
+   `thought` shows up in the chat panel as a dim `MIND` line (and in
+   `kira.log`); it is never spoken. Every action — including each step of a
+   `sequence` — is validated against the action whitelist before execution.
+3. **Reflect** — after executing, the outcome is written to two SQLite
+   tables (both in `kira_memory.db`, git-ignored, local-only):
+   - `agent_episodes` — thought, action, source and outcome per command;
+   - `agent_learnings` — command → action with success/failure counters.
+
+   A success strengthens the mapping (next time: instant recall with no LLM
+   call). A failure demotes it — as soon as failures level with successes,
+   the mapping is ineligible again, so **KIRA stops repeating mistakes**.
+
+Nothing is learned from deterministic parser commands — only from the
+planner's own decisions.
+
 ## Persistent memory
 
 KIRA keeps two kinds of memory in `kira_memory.db` (SQLite, local only,
@@ -183,6 +227,7 @@ Plain *"click"* and mouse moves always ask for voice confirmation.
 kira/
 ├── main_window.py        # customtkinter UI (orb, state machine, chat panel)
 ├── kira_voice_agent.py   # backend: STT, parser, LLM routing, actions, vision, TTS
+├── kira_thought.py       # the agent's mind: think → act → reflect
 ├── kira_calculator.py    # safe AST-whitelisted arithmetic (EN/FR/AR)
 ├── kira_reminders.py     # in-process spoken reminders with daemon timers
 ├── kira_memory.py        # SQLite persistence (facts + conversations)

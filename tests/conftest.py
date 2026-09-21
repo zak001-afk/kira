@@ -202,6 +202,8 @@ def memory_db():
     with sqlite3.connect(kira_memory.DB_PATH) as connection:
         connection.execute("DELETE FROM memories")
         connection.execute("DELETE FROM conversations")
+        connection.execute("DELETE FROM agent_episodes")
+        connection.execute("DELETE FROM agent_learnings")
     return kira_memory
 
 

@@ -955,13 +955,11 @@ class KiraUI(ctk.CTk):
     def add_message(self, speaker, message):
         self.chat.configure(state="normal")
         ts = datetime.now().strftime("%H:%M")
-        self.chat.insert(
-            "end",
-            f"{speaker.upper()}   {ts}\n",
-            "kira" if speaker.upper() == "KIRA" else "you",
-        )
+        tag = {"KIRA": "kira", "MIND": "mind"}.get(speaker.upper(), "you")
+        self.chat.insert("end", f"{speaker.upper()}   {ts}\n", tag)
         self.chat.insert("end", f"{message}\n\n", "body")
         self.chat.tag_config("kira", foreground=ACCENT)
+        self.chat.tag_config("mind", foreground=MUTED)
         self.chat.tag_config("you", foreground="#B9C8FF")
         self.chat.tag_config("body", foreground=TEXT)
         self.chat.see("end")
@@ -1093,17 +1091,19 @@ class KiraUI(ctk.CTk):
             return (
                 backend.ask_chat(cleaned) if ok else f"I could not start Ollama. {d}."
             )
+        planned_by = "parser"
         if result is None:
             ok, d = self._ensure_ollama()
             if not ok:
                 return f"I could not start Ollama. {d}."
-            print("=== SENDING TO PLANNER ===")
-            print(cleaned)
 
-            result = backend.ask_agent(cleaned)
-
-            print("=== UI PLANNER RESULT ===")
-            print(result)
+            # think before acting — recall first, LLM plan second; the
+            # thought trace is shown in the chat panel (never spoken)
+            thought = backend.think_about(cleaned)
+            if thought.text:
+                self.events.put(("thought", thought.text))
+            result = thought.action
+            planned_by = thought.source
 
         action = (result or {}).get("action", "none")
         if action == "conversation_on":
@@ -1131,6 +1131,10 @@ class KiraUI(ctk.CTk):
         )
 
         success = backend.execute_action(result)
+
+        if planned_by in {"llm", "memory"}:
+            # reflect on what just happened
+            backend.learn_from(cleaned, result, planned_by, bool(success))
 
         if isinstance(success, str):
             return success
@@ -1697,6 +1701,10 @@ class KiraUI(ctk.CTk):
                     else:
                         self.set_state("READY", ACCENT, "Waiting for your command")
                         self._set_busy(False)
+                elif k == "thought":
+                    # the agent's internal plan — displayed, never spoken
+                    if p:
+                        self.add_message("MIND", p)
                 elif k == "state":
                     state, color, detail = p
                     self.set_state(state, color, detail)
