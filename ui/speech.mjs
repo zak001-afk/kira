@@ -22,10 +22,18 @@ function wordTimeline(text, rate = 1) {
   });
 }
 
+// Older embedded WebView2 runtimes may not implement Array.findLast.
+function lastBefore(items, value, key) {
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i][key] <= value) return items[i];
+  }
+  return null;
+}
+
 export class SpeechMotion {
   constructor(now = () => performance.now()) {
     this.now = now;
-    this.frame = { energy: 0, low: 0, high: 0, active: false };
+    this.frame = { energy: 0, low: 0, high: 0, active: false, source: "idle" };
     this.last = now();
     this.stop();
   }
@@ -37,6 +45,7 @@ export class SpeechMotion {
     this.paused = false;
     this.words = [];
     this.offset = 0;
+    this.hasBoundary = false;
     // Keep the envelope: sample() releases it gently back to idle.
   }
 
@@ -46,7 +55,8 @@ export class SpeechMotion {
     this.media = media;
     this.analyser = analyser;
     if (analyser) {
-      this.wave = new Uint8Array(analyser.fftSize);
+      this.floatSamples = typeof analyser.getFloatTimeDomainData === "function";
+      this.wave = this.floatSamples ? new Float32Array(analyser.fftSize) : new Uint8Array(analyser.fftSize);
       this.bins = new Uint8Array(analyser.frequencyBinCount);
     }
     this.words = wordTimeline(text);
@@ -61,7 +71,8 @@ export class SpeechMotion {
 
   boundary(charIndex) {
     if (this.mode !== "browser" || !Number.isFinite(charIndex)) return;
-    const word = this.words.findLast((item) => item.index <= charIndex);
+    const word = lastBefore(this.words, charIndex, "index");
+    this.hasBoundary = true;
     if (word) this.offset = word.start - (this.now() - this.started);
   }
 
@@ -75,8 +86,15 @@ export class SpeechMotion {
     this.paused = false;
   }
 
-  estimatedEnergy(elapsed) {
-    const word = this.words.findLast((item) => item.start <= elapsed);
+  estimatedEnergy(elapsed, keepAlive = false) {
+    const final = this.words[this.words.length - 1];
+    const end = final ? final.start + final.duration : 0;
+    // A voice can speak more slowly than our estimate. Keep gentle estimated
+    // syllables until its real end event, rather than freezing mid-sentence.
+    if (keepAlive && end && elapsed > end + 200) {
+      return 0.18 + 0.3 * Math.sin((elapsed - end) / 125) ** 2;
+    }
+    const word = lastBefore(this.words, elapsed, "start");
     if (!word) return 0;
     const progress = (elapsed - word.start) / word.duration;
     // Silence between words/sentences; never a permanently-running oscillator.
@@ -89,11 +107,13 @@ export class SpeechMotion {
     let energy = 0, low = 0, high = 0;
     const active = Boolean(this.mode && !this.paused);
     if (active && this.analyser) {
-      this.analyser.getByteTimeDomainData(this.wave);
+      if (this.floatSamples) this.analyser.getFloatTimeDomainData(this.wave);
+      else this.analyser.getByteTimeDomainData(this.wave);
       let squares = 0;
-      for (const byte of this.wave) squares += ((byte - 128) / 128) ** 2;
-      // RMS follows syllables; a noise floor keeps silence genuinely still.
-      energy = clamp((Math.sqrt(squares / this.wave.length) - 0.008) * 6);
+      for (const value of this.wave) squares += (this.floatSamples ? value : (value - 128) / 128) ** 2;
+      // Float samples preserve quiet voices that disappear in 8-bit samples.
+      // Soft gain makes low-volume speech visible without animating silence.
+      energy = Math.pow(clamp((Math.sqrt(squares / this.wave.length) - 0.001) * 5), 0.65);
       this.analyser.getByteFrequencyData(this.bins);
       const hzPerBin = this.analyser.context.sampleRate / this.analyser.fftSize;
       const band = (from, to) => {
@@ -107,10 +127,14 @@ export class SpeechMotion {
       high = band(1800, 6500) * energy;
     } else if (active) {
       // Without Web Audio, follow the media clock, not the request's start.
-      const elapsed = this.mode === "audio"
+      let elapsed = this.mode === "audio"
         ? this.media.currentTime * 1000
         : now - this.started + this.offset;
-      energy = this.estimatedEnergy(elapsed);
+      if (this.mode === "audio" && Number.isFinite(this.media.duration) && this.media.duration > 0) {
+        const final = this.words[this.words.length - 1];
+        if (final) elapsed *= (final.start + final.duration) / (this.media.duration * 1000);
+      }
+      energy = this.estimatedEnergy(elapsed, true);
       low = energy * 0.45;
       high = energy * 0.3;
     }
@@ -120,6 +144,8 @@ export class SpeechMotion {
       if (this.frame[key] < 0.0001) this.frame[key] = 0;
     }
     this.frame.active = active;
+    this.frame.source = !active ? "idle" : this.analyser ? "audio"
+      : this.hasBoundary ? "words" : "estimated";
     return this.frame;
   }
 }

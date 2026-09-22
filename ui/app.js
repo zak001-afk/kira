@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { SpeechPlayer } from "./speech.mjs";
+import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
@@ -444,6 +444,37 @@ function drawMatrix() {
    ========================================================= */
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+let motionPreference = "auto";
+try {
+  const saved = localStorage.getItem("kira.motion");
+  if (["auto", "on", "off"].includes(saved)) motionPreference = saved;
+} catch { /* private/embedded browsers may block storage */ }
+const motionButton = document.getElementById("motion-toggle");
+const motionStatus = document.getElementById("motion-status");
+const voiceMeter = document.getElementById("voice-level");
+const motionTest = document.getElementById("motion-test");
+const voiceTest = document.getElementById("voice-test");
+let motionDemoStarted = -Infinity;
+function motionDisabled() {
+  return motionPreference === "off" || (motionPreference === "auto" && reducedMotion.matches);
+}
+function updateMotionButton() {
+  motionButton.textContent = `MOTION: ${motionPreference.toUpperCase()}`;
+  motionButton.title = "Auto follows Windows reduced motion. On explicitly enables movement. Off keeps it still.";
+}
+motionButton.addEventListener("click", () => {
+  const choices = ["auto", "on", "off"];
+  motionPreference = choices[(choices.indexOf(motionPreference) + 1) % choices.length];
+  try { localStorage.setItem("kira.motion", motionPreference); } catch { /* optional */ }
+  updateMotionButton();
+});
+motionTest.addEventListener("click", () => { motionDemoStarted = performance.now(); });
+voiceTest.addEventListener("click", () => {
+  if (!speech.enabled) return;
+  speech.unlock();
+  speak("My core moves with my voice. A short pause. Now I am speaking again.");
+});
+updateMotionButton();
 let lastFrame = performance.now();
 let voiceRotation = 0;
 
@@ -454,13 +485,26 @@ function animate() {
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
   const voice = speech.motion.sample(now);
+  const disabled = motionDisabled();
+  const demoAge = (now - motionDemoStarted) / 1000;
+  const demo = demoAge >= 0 && demoAge < 3;
+  const demoEnergy = demo ? Math.sin(demoAge * Math.PI / 3) * (0.35 + 0.6 * Math.sin(demoAge * 9) ** 2) : 0;
+  const level = demo ? demoEnergy : voice.energy;
+  voiceMeter.style.transform = `scaleX(${voice.energy.toFixed(3)})`;
+  const label = disabled ? (motionPreference === "auto" ? "MOTION OFF · SYSTEM SETTING" : "MOTION OFF")
+    : demo ? "TEST MOTION · NO AUDIO"
+    : !speech.enabled ? "VOICE MUTED"
+    : !voice.active ? (speechState === "THINKING" ? "WAITING FOR VOICE" : "VOICE IDLE")
+    : voice.source === "audio" ? (voice.energy > 0.015 ? "VOICE SYNC · AUDIO" : "VOICE SYNC · QUIET / NO SIGNAL")
+    : voice.source === "words" ? "VOICE SYNC · WORD TIMING" : "VOICE SYNC · ESTIMATED";
+  if (motionStatus.textContent !== label) motionStatus.textContent = label;
   // Reduced motion keeps a quiet brightness cue, not speech-driven movement.
-  const energy = reducedMotion.matches ? 0 : voice.energy;
-  const low = reducedMotion.matches ? 0 : voice.low;
-  const high = reducedMotion.matches ? 0 : voice.high;
-  const light = voice.energy * (reducedMotion.matches ? 0.12 : 1);
-  const motionTime = reducedMotion.matches ? 0 : time;
-  const step = reducedMotion.matches ? 0 : dt;
+  const energy = disabled ? 0 : level;
+  const low = disabled ? 0 : demo ? demoEnergy * 0.6 : voice.low;
+  const high = disabled ? 0 : demo ? demoEnergy * 0.3 : voice.high;
+  const light = level * (disabled ? 0.12 : 1);
+  const motionTime = disabled ? 0 : time;
+  const step = disabled ? 0 : dt;
   voiceRotation += energy * step;
   voiceUniforms.voiceTime.value = motionTime;
   voiceUniforms.voiceEnergy.value = energy;
@@ -471,14 +515,16 @@ function animate() {
   // brighten the inner rings. Silence releases smoothly to its idle breath.
   reactor.rotation.y = motionTime * 0.12;
   reactor.rotation.x = Math.sin(motionTime * 0.18) * 0.08;
-  reactor.position.y = Math.sin(motionTime * 3.5) * energy * 0.06;
+  // Make the whole visible neuron breathe, not just its tiny central light.
+  reactor.scale.set(1.05 + energy * 0.12, 1.05 + energy * 0.23, 1.05 + energy * 0.12);
+  reactor.position.y = Math.sin(motionTime * 3.5) * energy * 0.14;
   armorGroup.rotation.y = -motionTime * 0.08;
   verticalArmor.rotation.y = motionTime * 0.05;
   halo.rotation.z = motionTime * 1.8 + voiceRotation * 0.5;
   halo.scale.setScalar(1 + low * 0.25);
   haloMat.opacity = 0.35 + light * 0.12;
   neuralCore.rotation.z = motionTime * 0.35 + voiceRotation * 0.65;
-  neuralCore.scale.setScalar(1 + energy * 0.1);
+  neuralCore.scale.setScalar(1 + energy * 0.2);
   innerRing.rotation.z = motionTime * 1.2 + voiceRotation;
   innerRing.scale.setScalar(1 + high * 0.25);
   secondRing.rotation.z = -motionTime * 0.8 - voiceRotation * 0.7;
@@ -516,7 +562,7 @@ function animate() {
   reactorParticles.scale.setScalar(1 + low * 0.05);
   particleMat.size = 0.025 + high * 0.012;
 
-  if (!reducedMotion.matches) drawMatrix();
+  if (!disabled) drawMatrix();
   composer.render();
 }
 

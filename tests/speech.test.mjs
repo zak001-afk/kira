@@ -71,12 +71,13 @@ test("browser word boundaries re-anchor estimated motion to the actual word", ()
   const { motion, advance } = motionRig();
   motion.startBrowser("hello world");
   advance(4000);
-  assert.equal(advance().energy, 0);
+  assert.ok(advance().energy > 0, "slow voices must not freeze after the estimate");
   motion.boundary(6);
+  assert.equal(motion.offset, 295 - 4100);
   assert.ok(advance(100).energy > 0);
 });
 
-test("browser fallback has quiet sentence gaps and stops after its estimate", () => {
+test("browser fallback keeps moving until the actual end, not just its estimate", () => {
   const { motion, advance } = motionRig();
   motion.startBrowser("Hi. Next.");
   assert.ok(advance(100).energy > 0);
@@ -84,6 +85,9 @@ test("browser fallback has quiet sentence gaps and stops after its estimate", ()
   const pause = advance(200).energy;
   assert.ok(pause < 0.65);
   for (let i = 0; i < 40; i++) advance();
+  assert.ok(advance().energy > 0);
+  motion.stop();
+  for (let i = 0; i < 25; i++) advance();
   assert.equal(advance().energy, 0);
 });
 
@@ -271,4 +275,30 @@ test("closing the page releases audio nodes, URLs, timers and the context", asyn
   assert.equal(rig.revoked.length, 1);
   assert.equal(rig.timers.size, 0);
   assert.equal(rig.player.session, null);
+});
+
+
+test("quiet float audio is visible even below the previous byte noise floor", () => {
+  const { motion, advance } = motionRig();
+  const quiet = { ...analyser(), getFloatTimeDomainData(out) { out.fill(0.004); } };
+  motion.startAudio(quiet, { currentTime: 0 }, "quiet voice");
+  assert.ok(advance().energy > 0.04);
+  assert.equal(motion.frame.source, "audio");
+});
+
+test("audio fallback stretches word timing to the real clip duration", () => {
+  const { motion, advance } = motionRig();
+  const media = { currentTime: 4, duration: 8 };
+  motion.startAudio(null, media, "hello");
+  assert.ok(advance().energy > 0.5);
+  assert.equal(motion.frame.source, "estimated");
+});
+
+test("speech estimates do not require Array.findLast in older WebViews", () => {
+  const { motion, advance } = motionRig();
+  motion.startBrowser("hello world");
+  motion.words.findLast = undefined;
+  motion.boundary(6);
+  assert.ok(advance().energy > 0);
+  assert.equal(motion.frame.source, "words");
 });

@@ -37,6 +37,13 @@ HOST = "0.0.0.0"
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
     """HTTP handler that serves the UI files with minimal logging."""
 
+    # WebView2 must pick up new UI modules after a git pull, not a cached build.
+    extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map, ".mjs": "text/javascript"}
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def log_message(self, format, *args):
         pass  # Suppress access logs
 

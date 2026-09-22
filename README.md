@@ -145,22 +145,40 @@ unavailable, audio still plays normally with estimated motion. The operating
 system's **Reduce motion** preference disables deformation and moving effects,
 leaving a subtle brightness cue.
 
-**Try it:** launch `python main_window.py`, leave voice output on and type
-`hello`, then request a longer answer. Check that the core starts responding when
-the sound starts, relaxes between phrases and settles when it finishes. Mute it
-mid-reply (or while the voice is loading): neither the sound nor the animation
-should restart from a late response. For the exact audio-driven effect, neural
-TTS must be available; browser fallback word timing depends on the voice.
+**If the core appears still:**
+1. Close KIRA, update your checkout and relaunch `python main_window.py`.
+2. Look for **SPEECH SYNC 02** in the right-hand panel. If it is absent, you
+   are running an older copy/build. The source UI is now served without caching.
+3. Click **MOTION: AUTO** once to select **MOTION: ON**. This is an explicit
+   opt-in to animation even if Windows requests reduced motion; Off/Auto remain
+   available, and your choice is remembered.
+4. Click **TEST MOTION**. The whole core should breathe for three seconds. This
+   checks rendering without audio, Ollama or a command to your computer.
+5. Leave voice output on and click **TEST VOICE**. Watch the red meter:
+   **AUDIO** means real audio samples, **WORD TIMING** means browser word events,
+   and **ESTIMATED** means approximate timing. **QUIET / NO SIGNAL** means no
+   measurable output at that moment; **SYSTEM SETTING** means motion is disabled.
+6. Ask for a longer reply, then mute it mid-sentence. The core should settle.
+
+The complete neuron now expands with speech, so the response is visible rather
+than limited to the small central light. Quiet audio gets gentle gain. A slow
+browser voice no longer stops animating merely because its timing estimate ran
+out; that fallback remains approximate until real speech-end/boundary events.
+If the visual-only test works but voice does not, report the meter/status text
+and whether you can hear the reply. Neither test analyses the microphone.
 
 **Developer checks** (Node.js 22+, no npm packages required):
 ```sh
 node --check ui/app.js
 node --check ui/speech.mjs
 node --test tests/*.test.mjs
+python -m unittest discover -s tests -p "test_*.py"
 ```
 The tests cover the audio envelope, fallback timing, interruption/mute, stale
 callbacks, resource cleanup and the actual app's reactor wiring with rendering
-and audio test doubles. They do not replace a Windows/WebView2 listening test.
+and audio test doubles. A real headless Chromium test with decoded PCM audio also exercised the actual
+WebGL renderer and the controls. These checks do not replace a Windows/WebView2
+listening test.
 
 ## 🏗️ Architecture
 

@@ -10,6 +10,7 @@ import { playerRig } from "./support/speech-fakes.mjs";
 function appRig(options = {}) {
   const rig = playerRig(options);
   const elements = new Map(), listeners = new Map(), requests = [];
+  const storage = new Map(options.motionPreference ? [["kira.motion", options.motionPreference]] : []);
   class Vector {
     constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
     set(x, y, z) { this.x = x; this.y = y; this.z = z; }
@@ -65,6 +66,7 @@ function appRig(options = {}) {
     location: { protocol: "http:", hostname: "127.0.0.1" },
     innerWidth: 1280, innerHeight: 800, devicePixelRatio: 1,
     matchMedia: () => mediaQuery,
+    localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     requestAnimationFrame() {}, setInterval() {},
     addEventListener(name, fn) { listeners.set(name, fn); },
     fetch: async (url, init) => {
@@ -81,7 +83,7 @@ function appRig(options = {}) {
     core, neuralCore, coreGlow, reactor, voiceUniforms, energyMaterial,
   };`, context);
   return {
-    ...rig, probe: context.probe, element, listeners, requests,
+    ...rig, probe: context.probe, element, listeners, requests, storage,
     step(ms = 100) { rig.advance(ms); context.probe.animate(); },
   };
 }
@@ -150,4 +152,67 @@ test("page exit cleans up the real app's audio session", async () => {
   assert.equal(rig.probe.speech.session, null);
   assert.equal(rig.contexts[0].state, "closed");
   assert.equal(rig.timers.size, 0);
+});
+
+
+test("Motion On explicitly overrides system reduced motion", async () => {
+  const rig = appRig({ reducedMotion: true });
+  assert.equal(rig.element("motion-toggle").textContent, "MOTION: AUTO");
+  assert.match(rig.element("motion-status").textContent, /SYSTEM SETTING/);
+  rig.element("motion-toggle").click();
+  await rig.probe.speak("hello");
+  rig.step();
+  assert.equal(rig.element("motion-toggle").textContent, "MOTION: ON");
+  assert.ok(rig.probe.reactor.scale.y > 1.1, "the whole neuron should visibly breathe");
+  assert.match(rig.element("motion-status").textContent, /AUDIO/);
+});
+
+test("Test Motion checks the renderer without audio, network or Ollama", () => {
+  const rig = appRig();
+  const beforeRequests = rig.requests.length;
+  rig.element("motion-test").click();
+  rig.step(500);
+  assert.ok(rig.probe.reactor.scale.y > 1.08);
+  assert.equal(rig.audios.length, 0);
+  assert.equal(rig.requests.length, beforeRequests);
+  assert.match(rig.element("motion-status").textContent, /TEST MOTION/);
+  rig.step(4000);
+  assert.equal(rig.probe.reactor.scale.y, 1.05);
+});
+
+test("Motion Off is respected during the visual test", () => {
+  const rig = appRig();
+  rig.element("motion-toggle").click(); // on
+  rig.element("motion-toggle").click(); // off
+  rig.element("motion-test").click();
+  rig.step(500);
+  assert.equal(rig.probe.reactor.scale.y, 1.05);
+  assert.match(rig.element("motion-status").textContent, /MOTION OFF/);
+});
+
+test("Test Voice exercises speech without sending a desktop command", async () => {
+  const rig = appRig();
+  rig.element("voice-test").click();
+  await new Promise(setImmediate);
+  rig.step();
+  assert.equal(rig.audios.length, 1);
+  assert.ok(rig.requests.some(r => r.url.endsWith("/api/tts")));
+  assert.ok(!rig.requests.some(r => r.url.endsWith("/api/command")));
+  assert.match(rig.element("motion-status").textContent, /AUDIO/);
+  assert.notEqual(rig.element("voice-level").style.transform, "scaleX(0.000)");
+});
+
+
+test("explicit motion preference persists and is restored on the next launch", () => {
+  const rig = appRig({ reducedMotion: true });
+  rig.element("motion-toggle").click();
+  assert.equal(rig.storage.get("kira.motion"), "on");
+  const reopened = appRig({ reducedMotion: true, motionPreference: rig.storage.get("kira.motion") });
+  assert.equal(reopened.element("motion-toggle").textContent, "MOTION: ON");
+  assert.equal(reopened.element("motion-status").textContent, "VOICE IDLE");
+});
+
+test("diagnostic controls opt back into pointer events inside the HUD", () => {
+  const css = readFileSync(new URL("../ui/style.css", import.meta.url), "utf8");
+  assert.match(css, /\.speech-diagnostics\s*\{[^}]*pointer-events:\s*auto/);
 });

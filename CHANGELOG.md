@@ -1,5 +1,25 @@
 # KIRA Changelog
 
+## Unreleased — Speech sync 02 follow-up
+
+- Add **Motion: Auto / On / Off** (remembered per browser). Auto still respects
+  reduced-motion accessibility settings; On explicitly overrides them. Show
+  when a system preference is suppressing movement instead of silently freezing.
+- Add **Test Motion** (a three-second visual-only check), **Test Voice** (no AI
+  command), a voice-level meter and the visible **SPEECH SYNC 02** build label.
+- Make the whole neuron breathe with the voice, rather than only the tiny core.
+- Preserve low-volume audio with float samples and softer gain. Browser speech
+  now keeps estimated movement until its actual end event, including voices
+  that speak more slowly than the text estimate. Media fallback uses the real
+  clip duration when available. Avoid Array.findLast on older embedded engines.
+- Version UI entrypoints and serve static modules uncached, with an explicit
+  JavaScript MIME type for `.mjs`, to prevent an old WebView UI being reused.
+- Verify 38 Node checks plus two stdlib HTTP tests. A real headless Chromium /
+  WebGL / Web Audio run also verified actual mouse clicks on the controls,
+  reduced-motion override, generated PCM playback, changing neuron scale and
+  cleanup after playback; no script/shader errors. This does not establish
+  which setting/runtime caused the original report on the user's Windows PC.
+
 ## Unreleased — Speech-reactive neural core
 
 - Neural voice playback now drives the core's scale, energy-shell deformation,
