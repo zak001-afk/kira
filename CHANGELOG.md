@@ -1,5 +1,26 @@
 # KIRA Changelog
 
+## Unreleased — Speech-reactive neural core
+
+- Neural voice playback now drives the core's scale, energy-shell deformation,
+  inner-ring movement and glow through a local Web Audio analyser. Loudness and
+  frequency bands follow the actual audio; pauses and the end of a reply relax
+  smoothly to idle. Existing reactor styling and slower Matrix rain are kept.
+- Browser speech uses word-boundary callbacks where supported, with approximate
+  text-paced motion otherwise. No phoneme alignment or semantic analysis is
+  claimed. Web Audio failure does not prevent ordinary audio playback.
+- Respect reduced-motion preferences: no deformation or moving effects, just a
+  subdued speech-brightness cue.
+- Fix voice lifecycle issues relevant to synchronization: stale TTS responses
+  cannot restart muted/replaced speech; browser speech is cancelled on mute;
+  audio URLs and nodes are released on interruption/end; TTS requests and
+  startup have timeouts; READY callbacks no longer overwrite SPEAKING.
+- Add 29 dependency-free Node tests and a focused GitHub Actions check for
+  speech handling and reactor integration. Windows audio/visual verification
+  remains a manual check.
+- Based on the merged V8.1 interface (`f37a6b6`), not the earlier 2.x UI. This
+  change does not resolve the other backend/security findings from that review.
+
 ## Version 8.1 - Resource Efficiency & Extensibility Update
 
 ### 🚀 New Features

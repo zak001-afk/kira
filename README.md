@@ -128,7 +128,39 @@ build_kira.bat
 Use the command bar at the bottom of the interface to type commands instead of using voice.
 
 ### Web Interface
-Access the web UI at `http://localhost:8765` when the API server is running.
+With `main_window.py` running, the interface is served at `http://127.0.0.1:8766`;
+the API uses port 8765.
+
+### Speech-reactive neural core
+The core now moves with KIRA's spoken reply rather than running a fixed talking
+animation. Neural audio is analysed locally with the Web Audio API: loudness
+controls expansion and glow, while low/high frequencies reshape the energy shell
+and animate the inner rings. Pauses relax the core; playback ending or muting it
+returns it smoothly to idle. No microphone audio is analysed for this effect.
+
+Browser speech uses word-boundary events when the selected voice supplies them.
+Otherwise it uses approximate text-paced motion. This is speech-rhythm animation,
+not phoneme/lip synchronization or word-meaning recognition. If Web Audio is
+unavailable, audio still plays normally with estimated motion. The operating
+system's **Reduce motion** preference disables deformation and moving effects,
+leaving a subtle brightness cue.
+
+**Try it:** launch `python main_window.py`, leave voice output on and type
+`hello`, then request a longer answer. Check that the core starts responding when
+the sound starts, relaxes between phrases and settles when it finishes. Mute it
+mid-reply (or while the voice is loading): neither the sound nor the animation
+should restart from a late response. For the exact audio-driven effect, neural
+TTS must be available; browser fallback word timing depends on the voice.
+
+**Developer checks** (Node.js 22+, no npm packages required):
+```sh
+node --check ui/app.js
+node --check ui/speech.mjs
+node --test tests/*.test.mjs
+```
+The tests cover the audio envelope, fallback timing, interruption/mute, stale
+callbacks, resource cleanup and the actual app's reactor wiring with rendering
+and audio test doubles. They do not replace a Windows/WebView2 listening test.
 
 ## 🏗️ Architecture
 
