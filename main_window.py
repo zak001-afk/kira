@@ -1,1786 +1,433 @@
-import customtkinter as ctk
-import tkinter as tk
-from PIL import Image
-from datetime import datetime
-from pathlib import Path
-import threading, queue, sys, os, math, subprocess, time, random, urllib.request, urllib.error
+"""
+KIRA — Neural Interface (Native App)
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = HERE
-for candidate in (HERE, os.path.dirname(HERE)):
-    if os.path.exists(os.path.join(candidate, "kira_voice_agent.py")):
-        PROJECT_ROOT = candidate
-        sys.path.insert(0, candidate)
-        break
+This is the main entry point for KIRA as a native desktop application.
+It uses pywebview to create a native window that renders the web UI,
+making it look and feel like a real desktop app (no browser chrome).
+"""
+
+import os
+import sys
+import threading
+import time
+from pathlib import Path
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from functools import partial
+
+# Add project root to path
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+# Import KIRA backend modules with error handling
+backend = None
+BACKEND_ERROR = None
+
+try:
+    import kira_api
+    print("[OK] kira_api loaded")
+except Exception as e:
+    print(f"[ERROR] Failed to import kira_api: {e}")
+    kira_api = None
+
 try:
     import kira_voice_agent as backend
-except Exception as exc:
+    print("[OK] kira_voice_agent loaded")
+except Exception as e:
+    print(f"[WARNING] Failed to import kira_voice_agent: {e}")
+    print("         Some features may not work (voice, actions, chat)")
+    BACKEND_ERROR = str(e)
     backend = None
-    BACKEND_IMPORT_ERROR = exc
 
-import kira_orb
-
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("dark-blue")
-BG = "#02060B"
-SIDEBAR = "#040B13"
-PANEL = "#07111B"
-PANEL2 = "#091722"
-BORDER = "#12344A"
-TEXT = "#F4F8FF"
-MUTED = "#6F879C"
-ACCENT = "#FF2A2A"
-ACCENT_WARM = "#FF3B30"
-ACCENT_HOT = "#FF1744"
-ACCENT_ALT = "#FF5252"
-RED = "#FF1A1A"
-AMBER = "#FFB84D"
-FONT = "Segoe UI"
-
-
-class KiraUI(ctk.CTk):
-
-    def __init__(self):
-        super().__init__()
-        self.title("KIRA — Local AI Computer Agent")
-        self.geometry("1540x930")
-        self.minsize(1180, 760)
-        self.configure(fg_color=BG)
-        self.phase = 0.0
-        self.particle_phase = 0.0
-        self.pulse = 0.0
-        self.last_state = "READY"
-        # ============================================================
-        # MATRIX RED BACKGROUND
-        # ============================================================
-
-        self.matrix_canvas = None
-        self.matrix_streams = []
-        self.matrix_last_width = 0
-        self.matrix_last_height = 0
-        self.matrix_font = ("Consolas", 11)
-        # KIRA application icon
-        self.icon_path = Path(__file__).parent / "assets" / "kira_app.ico"
-        self.logo_path = Path(__file__).parent / "assets" / "kira_app_icon.png"
-
-        # Windows title bar / taskbar icon
-        if self.icon_path.exists():
-            try:
-                self.iconbitmap(default=str(self.icon_path))
-                self.iconbitmap(str(self.icon_path))
-            except Exception:
-                pass
-
-        # Fallback for environments where .ico loading is unavailable
-        if self.logo_path.exists():
-            try:
-                self._app_logo = tk.PhotoImage(file=str(self.logo_path))
-                self.iconphoto(True, self._app_logo)
-            except Exception:
-                pass
-        self.events = queue.Queue()
-        self.busy = False
-        self.listening = False
-        self.speaking = False
-        self.closing = False
-        self._animation_job = None
-        self._event_job = None
-        self.phase = 0.0
-        self.particle_phase = 0.0
-        self.pulse = 0.0
-        self.last_state = "READY"
-        self._build_ui()
-        self._animate()
-        self._poll_events()
-        self.protocol("WM_DELETE_WINDOW", self.close)
-        if backend is None:
-            self.set_state("ERROR", RED, "Backend could not be loaded")
-            self.add_message("SYSTEM", f"Backend error: {BACKEND_IMPORT_ERROR}")
-        else:
-            self.add_message("KIRA", "Hello sir. I am ready for your orders.")
-            self._update_statuses()
-
-    def _build_ui(self):
-        # ============================================================
-        # KIRA — CINEMATIC CORE UI
-        # ============================================================
-
-        self.configure(fg_color="#010102")
-
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-
-        # ------------------------------------------------------------
-        # ROOT
-        # ------------------------------------------------------------
-
-        root = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
-
-        root.grid(row=0, column=0, sticky="nsew")
-        # ============================================================
-        # ANIMATED RED MATRIX BACKGROUND
-        # ============================================================
-
-        self.matrix_canvas = tk.Canvas(
-            root,
-            bg="#010102",
-            highlightthickness=0,
-            bd=0,
-        )
-
-        self.matrix_canvas.place(
-            relx=0,
-            rely=0,
-            relwidth=1,
-            relheight=1,
-        )
-
-        root.grid_columnconfigure(0, weight=1)
-        root.grid_rowconfigure(1, weight=1)
-
-        # ------------------------------------------------------------
-        # TOP BAR
-        # ------------------------------------------------------------
-
-        top = ctk.CTkFrame(root, fg_color="transparent", height=65)
-
-        top.grid(row=0, column=0, sticky="ew", padx=30, pady=(18, 0))
-
-        top.grid_columnconfigure(1, weight=1)
-
-        # KIRA mark
-
-        ctk.CTkLabel(
-            top,
-            text="K I R A",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color="#EAFBFF",
-        ).grid(row=0, column=0, sticky="w")
-
-        # Core designation
-
-        ctk.CTkLabel(
-            top,
-            text="AI CORE // LOCAL INSTANCE",
-            font=ctk.CTkFont(size=8, weight="bold"),
-            text_color="#385365",
-        ).grid(row=0, column=1, sticky="w", padx=18)
-
-        # Online indicator
-
-        self.header_status = ctk.CTkLabel(
-            top,
-            text="● ONLINE",
-            font=ctk.CTkFont(size=9, weight="bold"),
-            text_color="#20E58A",
-        )
-
-        self.header_status.grid(row=0, column=2, padx=15)
-
-        # Model
-
-        self.model_chip = ctk.CTkLabel(
-            top,
-            text=f"{getattr(backend, 'DEFAULT_MODEL', 'LOCAL')}",
-            font=ctk.CTkFont(size=8),
-            text_color="#5F7A8D",
-        )
-
-        self.model_chip.grid(row=0, column=3, padx=10)
-
-        # Settings
-
-        ctk.CTkButton(
-            top,
-            text="⚙",
-            width=32,
-            height=32,
-            corner_radius=16,
-            fg_color="transparent",
-            hover_color="#0A1720",
-            text_color="#4E6878",
-            font=ctk.CTkFont(size=14),
-            command=lambda: self.add_message(
-                "SYSTEM", "KIRA settings are controlled through kira_config.json."
-            ),
-        ).grid(row=0, column=4)
-
-        # ------------------------------------------------------------
-        # MAIN CORE AREA
-        # ------------------------------------------------------------
-
-        core_area = ctk.CTkFrame(root, fg_color="transparent")
-
-        core_area.grid(row=1, column=0, sticky="nsew", padx=30, pady=5)
-
-        core_area.grid_columnconfigure(0, weight=1)
-        core_area.grid_rowconfigure(0, weight=1)
-
-        # ------------------------------------------------------------
-        # CONVERSATION — FLOATING LEFT
-        # ------------------------------------------------------------
-
-        conversation = ctk.CTkFrame(
-            core_area,
-            width=330,
-            fg_color="transparent",
-            corner_radius=16,
-            border_width=1,
-            border_color="#4A0808",
-        )
-
-        conversation.place(relx=0.02, rely=0.15, relwidth=0.28, relheight=0.62)
-        # Matrix glass background for conversation panel
-        self.conversation_matrix = tk.Canvas(
-            conversation,
-            bg="#020101",
-            highlightthickness=0,
-            bd=0,
-        )
-
-        self.conversation_matrix.place(
-            relx=0,
-            rely=0,
-            relwidth=1,
-            relheight=1,
-        )
-
-        ctk.CTkLabel(
-            conversation,
-            text="CONVERSATION",
-            font=ctk.CTkFont(size=8, weight="bold"),
-            text_color="#3D6274",
-        ).pack(anchor="w", padx=16, pady=(15, 5))
-
-        self.chat = ctk.CTkTextbox(
-            conversation,
-            fg_color="transparent",
-            border_width=0,
-            text_color="#DCECF2",
-            font=ctk.CTkFont(size=11),
-            wrap="word",
-            activate_scrollbars=True,
-        )
-
-        self.chat.pack(fill="both", expand=True, padx=12, pady=(0, 12))
-
-        self.chat.configure(state="disabled")
-
-        # ------------------------------------------------------------
-        # CENTRAL CORE
-        # ------------------------------------------------------------
-
-        center = ctk.CTkFrame(core_area, fg_color="transparent")
-
-        center.place(relx=0.30, rely=0.02, relwidth=0.40, relheight=0.90)
-
-        # Large animated canvas
-
-        self.canvas = tk.Canvas(
-            center,
-            bg="#010102",
-            highlightthickness=0,
-            bd=0,
-        )
-
-        self.canvas.pack(fill="both", expand=True)
-
-        # State
-
-        self.state_label = ctk.CTkLabel(
-            center,
-            text="STANDBY",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#4C7385",
-        )
-
-        self.state_label.place(relx=0.5, rely=0.76, anchor="center")
-
-        self.detail_label = ctk.CTkLabel(
-            center,
-            text="KIRA CORE ONLINE",
-            font=ctk.CTkFont(size=8),
-            text_color="#294553",
-        )
-
-        self.detail_label.place(relx=0.5, rely=0.80, anchor="center")
-
-        # Technical labels
-
-        ctk.CTkLabel(
-            center,
-            text="NEURAL ENGINE",
-            font=ctk.CTkFont(size=7, weight="bold"),
-            text_color="#264352",
-        ).place(relx=0.5, rely=0.87, anchor="center")
-
-        # ------------------------------------------------------------
-        # RIGHT SYSTEM HUD
-        # ------------------------------------------------------------
-
-        system = ctk.CTkFrame(
-            core_area,
-            width=260,
-            fg_color="transparent",
-            corner_radius=16,
-            border_width=1,
-            border_color="#4A0808",
-        )
-
-        system.place(relx=0.71, rely=0.15, relwidth=0.27, relheight=0.62)
-        # Matrix glass background for system panel
-        self.system_matrix = tk.Canvas(
-            system,
-            bg="#020101",
-            highlightthickness=0,
-            bd=0,
-        )
-
-        self.system_matrix.place(
-            relx=0,
-            rely=0,
-            relwidth=1,
-            relheight=1,
-        )
-
-        ctk.CTkLabel(
-            system,
-            text="SYSTEM STATUS",
-            font=ctk.CTkFont(size=8, weight="bold"),
-            text_color="#3D6274",
-        ).pack(anchor="w", padx=18, pady=(15, 15))
-
-        def hud_metric(label):
-
-            row = ctk.CTkFrame(system, fg_color="transparent", height=30)
-
-            row.pack(fill="x", padx=18, pady=2)
-
-            row.grid_columnconfigure(1, weight=1)
-
-            ctk.CTkLabel(
-                row, text=label, font=ctk.CTkFont(size=8), text_color="#456273"
-            ).grid(row=0, column=0, sticky="w")
-
-            value = ctk.CTkLabel(
-                row,
-                text="--",
-                font=ctk.CTkFont(size=9, weight="bold"),
-                text_color="#C9EAF2",
-            )
-
-            value.grid(row=0, column=1, sticky="e")
-
-            return value
-
-        self.cpu_label = hud_metric("CPU")
-        self.ram_label = hud_metric("MEMORY")
-        self.gpu_label = hud_metric("GPU")
-
-        ctk.CTkFrame(system, height=1, fg_color="transparent").pack(
-            fill="x", padx=18, pady=16
-        )
-
-        ctk.CTkLabel(
-            system,
-            text="CORE",
-            font=ctk.CTkFont(size=8, weight="bold"),
-            text_color="#3D6274",
-        ).pack(anchor="w", padx=18, pady=(0, 8))
-
-        self.model_label = ctk.CTkLabel(
-            system,
-            text=getattr(backend, "DEFAULT_MODEL", "LOCAL"),
-            font=ctk.CTkFont(size=9, weight="bold"),
-            text_color="#BEEBF4",
-        )
-
-        self.model_label.pack(anchor="w", padx=18)
-
-        ctk.CTkLabel(
-            system,
-            text="LOCAL AI MODEL",
-            font=ctk.CTkFont(size=7),
-            text_color="#345463",
-        ).pack(anchor="w", padx=18, pady=(1, 10))
-
-        ctk.CTkLabel(
-            system,
-            text="ACTIVITY",
-            font=ctk.CTkFont(size=8, weight="bold"),
-            text_color="#3D6274",
-        ).pack(anchor="w", padx=18, pady=(8, 7))
-
-        self.activity_label = ctk.CTkLabel(
-            system,
-            text="●  STANDBY",
-            font=ctk.CTkFont(size=9, weight="bold"),
-            text_color="#20E58A",
-        )
-
-        self.activity_label.pack(anchor="w", padx=18)
-
-        # Existing animation waveform
-
-        self.wave = tk.Canvas(
-            system, width=190, height=45, bg="#020101", highlightthickness=0, bd=0
-        )
-
-        self.wave.pack(padx=18, pady=(15, 8))
-
-        # Legacy compatibility
-
-        self.date_label = ctk.CTkLabel(system, text="")
-
-        self.clock_label = ctk.CTkLabel(system, text="")
-
-        # ------------------------------------------------------------
-        # BOTTOM COMMAND INTERFACE
-        # ------------------------------------------------------------
-
-        command = ctk.CTkFrame(root, fg_color="transparent", height=105)
-
-        command.grid(row=2, column=0, sticky="ew", padx=100, pady=(0, 18))
-
-        command.grid_columnconfigure(0, weight=1)
-
-        # Main input
-
-        composer = ctk.CTkFrame(
-            command,
-            height=58,
-            fg_color="transparent",
-            corner_radius=18,
-            border_width=1,
-            border_color="#DA1923",
-        )
-
-        composer.grid(row=0, column=0, sticky="ew")
-
-        composer.grid_columnconfigure(0, weight=1)
-
-        self.entry = ctk.CTkEntry(
-            composer,
-            placeholder_text="Ask KIRA...",
-            height=48,
-            border_width=0,
-            fg_color="transparent",
-            text_color="#E7F8FC",
-            placeholder_text_color="#DA1923",
-            font=ctk.CTkFont(size=13),
-        )
-
-        self.entry.grid(row=0, column=0, sticky="ew", padx=(18, 5), pady=5)
-
-        self.entry.bind("<Return>", lambda _e: self.send_message())
-
-        # Voice
-
-        self.mic_btn = ctk.CTkButton(
-            composer,
-            text="🎙",
-            width=42,
-            height=42,
-            corner_radius=21,
-            fg_color="transparent",
-            hover_color="#DA1923",
-            text_color="#DA1923",
-            font=ctk.CTkFont(size=14),
-            command=self.toggle_listening,
-        )
-
-        self.mic_btn.grid(row=0, column=1, padx=2, pady=8)
-
-        # Send
-
-        self.send_btn = ctk.CTkButton(
-            composer,
-            text="➤",
-            width=42,
-            height=42,
-            corner_radius=21,
-            fg_color="transparent",
-            hover_color="#FF5555",
-            text_color="#021015",
-            font=ctk.CTkFont(size=15, weight="bold"),
-            command=self.send_message,
-        )
-
-        self.send_btn.grid(row=0, column=2, padx=(2, 8), pady=8)
-
-        # Quick commands
-
-        quick = ctk.CTkFrame(command, fg_color="transparent")
-
-        quick.grid(row=1, column=0, sticky="w", pady=(7, 0))
-
-        def quick_command(text):
-
-            btn = ctk.CTkButton(
-                quick,
-                text=text,
-                height=22,
-                corner_radius=11,
-                fg_color="#120304",
-                hover_color="#350707",
-                border_width=1,
-                border_color="#5A0A0A",
-                text_color="#466877",
-                font=ctk.CTkFont(size=8),
-                command=lambda t=text: self._use_suggestion(t),
-            )
-
-            btn.pack(side="left", padx=(0, 6))
-
-        quick_command("OPEN CHROME")
-        quick_command("ANALYZE SCREEN")
-        quick_command("SYSTEM STATUS")
-
-    def _build_sidebar(self):
-        s = ctk.CTkFrame(
-            self,
-            fg_color="transparent",
-            corner_radius=0,
-            border_width=1,
-            border_color="#0A2232",
-        )
-        s.grid(row=0, column=0, sticky="nsew")
-        s.grid_rowconfigure(10, weight=1)
-        brand = ctk.CTkFrame(s, fg_color="transparent")
-        brand.pack(fill="x", padx=20, pady=(22, 28))
-        # KIRA application logo
-        logo_path = Path(__file__).parent / "assets" / "kira_app_icon.png"
-        if logo_path.exists():
-            try:
-                self.logo_image = ctk.CTkImage(
-                    light_image=Image.open(logo_path),
-                    dark_image=Image.open(logo_path),
-                    size=(54, 54),
-                )
-                logo = ctk.CTkLabel(
-                    brand, image=self.logo_image, text="", fg_color="transparent"
-                )
-                logo.pack(side="left", padx=(0, 10))
-            except Exception:
-                logo = ctk.CTkLabel(
-                    brand,
-                    text="◉",
-                    text_color=ACCENT,
-                    font=ctk.CTkFont(size=30, weight="bold"),
-                )
-                logo.pack(side="left", padx=(0, 10))
-        else:
-            logo = ctk.CTkLabel(
-                brand,
-                text="◉",
-                text_color=ACCENT,
-                font=ctk.CTkFont(size=30, weight="bold"),
-            )
-            logo.pack(side="left", padx=(0, 10))
-        labels = ctk.CTkFrame(brand, fg_color="transparent")
-        labels.pack(side="left")
-        ctk.CTkLabel(
-            labels,
-            text="KIRA",
-            text_color=TEXT,
-            font=ctk.CTkFont(size=27, weight="bold"),
-        ).pack(anchor="w")
-        ctk.CTkLabel(
-            labels,
-            text="LOCAL AI COMPUTER AGENT",
-            text_color=MUTED,
-            font=ctk.CTkFont(size=8, weight="bold"),
-        ).pack(anchor="w")
-        self.nav_buttons = {}
-        items = [
-            ("▣", "Chat"),
-            ("♩", "Voice"),
-            ("⌘", "Commands"),
-            ("◉", "Vision"),
-            ("□", "Files"),
-            ("⚒", "Tools"),
-            ("◎", "Memory"),
-            ("⚙", "Settings"),
+try:
+    import kira_tasks
+    print("[OK] kira_tasks loaded")
+except Exception as e:
+    print(f"[WARNING] Failed to import kira_tasks: {e}")
+    kira_tasks = None
+
+# Import caching
+try:
+    from kira_cache import command_cache, start_cache_cleanup_thread
+    CACHE_ENABLED = True
+    print("[OK] Caching enabled")
+except ImportError:
+    CACHE_ENABLED = False
+    print("[WARNING] Caching not available")
+
+# Try to import webview
+try:
+    import webview
+    WEBVIEW_AVAILABLE = True
+except ImportError:
+    WEBVIEW_AVAILABLE = False
+    print("Warning: pywebview not installed. Install with: pip install pywebview")
+
+# ─────────────────────────────────────────────
+# Configuration
+# ─────────────────────────────────────────────
+
+API_PORT = 8765
+UI_PORT = 8766
+HOST = "127.0.0.1"
+WINDOW_TITLE = "KIRA — Neural Interface"
+WINDOW_WIDTH = 1400
+WINDOW_HEIGHT = 900
+
+
+# ─────────────────────────────────────────────
+# HTTP Server for UI files
+# ─────────────────────────────────────────────
+
+class QuietHandler(SimpleHTTPRequestHandler):
+    """HTTP handler that serves UI files with minimal logging."""
+    
+    def log_message(self, format, *args):
+        pass  # Suppress access logs
+
+
+def start_ui_server():
+    """Start HTTP server for UI files on UI_PORT."""
+    ui_dir = HERE / "ui"
+    handler = partial(QuietHandler, directory=str(ui_dir))
+    server = HTTPServer((HOST, UI_PORT), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server
+
+
+# ─────────────────────────────────────────────
+# Command Processing (shared by HTTP API and pywebview bridge)
+# ─────────────────────────────────────────────
+
+def _try_builtin_response(text):
+    """Handle common greetings and questions without needing Ollama."""
+    lower = text.strip().lower()
+    
+    greetings = {
+        "hello", "hi", "hey", "good morning", "good afternoon",
+        "good evening", "salut", "bonjour", "مرحبا", "hey kira",
+        "hello kira", "hi kira",
+    }
+    
+    if lower in greetings:
+        # JARVIS-style greetings
+        import random
+        greetings_list = [
+            "Good day, sir.",
+            "Welcome back, sir.",
+            "At your service, sir.",
+            "Good to see you, sir.",
+            "Hello, sir. All systems are operational."
         ]
-        for icon, name in items:
-            b = ctk.CTkButton(
-                s,
-                text=f"  {icon}    {name}",
-                anchor="w",
-                height=44,
-                corner_radius=11,
-                fg_color="transparent" if name == "Chat" else "transparent",
-                hover_color="#0A2236",
-                text_color=TEXT if name == "Chat" else "#A8BED2",
-                font=ctk.CTkFont(
-                    size=13, weight="bold" if name == "Chat" else "normal"
-                ),
-                command=lambda n=name: self._nav_click(n),
-            )
-            b.pack(fill="x", padx=12, pady=3)
-            self.nav_buttons[name] = b
-        info = ctk.CTkFrame(
-            s,
-            fg_color="#06111B",
-            border_width=1,
-            border_color="#0D2A3C",
-            corner_radius=16,
+        return random.choice(greetings_list)
+    
+    if lower in {"who are you", "what are you", "what is kira"}:
+        return "I'm KIRA, sir - your personal AI assistant, modeled after JARVIS. I manage your systems, search the web, learn continuously, and anticipate your needs. Think of me as your digital butler and strategic advisor."
+    
+    if lower in {"what can you do", "help", "commands"}:
+        return (
+            "I'm equipped to handle quite a lot, sir. I control your computer systems - applications, files, media. "
+            "I search the web and learn from it, building knowledge over time. I manage tasks and reminders, "
+            "analyze your screen, and I'm always ready to assist with whatever you need. Shall I demonstrate something specific?"
         )
-        info.pack(fill="x", padx=16, pady=(12, 16))
-        ctk.CTkLabel(
-            info,
-            text="LOCAL • PRIVATE",
-            text_color=ACCENT,
-            font=ctk.CTkFont(size=9, weight="bold"),
-        ).pack(anchor="w", padx=14, pady=(13, 5))
-        ctk.CTkLabel(
-            info,
-            text="A smarter computer experience.\nBuilt around your local AI.",
-            text_color=MUTED,
-            justify="left",
-            font=ctk.CTkFont(size=10),
-        ).pack(anchor="w", padx=14, pady=(0, 14))
-        ctk.CTkLabel(
-            s,
-            text="KIRA CORE  •  v4.0",
-            text_color="#3E596C",
-            font=ctk.CTkFont(size=8, weight="bold"),
-        ).pack(side="bottom", pady=10)
+    
+    if lower in {"what time is it", "time", "current time"}:
+        from datetime import datetime
+        current_time = datetime.now().strftime('%H:%M')
+        return f"The time is {current_time}, sir."
+    
+    if lower in {"what is the date", "today's date", "date", "what day is it"}:
+        from datetime import datetime
+        current_date = datetime.now().strftime('%A, %B %d, %Y')
+        return f"Today is {current_date}, sir."
+    
+    if lower in {"thank you", "thanks", "merci"}:
+        # JARVIS-style acknowledgments
+        import random
+        thanks_list = [
+            "You're quite welcome, sir.",
+            "My pleasure, sir.",
+            "Always at your service.",
+            "Happy to be of assistance.",
+            "Of course, sir."
+        ]
+        return random.choice(thanks_list)
+    
+    if lower in {"goodbye", "bye", "see you", "exit", "quit"}:
+        # JARVIS-style farewells
+        import random
+        farewell_list = [
+            "Goodbye, sir. I'll be here when you return.",
+            "Until next time, sir.",
+            "Take care, sir. I'll keep things running.",
+            "Farewell, sir.",
+            "Good day, sir."
+        ]
+        return random.choice(farewell_list)
+        
+        # Check if it's a web search request
+        search_keywords = ["search for", "search", "look up", "find", "google", "what is", "who is", "where is", "when did", "how to", "latest", "news about", "current", "recent"]
+        if any(keyword in lower for keyword in search_keywords):
+            # Extract the search query
+            query = text
+            for prefix in ["search for", "search", "look up", "find", "google"]:
+                if lower.startswith(prefix):
+                    query = text[len(prefix):].strip()
+                    break
+            
+            print(f"[KIRA] Web search requested: {query}")
+            try:
+                import kira_web
+                return kira_web.search_and_summarize(query)
+            except Exception as e:
+                return f"I tried to search the web but encountered an error: {str(e)}"
+        
+        # Check if it's a learn/research request (search and store in memory)
+        learn_keywords = ["learn about", "research", "study", "memorize", "remember this", "teach yourself"]
+        if any(keyword in lower for keyword in learn_keywords):
+            # Extract the topic
+            query = text
+            for prefix in ["learn about", "research", "study", "memorize", "teach yourself about"]:
+                if lower.startswith(prefix):
+                    query = text[len(prefix):].strip()
+                    break
+            
+            print(f"[KIRA] Learn and memorize requested: {query}")
+            try:
+                import kira_web
+                return kira_web.search_and_learn(query)
+            except Exception as e:
+                return f"I tried to learn about that but encountered an error: {str(e)}"
+        
+        # Check if it's a URL to learn from
+        if lower.startswith("http://") or lower.startswith("https://") or "www." in lower:
+            # It's a URL - learn from it
+            url = text
+            if not url.startswith("http"):
+                url = "https://" + url
+            
+            print(f"[KIRA] Learning from URL: {url}")
+            try:
+                import kira_web
+                return kira_web.learn_from_url(url)
+            except Exception as e:
+                return f"I tried to learn from that URL but encountered an error: {str(e)}"
+        
+        return None
 
-    def _nav_click(self, n):
-        if n == "Chat":
-            self.entry.focus_set()
-        elif n == "Voice":
-            self.toggle_listening()
-        else:
-            self.set_state("READY", ACCENT, f"{n} module selected")
 
-    def _build_header(self, p):
-        h = ctk.CTkFrame(p, fg_color="transparent", height=72)
-        h.grid(row=0, column=0, sticky="ew")
-        h.grid_columnconfigure(0, weight=1)
-        left = ctk.CTkFrame(h, fg_color="transparent")
-        left.grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(
-            left,
-            text="KIRA CORE",
-            text_color=TEXT,
-            font=ctk.CTkFont(size=23, weight="bold"),
-        ).pack(anchor="w")
-        ctk.CTkLabel(
-            left,
-            text="NEURAL INTERFACE  /  LOCAL AI COMPUTER AGENT",
-            text_color=MUTED,
-            font=ctk.CTkFont(size=8, weight="bold"),
-        ).pack(anchor="w")
-        m = ctk.CTkFrame(
-            h, fg_color="#06101A", border_width=1, border_color=BORDER, corner_radius=16
-        )
-        m.grid(row=0, column=1, sticky="e")
-        model = getattr(backend, "MODEL", "OFFLINE") if backend else "OFFLINE"
-        self.model_chip = ctk.CTkLabel(
-            m,
-            text=f"◈  {str(model).upper()}",
-            text_color=ACCENT,
-            font=ctk.CTkFont(size=9, weight="bold"),
-        )
-        self.model_chip.pack(side="left", padx=14, pady=12)
-        self.cpu_label = self._metric(m, "CPU", "--")
-        self.ram_label = self._metric(m, "RAM", "--")
-        online = ctk.CTkFrame(m, fg_color="#071B17", corner_radius=11)
-        online.pack(side="left", padx=(7, 9), pady=7)
-        self.status_dot = ctk.CTkLabel(
-            online, text="●", text_color=ACCENT_ALT, font=ctk.CTkFont(size=11)
-        )
-        self.status_dot.pack(side="left", padx=(10, 4), pady=5)
-        self.status_text = ctk.CTkLabel(
-            online,
-            text="ONLINE",
-            text_color=TEXT,
-            font=ctk.CTkFont(size=9, weight="bold"),
-        )
-        self.status_text.pack(side="left", padx=(0, 10))
-
-    def _metric(self, p, l, v):
-        f = ctk.CTkFrame(p, fg_color="transparent")
-        f.pack(side="left", padx=7)
-        ctk.CTkLabel(
-            f, text=l, text_color=MUTED, font=ctk.CTkFont(size=7, weight="bold")
-        ).pack()
-        x = ctk.CTkLabel(
-            f, text=v, text_color=TEXT, font=ctk.CTkFont(size=10, weight="bold")
-        )
-        x.pack()
-        return x
-
-    def _build_core(self, p):
-        panel = ctk.CTkFrame(
-            p, fg_color=PANEL, border_width=1, border_color=BORDER, corner_radius=22
-        )
-        panel.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        panel.grid_rowconfigure(1, weight=1)
-        panel.grid_columnconfigure(0, weight=1)
-        top = ctk.CTkFrame(panel, fg_color="transparent")
-        top.grid(row=0, column=0, sticky="ew", padx=22, pady=(15, 0))
-        ctk.CTkLabel(
-            top,
-            text="KIRA CORE",
-            text_color=ACCENT,
-            font=ctk.CTkFont(size=10, weight="bold"),
-        ).pack(side="left")
-        ctk.CTkLabel(
-            top,
-            text="NEURAL INTERFACE",
-            text_color=MUTED,
-            font=ctk.CTkFont(size=8, weight="bold"),
-        ).pack(side="right")
-        stage = ctk.CTkFrame(
-            panel,
-            fg_color="#020913",
-            corner_radius=18,
-            border_width=1,
-            border_color="#3A0808",
-        )
-        stage.grid(row=1, column=0, sticky="nsew", padx=12, pady=12)
-        stage.grid_rowconfigure(0, weight=1)
-        stage.grid_columnconfigure(0, weight=1)
-        self.canvas = tk.Canvas(stage, bg="transparent", highlightthickness=0, bd=0)
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        self.canvas.bind("<Configure>", lambda e: self._draw_orb())
-        self.state_label = ctk.CTkLabel(
-            panel,
-            text="READY",
-            text_color=ACCENT,
-            font=ctk.CTkFont(size=20, weight="bold"),
-        )
-        self.state_label.grid(row=2, column=0, pady=(0, 0))
-        self.detail_label = ctk.CTkLabel(
-            panel,
-            text="Waiting for your command",
-            text_color=MUTED,
-            font=ctk.CTkFont(size=10),
-        )
-        self.detail_label.grid(row=3, column=0, pady=(0, 5))
-        self.wave = tk.Canvas(panel, height=58, bg=PANEL, highlightthickness=0)
-        self.wave.grid(row=4, column=0, sticky="ew", padx=45, pady=(0, 4))
-        cards = ctk.CTkFrame(panel, fg_color="transparent")
-        cards.grid(row=5, column=0, sticky="ew", padx=15, pady=(0, 14))
-        cards.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
-        self.core_cards = []
-        for i, (icon, name, color) in enumerate(
-            [
-                ("○", "READY", ACCENT),
-                ("♩", "LISTENING", ACCENT_ALT),
-                ("◈", "THINKING", ACCENT_HOT),
-                ("⌁", "EXECUTING", ACCENT_WARM),
-                ("◉", "SPEAKING", ACCENT),
-            ]
-        ):
-            f = ctk.CTkFrame(
-                cards,
-                fg_color=PANEL2,
-                border_width=1,
-                border_color="#123046",
-                corner_radius=12,
-            )
-            f.grid(row=0, column=i, sticky="ew", padx=3)
-            ctk.CTkLabel(
-                f, text=icon, text_color=color, font=ctk.CTkFont(size=17, weight="bold")
-            ).pack(pady=(6, 0))
-            ctk.CTkLabel(
-                f, text=name, text_color=MUTED, font=ctk.CTkFont(size=7, weight="bold")
-            ).pack(pady=(0, 6))
-            self.core_cards.append((f, color))
-
-    def _build_chat(self, p):
-        panel = ctk.CTkFrame(
-            p,
-            fg_color="transparent",
-            border_width=1,
-            border_color=BORDER,
-            corner_radius=22,
-        )
-        panel.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
-        panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(1, weight=1)
-        top = ctk.CTkFrame(panel, fg_color="transparent")
-        top.grid(row=0, column=0, sticky="ew", padx=18, pady=(16, 10))
-        ctk.CTkLabel(
-            top,
-            text="CONVERSATION",
-            text_color=TEXT,
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).pack(side="left")
-        self.model_label = ctk.CTkLabel(
-            top,
-            text="LOCAL",
-            text_color=ACCENT_HOT,
-            font=ctk.CTkFont(size=8, weight="bold"),
-        )
-        self.model_label.pack(side="right")
-        self.chat = ctk.CTkTextbox(
-            panel,
-            fg_color="#06101A",
-            border_width=1,
-            border_color="#0D2738",
-            corner_radius=15,
-            text_color=TEXT,
-            font=ctk.CTkFont(size=11),
-            wrap="word",
-        )
-        self.chat.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 9))
-        self.chat.configure(state="disabled")
-        q = ctk.CTkFrame(panel, fg_color="transparent")
-        q.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 7))
-        for label, cmd in [
-            ("Open VS Code", "open vscode"),
-            ("Take Screenshot", "take screenshot"),
-            ("System Info", "system info"),
-            ("Open YouTube", "open youtube"),
-        ]:
-            ctk.CTkButton(
-                q,
-                text=label,
-                height=29,
-                corner_radius=9,
-                fg_color="#260707",
-                hover_color="#4A0A0A",
-                border_width=1,
-                border_color="#4A0A0A",
-                text_color="#B9CCDC",
-                font=ctk.CTkFont(size=8, weight="bold"),
-                command=lambda c=cmd: self._quick(c),
-            ).pack(side="left", padx=2)
-        inp = ctk.CTkFrame(panel, fg_color="transparent")
-        inp.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 12))
-        inp.grid_columnconfigure(0, weight=1)
-        self.entry = ctk.CTkEntry(
-            inp,
-            height=49,
-            fg_color=PANEL2,
-            border_color="#153A51",
-            border_width=1,
-            corner_radius=14,
-            placeholder_text="Type a message to KIRA...",
-            font=ctk.CTkFont(size=11),
-        )
-        self.entry.grid(row=0, column=0, sticky="ew", padx=(0, 7))
-        self.entry.bind("<Return>", lambda _: self.send_message())
-        self.mic_btn = ctk.CTkButton(
-            inp,
-            text="♩",
-            width=48,
-            height=49,
-            corner_radius=14,
-            fg_color=PANEL2,
-            hover_color="#10283C",
-            border_width=1,
-            border_color=BORDER,
-            command=self.toggle_listening,
-        )
-        self.mic_btn.grid(row=0, column=1, padx=(0, 7))
-        self.send_btn = ctk.CTkButton(
-            inp,
-            text="➤",
-            width=57,
-            height=49,
-            corner_radius=14,
-            fg_color=ACCENT_WARM,
-            hover_color="#FF625A",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            command=self.send_message,
-        )
-        self.send_btn.grid(row=0, column=2)
-
-    def _quick(self, c):
-        if not self.busy:
-            self.entry.delete(0, "end")
-            self.entry.insert(0, c)
-            self.send_message()
-
-    def _build_bottom(self, p):
-        bar = ctk.CTkFrame(
-            p,
-            fg_color="#06101A",
-            border_width=1,
-            border_color=BORDER,
-            corner_radius=17,
-            height=65,
-        )
-        bar.grid(row=2, column=0, sticky="ew")
-        bar.grid_columnconfigure(1, weight=1)
-        left = ctk.CTkFrame(bar, fg_color="transparent")
-        left.grid(row=0, column=0, sticky="w", padx=15)
-        ctk.CTkLabel(left, text="♫", text_color=ACCENT, font=ctk.CTkFont(size=20)).pack(
-            side="left", padx=(0, 9)
-        )
-        ctk.CTkLabel(
-            left,
-            text="KIRA MEDIA",
-            text_color=TEXT,
-            font=ctk.CTkFont(size=9, weight="bold"),
-        ).pack(anchor="w")
-        ctk.CTkLabel(
-            left,
-            text="Voice • media • system controls",
-            text_color=MUTED,
-            font=ctk.CTkFont(size=8),
-        ).pack(anchor="w")
-        ctr = ctk.CTkFrame(bar, fg_color="transparent")
-        ctr.grid(row=0, column=1, sticky="w", padx=30)
-        for t, c in [
-            ("|◀", "media_previous"),
-            ("▶", "media_play_pause"),
-            ("▶|", "media_next"),
-        ]:
-            ctk.CTkButton(
-                ctr,
-                text=t,
-                width=38,
-                height=30,
-                fg_color="transparent",
-                hover_color="#102437",
-                text_color="#B8C9D8",
-                command=lambda x=c: self._quick(x),
-            ).pack(side="left", padx=2)
-        clk = ctk.CTkFrame(bar, fg_color="transparent")
-        clk.grid(row=0, column=2, sticky="e", padx=18)
-        self.clock_label = ctk.CTkLabel(
-            clk, text="", text_color=TEXT, font=ctk.CTkFont(size=12, weight="bold")
-        )
-        self.clock_label.pack(anchor="e")
-        self.date_label = ctk.CTkLabel(
-            clk, text="", text_color=MUTED, font=ctk.CTkFont(size=8)
-        )
-        self.date_label.pack(anchor="e")
-
-    def add_message(self, speaker, message):
-        self.chat.configure(state="normal")
-        ts = datetime.now().strftime("%H:%M")
-        tag = {"KIRA": "kira", "MIND": "mind"}.get(speaker.upper(), "you")
-        self.chat.insert("end", f"{speaker.upper()}   {ts}\n", tag)
-        self.chat.insert("end", f"{message}\n\n", "body")
-        self.chat.tag_config("kira", foreground=ACCENT)
-        self.chat.tag_config("mind", foreground=MUTED)
-        self.chat.tag_config("you", foreground="#B9C8FF")
-        self.chat.tag_config("body", foreground=TEXT)
-        self.chat.see("end")
-        self.chat.configure(state="disabled")
-
-    def set_state(self, state, color, detail):
-        self.last_state = state
-
-        self.state_label.configure(text=state, text_color=color)
-        self.detail_label.configure(text=detail)
-
-        status_text = {
-            "ERROR": "ERROR",
-            "LISTENING": "LISTENING",
-            "THINKING": "THINKING",
-            "EXECUTING": "EXECUTING",
-            "SPEAKING": "SPEAKING",
-        }.get(state, "ONLINE")
-
-        status_color = {
-            "ERROR": RED,
-            "LISTENING": ACCENT_ALT,
-            "THINKING": ACCENT_HOT,
-            "EXECUTING": ACCENT_WARM,
-            "SPEAKING": ACCENT,
-        }.get(state, ACCENT)
-
-        if hasattr(self, "header_status"):
-            self.header_status.configure(
-                text=f"● {status_text}",
-                text_color=status_color,
-            )
-
-        if hasattr(self, "status_text"):
-            self.status_text.configure(text=status_text)
-
-        if hasattr(self, "status_dot"):
-            self.status_dot.configure(text_color=status_color)
-
-        if hasattr(self, "core_cards"):
-            for frame, card_color in self.core_cards:
-                frame.configure(fg_color=PANEL2, border_color="#123046")
-
-            state_index = {
-                "READY": 0,
-                "LISTENING": 1,
-                "THINKING": 2,
-                "EXECUTING": 3,
-                "SPEAKING": 4,
-            }.get(state)
-
-            if state_index is not None:
-                frame, card_color = self.core_cards[state_index]
-                frame.configure(fg_color="#0B2435", border_color=card_color)
-
-        self._draw_orb()
-
-    def _set_busy(self, b):
-        self.busy = b
-        self.send_btn.configure(state="disabled" if b else "normal")
-        self.entry.configure(state="disabled" if b else "normal")
-
-    def _set_status(self, w, color, text):
-        w.configure(text_color=color, text=text)
-
-    def _ollama_ready(self, timeout=0.7):
-        try:
-            with urllib.request.urlopen(
-                "http://127.0.0.1:11434/api/tags", timeout=timeout
-            ) as r:
-                return 200 <= r.status < 300
-        except (OSError, urllib.error.URLError):
-            return False
-
-    def _ensure_ollama(self):
-        if self._ollama_ready():
-            return True, "Ollama connected"
-        self.events.put(("ollama_starting", None))
-        try:
-            flags = (
-                subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
-                if os.name == "nt"
-                else 0
-            )
-            subprocess.Popen(
-                ["ollama", "serve"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                creationflags=flags,
-                close_fds=True,
-            )
-        except FileNotFoundError:
-            return False, "Ollama is not installed or not in PATH"
-        except Exception as e:
-            return False, str(e)
-        end = time.monotonic() + 12
-        while time.monotonic() < end:
-            if self._ollama_ready():
-                return True, "Ollama started"
-            time.sleep(0.35)
-        return False, "Ollama did not become ready"
-
-    def send_message(self):
-        if self.busy or backend is None:
-            return
-        text = self.entry.get().strip()
-        if not text:
-            return
-        self.entry.delete(0, "end")
-        self.add_message("YOU", text)
-        self.set_state("THINKING", ACCENT_HOT, "Understanding your request...")
-        self._set_busy(True)
-        threading.Thread(target=self._process, args=(text,), daemon=True).start()
-
-    def _process(self, text):
-        try:
-            self.events.put(("reply", self._route(text)))
-        except Exception as e:
-            self.events.put(("error", f"{type(e).__name__}: {e}"))
-
-    def _route(self, text):
+def process_command(text):
+    """Process a command — used by both HTTP API and pywebview bridge."""
+    if backend is None:
+        return {"error": f"Backend not available: {BACKEND_ERROR}"}
+    
+    # Check cache first (skip for commands that should always execute)
+    if CACHE_ENABLED:
+        cache_key = f"cmd:{hash(text)}"
+        cached_result = command_cache.get(cache_key)
+        if cached_result is not None:
+            print(f"[KIRA] Cache hit for command: {text[:50]}", flush=True)
+            return cached_result
+    
+    try:
+        print(f"[KIRA] Processing: {text}", flush=True)
         cleaned = backend.normalize_command(text)
         if not cleaned:
-            return ""
-        gate_reply = backend.lab_gate(cleaned)
-        if gate_reply is not None:
-            return gate_reply
+            return {"action": "none", "response": ""}
+        
+        # Try built-in responses first (no Ollama needed)
+        builtin = _try_builtin_response(cleaned)
+        if builtin:
+            print(f"[KIRA] Built-in: {builtin[:60]}", flush=True)
+            result = {"action": "chat", "response": builtin}
+            # Cache built-in responses
+            if CACHE_ENABLED:
+                command_cache.set(cache_key, result, ttl=300)  # 5 min TTL
+            return result
+        
+        # Try command parsing
         result = backend.parse_simple_command(cleaned)
-        if result is None and backend.is_chat_question(cleaned):
-            ok, d = self._ensure_ollama()
-            return (
-                backend.ask_chat(cleaned) if ok else f"I could not start Ollama. {d}."
-            )
-        planned_by = "parser"
-        if result is None:
-            ok, d = self._ensure_ollama()
-            if not ok:
-                return f"I could not start Ollama. {d}."
-
-            # think before acting — recall first, LLM plan second; the
-            # thought trace is shown in the chat panel (never spoken)
-            thought = backend.think_about(cleaned)
-            if thought.text:
-                self.events.put(("thought", thought.text))
-            result = thought.action
-            planned_by = thought.source
-
-        action = (result or {}).get("action", "none")
-        if action == "conversation_on":
-            backend._CONVERSATION_MODE = True
-            return "Conversation mode is on."
-        if action == "conversation_off":
-            backend._CONVERSATION_MODE = False
-            return "Conversation mode is off."
-        if action == "chat_reset":
-            backend.reset_chat()
-            return "New conversation started."
-        if action == "mode_info":
-            return "Unified mode is active."
-        if action == "none":
-            ok, d = self._ensure_ollama()
-            return (
-                backend.ask_chat(cleaned) if ok else f"I could not start Ollama. {d}."
-            )
-        if backend.requires_confirmation(action) and not backend.confirm_action(
-            action.replace("_", " "), backend.describe_action(result)
-        ):
-            return "Action cancelled."
-        self.events.put(
-            ("state", ("EXECUTING", ACCENT_WARM, f"Executing: {action.replace('_', ' ')}"))
-        )
-
-        success = backend.execute_action(result)
-
-        promotion_note = None
-        if planned_by in {"llm", "memory"}:
-            # reflect on what just happened and notice repeatable skills
-            backend._LAST_COMMAND, backend._LAST_ACTION = cleaned, result
-            promotion_note = backend.learn_from(
-                cleaned,
-                result,
-                planned_by,
-                bool(success),
-                language=backend.detect_language(cleaned),
-            )
-
-        if success:
-            # suit bookkeeping: macro recording + undo stack
-            backend.kira_learning.capture(result)
-            backend.kira_undo.record(cleaned, result)
-
-        if isinstance(success, str):
-            reply = success
-        elif not success:
-            reply = backend.build_reply(backend.detect_language(cleaned), "none")
-        else:
-            target = ""
-
-            if action in {"open_app", "open_url", "open_folder", "press"}:
-                target = str(result.get("target", ""))
-            elif action == "search":
-                target = str(result.get("query", ""))
-
-            reply = backend.build_reply(backend.detect_language(cleaned), action, target)
-
-        if promotion_note:
-            reply = f"{reply}\n\n{promotion_note}"
-        return reply
-
-    def _speak(self, text):
-        self.events.put(("speaking_start", None))
+        if result is not None:
+            action = result.get("action", "none")
+            if action != "none":
+                success = backend.execute_action(result)
+                try:
+                    reply = backend.build_reply(
+                        backend.detect_language(cleaned),
+                        action,
+                        str(result.get("target", result.get("query", "")))
+                    )
+                except Exception:
+                    reply = f"Done: {action}"
+                print(f"[KIRA] Action: {action} -> {success}", flush=True)
+                result = {"action": action, "success": success, "response": reply}
+                # Don't cache action executions (they change state)
+                return result
+        
+        # Fall back to Ollama chat
+        print("[KIRA] Asking Ollama...", flush=True)
         try:
-            backend.speak(text)
-        except Exception as e:
-            self.events.put(("error", f"Voice output failed: {e}"))
-            return
-        self.events.put(("speaking_done", None))
-
-    def toggle_listening(self):
-        if backend is None or self.busy or self.listening:
-            return
-        self.listening = True
-        self._set_busy(True)
-        self.mic_btn.configure(text="●", fg_color="#123B2B")
-        self.set_state("LISTENING", ACCENT_ALT, "Speak to KIRA...")
-        threading.Thread(target=self._listen, daemon=True).start()
-
-    def _listen(self):
-        try:
-            self.events.put(
-                (
-                    "heard",
-                    backend.listen_for_command(timeout=20, phrase_timeout=10) or "",
-                )
-            )
-        except Exception as e:
-            self.events.put(("error", f"{type(e).__name__}: {e}"))
-
-    def _heard(self, text):
-        self.listening = False
-        self.mic_btn.configure(text="♩", fg_color=PANEL2)
-        self._set_busy(False)
-        if not text:
-            self.set_state("READY", ACCENT, "I didn't hear a command")
-            return
-        self.add_message("YOU", text)
-        self.set_state("THINKING", ACCENT_HOT, "Processing your voice command...")
-        self._set_busy(True)
-        threading.Thread(target=self._process, args=(text,), daemon=True).start()
-
-    def _update_statuses(self):
-        if backend is None:
-            return
-        model = str(
-            getattr(backend, "MODEL", getattr(backend, "DEFAULT_MODEL", "OFFLINE"))
-        ).upper()
-        self.model_label.configure(text=f"{model} • LOCAL")
-        self.model_chip.configure(text=f"◈  {model}")
-        threading.Thread(
-            target=lambda: self.events.put(("status", self._ollama_ready())),
-            daemon=True,
-        ).start()
-
-    # ── 3D core renderer (geometry lives in kira_orb, tested there) ────
-
-    def _orb_density(self, width, height):
-        """Object budget per layer, scaled down on small canvases."""
-        area = max(1.0, width * height)
-        settings = getattr(backend, "CONFIG", {}) if backend else {}
-        quality = str(settings.get("orb_quality", "balanced"))
-        factors = {"high": 1.35, "balanced": 1.0, "low": 0.6}
-        factor = factors.get(quality, 1.0)
-        scale = min(1.0, (area / 420000.0) ** 0.5) * factor
-        return {
-            "cloud": max(120, int(430 * scale)),
-            "rain_far": max(18, int(width // 12 * scale)),
-            "rain_near": max(8, int(width // 30 * scale)),
-        }
-
-    def _draw_orb(self):
-        """Render the 3D KIRA core: point-cloud sphere + matrix rain."""
-        c = self.canvas
-        w = max(360, c.winfo_width())
-        h = max(360, c.winfo_height())
-        state = getattr(self, "last_state", "READY")
-        profile = kira_orb.profile(state)
-        hue = profile["hue"]
-        breath = kira_orb.pulse(self.phase, 1.8)
-        spin_x, spin_y, spin_z = kira_orb.spin_angles(state, self.phase)
-
-        c.delete("all")
-
-        cx, cy = w / 2.0, h / 2.0 - 6
-        radius = kira_orb.orb_radius(w, h, margin=0.30)
-        camera = 3.2
-        density = self._orb_density(w, h)
-
-        # ── rain behind the orb ───────────────────────────────────────
-        self._draw_orb_rain(
-            c, w, h,
-            phase=self.phase,
-            profile=profile,
-            columns=density["rain_far"],
-            column_width=12.0,
-            row_height=15.0,
-            trail=10,
-            far="#2E0505",
-            near="#8A1212",
-            small=True,
-            seed=7,
-        )
-
-        # ── halo: barely-there bloom, no banding ──────────────────────
-        halo = radius * (1.15 + 0.03 * breath)
-        for step in range(9, 0, -1):
-            t = step / 9.0
-            ring = halo * (0.84 + 0.16 * t)
-            c.create_oval(
-                cx - ring, cy - ring, cx + ring, cy + ring,
-                fill=kira_orb.mix(BG, hue, 0.020 * (1.0 - t) ** 3),
-                outline="",
-            )
-
-        # ── wireframe: 6 meridians + 4 latitude rings ─────────────────
-        lines = list(kira_orb.meridian_rings(6, 1.0, 96)) + list(
-            kira_orb.latitude_rings(4, 1.0, 96)
-        )
-        for line in lines:
-            rotated = kira_orb.rotate_all(line, spin_x, spin_y, spin_z)
-            projected = kira_orb.project_all(
-                rotated, w, h, radius, camera, center=(cx, cy)
-            )
-            for start in range(0, len(projected) - 1, 8):
-                run = projected[start : start + 9]
-                if len(run) < 2:
-                    continue
-                depth = sum(point["depth"] for point in run) / len(run)
-                # the far side stays a ghost so the near side reads as the front
-                color = kira_orb.depth_color(
-                    "#1C0303", kira_orb.mix(hue, "#FFFFFF", 0.22),
-                    max(0.0, depth - 0.2),
-                )
-                if depth < 0.35:
-                    color = kira_orb.mix(color, kira_orb.mix(BG, hue, 0.10), 0.5)
-                flat = []
-                for point in run:
-                    flat.extend((point["x"], point["y"]))
-                c.create_line(*flat, fill=color, width=1, smooth=True)
-
-        # ── point cloud, painted far to near ─────────────────────────
-        cloud = kira_orb.rotate_all(
-            kira_orb.fibonacci_sphere(density["cloud"], 1.0),
-            spin_x, spin_y, spin_z,
-        )
-        projected = kira_orb.project_all(
-            cloud, w, h, radius, camera, center=(cx, cy)
-        )
-        for index in kira_orb.depth_sort(projected):
-            point = projected[index]
-            depth = point["depth"]
-            size = 1.1 + depth * 1.7
-            c.create_oval(
-                point["x"] - size, point["y"] - size,
-                point["x"] + size, point["y"] + size,
-                fill=kira_orb.depth_color("#3C0606", hue, depth),
-                outline="",
-            )
-
-        # ── equatorial scan ring ─────────────────────────────────────
-        scan = kira_orb.rotate_all(
-            kira_orb.circle_ring(1.06, 84, tilt=math.sin(self.phase * 0.7) * 0.35),
-            spin_x, spin_y, spin_z,
-        )
-        flat = []
-        for point in kira_orb.project_all(scan, w, h, radius, camera, center=(cx, cy)):
-            flat.extend((point["x"], point["y"]))
-        c.create_line(
-            *flat,
-            fill=kira_orb.mix(hue, "#FFFFFF", 0.30 + 0.25 * breath),
-            width=2,
-            smooth=True,
-        )
-
-        # ── the core: shell outside, glowing heart inside ────────────
-        core = radius * (0.50 + 0.04 * breath)
-        steps = 16
-        for step in range(steps, 0, -1):
-            t = step / steps
-            ring = core * (0.18 + 0.82 * t)
-            glow = (1.0 - t) ** 1.8
-            c.create_oval(
-                cx - ring, cy - ring, cx + ring, cy + ring,
-                fill=kira_orb.mix("#0A0203", hue, 0.06 + 0.42 * glow),
-                outline="",
-            )
-        c.create_oval(
-            cx - core, cy - core, cx + core, cy + core,
-            outline=kira_orb.mix(hue, "#FFFFFF", 0.30 + 0.25 * breath),
-            width=2,
-        )
-        iris = core * 0.62
-        c.create_oval(
-            cx - iris, cy - iris, cx + iris, cy + iris,
-            outline=kira_orb.mix(hue, "#FFFFFF", 0.05 + 0.10 * breath),
-            width=1,
-        )
-
-        # ── orbiting satellites (true 3D orbits) ─────────────────────
-        for index in range(10):
-            angle = kira_orb.TAU * index / 10 + self.phase * (profile["spin"] * 0.45)
-            orbit = kira_orb.orbit_point(1.26, angle, tilt=0.42)
-            point = kira_orb.project(orbit, w, h, radius, camera, center=(cx, cy))
-            size = 1.4 + point["depth"] * 2.0
-            c.create_oval(
-                point["x"] - size, point["y"] - size,
-                point["x"] + size, point["y"] + size,
-                fill=kira_orb.depth_color("#4A0707", hue, point["depth"]),
-                outline="",
-            )
-
-        # ── labels ───────────────────────────────────────────────────
-        c.create_text(
-            cx, cy - core * 0.16,
-            text="KIRA", fill=TEXT,
-            font=(FONT, max(16, int(radius * 0.21)), "bold"),
-        )
-        c.create_text(
-            cx, cy + core * 0.42,
-            text="CORE",
-            fill=kira_orb.mix(hue, "#FFFFFF", 0.35 + 0.25 * breath),
-            font=(FONT, max(8, int(radius * 0.066)), "bold"),
-        )
-
-        # ── rain in front of the orb ─────────────────────────────────
-        self._draw_orb_rain(
-            c, w, h,
-            phase=self.phase * 0.6,
-            profile=profile,
-            columns=density["rain_near"],
-            column_width=27.0,
-            row_height=17.0,
-            trail=7,
-            far="#5A0C0C",
-            near=RED,
-            small=False,
-            seed=23,
-        )
-
-        self._draw_waveform(state, breath)
-
-        # advance the animation only after the whole frame is drawn
-        self.phase += profile["spin"] * 0.16 + 0.01
-        self.particle_phase += 0.012
-
-    def _draw_orb_rain(self, canvas, width, height, phase, profile, columns,
-                       column_width, row_height, trail, far, near, small, seed):
-        """One depth layer of glyph rain (kira_orb supplies the maths)."""
-        speed = kira_orb.rain_intensity(profile) * (0.85 if small else 1.25)
-        font = ("Consolas", 8 if small else 11)
-        for column in kira_orb.make_columns(
-            width, height, column_width=column_width, count=columns, seed=seed
-        ):
-            for y, glyph, intensity in kira_orb.column_glyphs(
-                column, phase * speed, height,
-                row_height=row_height, glyphs_visible=trail,
-            ):
-                color = kira_orb.depth_color(far, near, intensity)
-                if intensity >= 0.999:
-                    color = kira_orb.mix(color, "#FFFFFF", 0.55)
-                canvas.create_text(
-                    column["x"], y, text=glyph, fill=color, font=font,
-                    anchor="center",
-                )
-
-    def _draw_waveform(self, state, pulse):
-        """Bottom audio waveform (kept from the original HUD)."""
-        if not hasattr(self, "wave"):
-            return
-        wc = self.wave
-        ww = max(250, wc.winfo_width())
-        wh = 58
-        wc.delete("all")
-        mid = wh / 2
-        strength = {
-            "READY": 3, "LISTENING": 20, "THINKING": 13,
-            "EXECUTING": 19, "SPEAKING": 27, "ERROR": 9,
-        }.get(state, 4)
-        for i in range(41):
-            x = 15 + i * (ww - 30) / 40
-            movement = abs(math.sin(i * 0.52 + self.phase * 3))
-            amp = 3 + strength * movement * (0.45 + pulse * 0.8)
-            if state == "READY":
-                amp = 2 + movement * 2
-            wc.create_line(
-                x, mid - amp, x, mid + amp,
-                fill=ACCENT if i % 4 == 0 else "#7A0C0C",
-                width=2 if i % 4 == 0 else 1,
-            )
-        wc.create_line(10, mid, ww - 10, mid, fill="#0B2C3C", width=1)
-
-    def _draw_panel_matrix(self, canvas, phase_offset=0):
-        """Draw subtle red Matrix rain inside a HUD panel."""
-
-        width = canvas.winfo_width()
-        height = canvas.winfo_height()
-
-        if width < 50 or height < 50:
-            return
-
-        canvas.delete("panel_matrix")
-
-        spacing = 17
-        columns = max(1, width // spacing)
-
-        for column in range(columns):
-
-            x = column * spacing + 6
-
-            speed = 1.5 + (column % 5) * 0.35
-
-            stream_y = (self.phase * speed * 8 + column * 43 + phase_offset) % (
-                height + 250
-            ) - 250
-
-            length = 10 + (column * 5) % 14
-
-            for i in range(length):
-
-                y = stream_y - i * 15
-
-                if y < -20 or y > height + 20:
-                    continue
-
-                if i == 0:
-                    color = "#FF4545"
-                elif i < 3:
-                    color = "#D71919"
-                elif i < 6:
-                    color = "#8A1010"
-                elif i < 10:
-                    color = "#4A0808"
-                else:
-                    color = "#250404"
-
-                char = "1" if (column + i + int(self.phase * 2)) % 2 else "0"
-
-                canvas.create_text(
-                    x,
-                    y,
-                    text=char,
-                    fill=color,
-                    font=("Consolas", 9),
-                    anchor="center",
-                    tags="panel_matrix",
-                )
-
-    def _draw_matrix(self):
-        """Animated red Matrix-style falling 0/1 background."""
-
-        if self.matrix_canvas is None:
-            return
-
-        canvas = self.matrix_canvas
-
-        width = canvas.winfo_width()
-        height = canvas.winfo_height()
-
-        if width < 100 or height < 100:
-            return
-
-        # ---------------------------------------------------------
-        # INITIALIZE MATRIX STREAMS
-        # ---------------------------------------------------------
-
-        if (
-            width != self.matrix_last_width
-            or height != self.matrix_last_height
-            or not self.matrix_streams
-        ):
-            self.matrix_last_width = width
-            self.matrix_last_height = height
-
-            column_spacing = 15
-            column_count = max(1, width // column_spacing)
-
-            self.matrix_streams = []
-
-            for column in range(column_count):
-
-                self.matrix_streams.append(
-                    {
-                        "x": column * column_spacing + random.randint(-2, 2),
-                        # Start streams throughout the screen
-                        "y": random.randint(-300, height),
-                        # Different speeds
-                        "speed": random.uniform(2.0, 6.5),
-                        # Longer streams
-                        "length": random.randint(10, 30),
-                        # Random character phase
-                        "phase": random.randint(0, 20),
-                        # Different brightness
-                        "brightness": random.random(),
-                    }
-                )
-
-        canvas.delete("matrix")
-
-        characters = ("0", "1")
-
-        # ---------------------------------------------------------
-        # MATRIX DIGITAL RAIN
-        # ---------------------------------------------------------
-
-        for stream in self.matrix_streams:
-
-            x = stream["x"]
-            y = stream["y"]
-            speed = stream["speed"]
-            length = stream["length"]
-            phase = stream["phase"]
-
-            for i in range(length):
-
-                char_y = y - (i * 16)
-
-                if char_y < -25 or char_y > height + 25:
-                    continue
-
-                # Character changes over time
-                char = characters[int(phase + i + self.phase * 3) % 2]
-
-                # Bright glowing head
-                if i == 0:
-                    color = "#FF5555"
-
-                # Bright red
-                elif i == 1:
-                    color = "#FF2A2A"
-
-                # Medium red
-                elif i < 4:
-                    color = "#E51E25"
-
-                # Dark red
-                elif i < 8:
-                    color = "#9E1118"
-
-                # Fading tail
-                elif i < 14:
-                    color = "#4A0808"
-
-                else:
-                    color = "#3A0608"
-
-                canvas.create_text(
-                    x,
-                    char_y,
-                    text=char,
-                    fill=color,
-                    font=("Consolas", 11),
-                    anchor="center",
-                    tags="matrix",
-                )
-
-            # Move stream
-            stream["y"] += speed
-
-            # Restart from the top
-            if y - (length * 16) > height:
-
-                stream["y"] = random.randint(-400, -20)
-                stream["speed"] = random.uniform(2.0, 6.5)
-                stream["length"] = random.randint(10, 30)
-                stream["phase"] = random.randint(0, 20)
-
-        # ---------------------------------------------------------
-        # SUBTLE RED DIGITAL GRID
-        # ---------------------------------------------------------
-
-        for x in range(0, width, 90):
-
-            canvas.create_line(
-                x,
-                0,
-                x,
-                height,
-                fill="#100202",
-                width=1,
-                tags="matrix",
-            )
-
-        canvas.tag_lower("matrix")
-
-    def _animate(self):
-        if self.closing:
-            return
-
-        self._draw_matrix()
-
-        if hasattr(self, "conversation_matrix"):
-            self._draw_panel_matrix(
-                self.conversation_matrix,
-                0,
-            )
-
-        if hasattr(self, "system_matrix"):
-            self._draw_panel_matrix(
-                self.system_matrix,
-                120,
-            )
-
-        self._draw_orb()
-
-        now = datetime.now()
-
-        # The minimal UI does not require a visible clock/date.
-        # Keep these updates optional so the animation can never crash
-        # if a compact layout omits one of the legacy telemetry widgets.
-        if hasattr(self, "clock_label"):
-            self.clock_label.configure(text=now.strftime("%H:%M:%S"))
-        if hasattr(self, "date_label"):
-            self.date_label.configure(text=now.strftime("%a, %d %b %Y"))
-
+            answer = backend.ask_chat(cleaned)
+            if answer:
+                print(f"[KIRA] Ollama: {answer[:80]}...", flush=True)
+                result = {"action": "chat", "response": answer}
+                # Cache Ollama responses
+                if CACHE_ENABLED:
+                    command_cache.set(cache_key, result, ttl=300)  # 5 min TTL
+                return result
+            else:
+                return {"action": "chat", "response": "I received your message but could not generate a response. Is Ollama running?"}
+        except Exception as chat_error:
+            print(f"[KIRA] Ollama error: {chat_error}", flush=True)
+            return {
+                "action": "chat",
+                "response": f"I couldn't reach the AI engine. Make sure Ollama is running with: ollama serve\n\nError: {chat_error}"
+            }
+    except Exception as e:
+        print(f"[KIRA] Error: {e}", flush=True)
+        return {"error": str(e)}
+
+
+# ─────────────────────────────────────────────
+# Python-JS Bridge API (for pywebview)
+# ─────────────────────────────────────────────
+
+class KiraAPI:
+    """Python API exposed to JavaScript via pywebview."""
+    
+    def send_command(self, text):
+        return process_command(text)
+    
+    def get_system_info(self):
+        """Get system telemetry."""
         try:
             import psutil
-
-            if hasattr(self, "cpu_label"):
-                self.cpu_label.configure(
-                    text=f"{psutil.cpu_percent(interval=None):.0f}%"
-                )
-            if hasattr(self, "ram_label"):
-                self.ram_label.configure(text=f"{psutil.virtual_memory().percent:.0f}%")
-        except Exception:
-            pass
-
-        self._animation_job = self.after(45, self._animate)
-
-    def _poll_events(self):
+            return {
+                "cpu_percent": psutil.cpu_percent(interval=None),
+                "memory_percent": psutil.virtual_memory().percent,
+                "gpu": "N/A"
+            }
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def get_tasks(self):
+        """Get pending tasks."""
         try:
-            while True:
-                k, p = self.events.get_nowait()
-                if k == "reply":
-                    if p:
-                        self.add_message("KIRA", p)
-                        threading.Thread(
-                            target=self._speak, args=(p,), daemon=True
-                        ).start()
-                    else:
-                        self.set_state("READY", ACCENT, "Waiting for your command")
-                        self._set_busy(False)
-                elif k == "thought":
-                    # the agent's internal plan — displayed, never spoken
-                    if p:
-                        self.add_message("MIND", p)
-                elif k == "state":
-                    state, color, detail = p
-                    self.set_state(state, color, detail)
-                elif k == "speaking_start":
-                    self.speaking = True
-                    self.set_state("SPEAKING", ACCENT, "KIRA is speaking...")
-                elif k == "speaking_done":
-                    self.speaking = False
-                    self.set_state("READY", ACCENT, "Waiting for your command")
-                    self._set_busy(False)
-                elif k == "heard":
-                    self._heard(p)
-                elif k == "ollama_starting":
-                    self.set_state("THINKING", AMBER, "Starting local AI engine...")
-                elif k == "status":
-                    online = bool(p)
+            import kira_tasks
+            tasks = kira_tasks.list_tasks(task_type="todo", completed=False)
+            return {"tasks": tasks[:5]}
+        except Exception as e:
+            return {"tasks": [], "error": str(e)}
+    
+    def get_status(self):
+        """Get KIRA status."""
+        return {
+            "online": True,
+            "model": getattr(backend, "MODEL", "unknown"),
+            "conversation_mode": getattr(backend, "_CONVERSATION_MODE", False)
+        }
 
-                    if hasattr(self, "header_status"):
-                        self.header_status.configure(
-                            text="● ONLINE" if online else "● LOCAL",
-                            text_color=ACCENT_ALT if online else MUTED,
-                        )
 
-                    if hasattr(self, "status_dot"):
-                        self.status_dot.configure(text_color=ACCENT_ALT if online else MUTED)
+# ─────────────────────────────────────────────
+# Main Application
+# ─────────────────────────────────────────────
 
-                    if hasattr(self, "status_text"):
-                        self.status_text.configure(text="ONLINE" if online else "LOCAL")
-                elif k == "error":
-                    self.speaking = False
-                    self.add_message("SYSTEM", p)
-                    self.set_state("ERROR", RED, "Something went wrong")
-                    self._set_busy(False)
-                    self.listening = False
-        except queue.Empty:
-            pass
-        if not self.closing:
-            self._event_job = self.after(70, self._poll_events)
-
-    def _use_suggestion(self, text):
-        """Put a quick suggestion into the command field."""
-        try:
-            self.entry.delete(0, "end")
-            self.entry.insert(0, text)
-            self.entry.focus_set()
-        except Exception:
-            pass
-
-    def close(self):
-        self.closing = True
-        try:
-            self.after_cancel(getattr(self, "_animation_job", None))
-        except Exception:
-            pass
-        try:
-            self.destroy()
-        except Exception:
-            pass
+def main():
+    """Main entry point."""
+    
+    if not WEBVIEW_AVAILABLE:
+        print("\nError: pywebview is required to run KIRA as a native app.")
+        print("Install it with: pip install pywebview")
+        print("\nAlternatively, use launch_web.py to run in a browser.")
+        sys.exit(1)
+    
+    print()
+    print("=" * 60)
+    print("              KIRA — NEURAL INTERFACE")
+    print("=" * 60)
+    print()
+    
+    # Start cache cleanup thread if caching is enabled
+    if CACHE_ENABLED:
+        print("[0/4] Starting cache cleanup thread...")
+        start_cache_cleanup_thread(interval=300)  # Cleanup every 5 minutes
+        print("       Cache cleanup active")
+    
+    if kira_api is None:
+        print("[ERROR] kira_api module not available. Cannot start API server.")
+        print("        Please ensure all dependencies are installed:")
+        print("        pip install -r requirements.txt")
+        input("\nPress Enter to exit...")
+        sys.exit(1)
+    
+    # 1. Set up the API backend
+    print("[1/4] Initializing KIRA backend...")
+    if backend is not None:
+        kira_api.set_backend(backend)
+        kira_api.set_command_handler(process_command)  # Register our command processor
+        print("       Backend ready")
+    else:
+        print(f"       Backend unavailable: {BACKEND_ERROR}")
+        print("       Chat and actions will not work, but UI will load")
+    
+    # 2. Start the API server
+    print(f"[2/4] Starting API server on http://{HOST}:{API_PORT}")
+    try:
+        api_server = kira_api.start_server(host=HOST, port=API_PORT, daemon=True)
+        time.sleep(0.5)  # Give server time to start
+        print("       API server started")
+    except Exception as e:
+        print(f"       [ERROR] Failed to start API server: {e}")
+        api_server = None
+    
+    # 3. Start the UI server
+    print(f"[3/4] Starting UI server on http://{HOST}:{UI_PORT}")
+    try:
+        ui_server = start_ui_server()
+        time.sleep(0.3)  # Give server time to start
+        print("       UI server started")
+    except Exception as e:
+        print(f"       [ERROR] Failed to start UI server: {e}")
+        print(f"       Port {UI_PORT} may be in use. Try closing other apps.")
+        input("\nPress Enter to exit...")
+        sys.exit(1)
+    
+    # 4. Create native window
+    print("[4/4] Creating native window...")
+    time.sleep(0.5)
+    
+    # Create the API bridge
+    api = KiraAPI()
+    
+    # Create the window
+    window = webview.create_window(
+        WINDOW_TITLE,
+        f"http://{HOST}:{UI_PORT}",
+        width=WINDOW_WIDTH,
+        height=WINDOW_HEIGHT,
+        min_size=(1000, 700),
+        js_api=api,
+        text_select=True
+    )
+    
+    print()
+    print("=" * 60)
+    print("  KIRA is running!")
+    print()
+    print("  The native window should now be open.")
+    print("  Close the window to exit KIRA.")
+    print("=" * 60)
+    print()
+    
+    # Start the webview event loop
+    webview.start(debug=False)
+    
+    # Cleanup when window is closed
+    print("\n[KIRA] Shutting down...")
+    kira_api.stop_server(api_server)
+    ui_server.shutdown()
+    print("[KIRA] Goodbye.")
 
 
 if __name__ == "__main__":
-    app = KiraUI()
-    try:
-        backend.start_background_tasks()
-    except Exception:
-        pass
-    app.mainloop()
+    main()

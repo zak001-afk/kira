@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyd
 
 # Virtual environment
 .venv/
@@ -12,21 +13,17 @@ env/
 build/
 dist/
 
-# Tooling caches
-.pytest_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
 # KIRA local data
 kira_memory.db
 *.db
+*.db-wal
+*.db-shm
 
-# KIRA runtime artifacts
+# KIRA files directory
+kira_files/
+
+# Logs
 *.log
-kira_screenshot.png
-kira_vision_*.png
-models/
 
 # Environment / secrets
 .env
@@ -42,3 +39,12 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# PyInstaller
+*.manifest
+*.spec.bak

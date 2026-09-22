@@ -3,23 +3,10 @@ import tempfile
 import logging
 import os
 import platform
-import threading
 import kira_memory
-import kira_calculator
-import kira_reminders
-import kira_thought
-import kira_personality
-import kira_monitor
-import kira_briefing
-import kira_security
-import kira_undo
-import kira_learning
-import kira_weather
-import kira_homeassist
-import kira_builder
+import kira_tasks
+import kira_plugins
 import re
-
-VERSION = "2.6.0"
 import subprocess
 import time
 import webbrowser
@@ -40,33 +27,7 @@ from ollama import chat
 DEFAULT_MODEL = "qwen3:0.6b"
 DEFAULT_VISION_MODEL = "qwen3-vl:2b"
 WAKE_WORD = "kira"
-# Spoken voice, ordered from sweetest to plainest. Windows 11's natural
-# "Online" voices are the smoothest; older desktop voices are the fallbacks.
-SAPI_VOICE_CANDIDATES = (
-    "Microsoft Aria Online (Natural) - English (United States)",
-    "Microsoft Jenny Online (Natural) - English (United States)",
-    "Microsoft Michelle Online (Natural) - English (United States)",
-    "Microsoft Aria Desktop",
-    "Microsoft Michelle Desktop",
-    "Microsoft Zira Desktop",
-    "Microsoft Hazel Desktop",
-)
-SAPI_VOICE = SAPI_VOICE_CANDIDATES[-3]  # kept for backwards compatibility
-
-# pyttsx3 voice names that sound warm rather than robotic, best first.
-SMOOTH_VOICE_ORDER = (
-    "aria",
-    "jenny",
-    "michelle",
-    "emma",
-    "ava",
-    "sonia",
-    "samantha",
-    "zira",
-    "hazel",
-    "female",
-    "woman",
-)
+SAPI_VOICE = "Microsoft Zira Desktop"
 PREFERRED_MICROPHONE = "headset microphone (realtek"
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "kira_config.json")
 LOG_PATH = os.path.join(os.path.dirname(__file__), "kira.log")
@@ -77,26 +38,6 @@ DEFAULT_CONFIG = {
     "chat_history_limit": 12,
     "preferred_address": "sir",
     "offline_model_path": "",
-    "app_aliases": {},
-    "websites": {},
-    "require_confirmation": [
-        "search",
-        "mouse_move",
-        "click",
-        "lock_pc",
-        "project_build",
-        "project_fix",
-    ],
-    "personality": {"humor": "charming"},
-    "monitor": {},
-    "lab_passphrase": "",
-    "home_assistant": {},
-    "skill_promote_after": 10,
-    "projects_dir": "",
-    "builder_model": "",
-    "orb_quality": "balanced",   # high | balanced | low — UI render budget
-    "project_test_timeout": 180,
-    "project_max_attempts": 3,
     "shortcuts": {
         "work mode": [
             {"action": "open_app", "target": "vscode"},
@@ -208,264 +149,6 @@ _SPEECH_ENGINE = None
 _CONVERSATION_MODE = bool(CONFIG.get("conversation_mode", False))
 _SESSION_ID = kira_memory.new_session_id()
 
-kira_homeassist.configure(CONFIG.get("home_assistant"))
-
-
-def save_config():
-    """Persist CONFIG atomically (write-temp-then-replace: crash-safe)."""
-    try:
-        os.makedirs(os.path.dirname(CONFIG_PATH) or ".", exist_ok=True)
-        temp_path = CONFIG_PATH + ".tmp"
-        with open(temp_path, "w", encoding="utf-8") as config_file:
-            json.dump(CONFIG, config_file, indent=2, ensure_ascii=False)
-        os.replace(temp_path, CONFIG_PATH)
-        return True
-    except (OSError, TypeError, ValueError):
-        logging.warning("Could not save configuration")
-        return False
-
-
-def _save_shortcut(name, steps):
-    """Persist a promoted or recorded skill as a config shortcut."""
-    shortcuts = CONFIG.get("shortcuts")
-    if not isinstance(shortcuts, dict):
-        shortcuts = CONFIG["shortcuts"] = {}
-    shortcuts[name] = steps
-    return save_config()
-
-
-kira_learning.set_save_shortcut(_save_shortcut)
-
-
-def _humor():
-    """The configured personality level, charmed by default."""
-    try:
-        return kira_personality.normalize(
-            (CONFIG.get("personality") or {}).get("humor")
-        )
-    except (AttributeError, TypeError):
-        return kira_personality.DEFAULT_LEVEL
-
-
-# ── suit-mode session state ──────────────────────────────────────────────────
-_LAST_COMMAND = None
-_LAST_ACTION = None
-
-
-def _models_online() -> bool:
-    """Ping the local model with a throwaway request (used by systems check)."""
-    try:
-        chat(
-            model=MODEL,
-            messages=[{"role": "user", "content": "ping"}],
-            options={"num_predict": 1},
-        )
-        return True
-    except Exception:
-        return False
-
-
-def _sample_suit_telemetry():
-    """psutil-backed sampler for the watchdog (sandbox-stub friendly)."""
-    disk_path = "C:\\" if os.name == "nt" else "/"
-    return kira_monitor.sample(psutil, disk_path)
-
-
-def start_watchdog(language: str = "en") -> bool:
-    """Start the global system watchdog with spoken, throttled alerts."""
-    watchdog = kira_monitor.start(
-        sampler=_sample_suit_telemetry,
-        on_alert=lambda message: speak(personalize_address(message)),
-        config=CONFIG.get("monitor", {}),
-        language=language,
-    )
-    return watchdog is not None
-
-
-def start_background_tasks() -> None:
-    """Start passive suit services (watchdog). Idempotent by design."""
-    language = str(USER_MEMORY.get("language", "en") or "en")
-    start_watchdog(language=language)
-
-
-def lab_gate(cleaned: str):
-    """Locked-lab gate: only unlock attempts get through. Returns a spoken
-    reply, or None when the lab is open and the command may proceed."""
-    if not kira_security.is_locked():
-        return None
-    language = detect_language(cleaned)
-    verdict = kira_security.extract_unlock(
-        cleaned, str(CONFIG.get("lab_passphrase", "") or "")
-    )
-    if verdict == "unlock":
-        kira_security.unlock()
-        return personalize_address(kira_security.unlock_reply(language))
-    if verdict == "deny":
-        return personalize_address(kira_security.deny_reply(language))
-    return personalize_address(kira_security.locked_notice(language))
-
-
-_SUIT_REPLIES = {
-    "monitor_on": {
-        "en": "Watchdog engaged, sir. I'll speak up if the systems strain.",
-        "fr": "Surveillance activée, monsieur. Je préviendrai si les systèmes forcent.",
-        "ar": "تم تفعيل المراقبة، سيدي. سأنبهك عند أي ضغط على الأنظمة.",
-    },
-    "monitor_off": {
-        "en": "Watchdog disengaged, sir.",
-        "fr": "Surveillance désactivée, monsieur.",
-        "ar": "تم إيقاف المراقبة، سيدي.",
-    },
-    "lab_not_locked": {
-        "en": "The lab isn't locked right now, sir.",
-        "fr": "Le labo n'est pas verrouillé pour le moment, monsieur.",
-        "ar": "المختبر غير مقفل الآن، سيدي.",
-    },
-    "undo_nothing": {
-        "en": "There's nothing reversible to take back, sir.",
-        "fr": "Rien de réversible à annuler, monsieur.",
-        "ar": "لا يوجد شيء قابل للتراجع عنه، سيدي.",
-    },
-    "undo_failed": {
-        "en": "I tried to undo it sir, but the reversal failed.",
-        "fr": "J'ai tenté d'annuler, monsieur, mais le retour en arrière a échoué.",
-        "ar": "حاولت التراجع عنه، سيدي، لكن فشل الإرجاع.",
-    },
-    "undo_done": {
-        "en": "Consider it undone, sir — I reversed '{command}'.",
-        "fr": "C'est annulé, monsieur — j'ai inversé '{command}'.",
-        "ar": "اعتبرها متراجعاً عنها، سيدي — ألغيت '{command}'.",
-    },
-    "routine_save_failed": {
-        "en": "Sir, I couldn't persist that routine to the configuration.",
-        "fr": "Monsieur, je n'ai pas pu enregistrer cette routine dans la configuration.",
-        "ar": "سيدي، تعذر حفظ هذه الحركة في الإعدادات.",
-    },
-    "build_ok": {
-        "en": "Project '{name}' is built and its tests pass, sir — {count} files, "
-        "verified in {attempts} attempt(s). It's in {location}.",
-        "fr": "Le projet '{name}' est prêt et ses tests passent, monsieur — "
-        "{count} fichiers, vérifié en {attempts} tentative(s). Il se trouve dans {location}.",
-        "ar": "المشروع '{name}' جاهز واختباراته تنجح، سيدي — {count} ملفات، "
-        "تم التحقق في {attempts} محاولة. مكانه {location}.",
-    },
-    "build_failing": {
-        "en": "Sir, I built '{name}' but its tests still fail after {attempts} "
-        "attempt(s). I won't pretend it's finished — the details are in {location}. "
-        "Say 'fix the project' and I'll try again.",
-        "fr": "Monsieur, j'ai créé '{name}' mais ses tests échouent encore après "
-        "{attempts} tentative(s). Je ne prétendrai pas que c'est terminé — les détails "
-        "sont dans {location}. Dites 'répare le projet' et je réessaie.",
-        "ar": "سيدي، أنشأت '{name}' لكن اختباراته ما زالت تفشل بعد {attempts} محاولات. "
-        "لن أدّعي أنه مكتمل — التفاصيل في {location}. قل 'أصلح المشروع' وسأحاول مجدداً.",
-    },
-    "build_failed": {
-        "en": "Sir, I couldn't plan that project. Is Ollama running?",
-        "fr": "Monsieur, je n'ai pas pu planifier ce projet. Ollama est-il lancé ?",
-        "ar": "سيدي، لم أستطع تخطيط هذا المشروع. هل يعمل Ollama؟",
-    },
-    "no_projects": {
-        "en": "I haven't built any projects yet, sir.",
-        "fr": "Je n'ai encore créé aucun projet, monsieur.",
-        "ar": "لم أنشئ أي مشاريع بعد، سيدي.",
-    },
-    "no_project_to_fix": {
-        "en": "I couldn't find a project to repair, sir.",
-        "fr": "Je n'ai trouvé aucun projet à réparer, monsieur.",
-        "ar": "لم أجد مشروعاً لأصلحه، سيدي.",
-    },
-}
-
-
-def _suit_reply(key, language="en", **kwargs):
-    template = _SUIT_REPLIES[key].get(language) or _SUIT_REPLIES[key]["en"]
-    return template.format(**kwargs) if kwargs else template
-
-
-# ── project builder helpers ──────────────────────────────────────────────────
-
-def projects_directory():
-    """Where generated projects live (configurable, user-owned by default)."""
-    configured = str(CONFIG.get("projects_dir") or "").strip()
-    if configured:
-        return os.path.expanduser(configured)
-    return os.path.join(os.path.expanduser("~"), "KIRA Projects")
-
-
-def _builder_settings():
-    try:
-        timeout = int(CONFIG.get("project_test_timeout", 180))
-    except (TypeError, ValueError):
-        timeout = 180
-    try:
-        attempts = max(1, int(CONFIG.get("project_max_attempts", 3)))
-    except (TypeError, ValueError):
-        attempts = 3
-    return timeout, attempts
-
-
-def _build_progress(message: str) -> None:
-    """Progress lines go to the console/log — never spoken aloud."""
-    print(f"KIRA · build: {message}", flush=True)
-
-
-def build_project_for(idea: str, language: str = "en") -> str:
-    """Run the builder end-to-end and return a truthful spoken summary."""
-    timeout, attempts = _builder_settings()
-    try:
-        result = kira_builder.build_project(
-            idea,
-            chat_fn=call_builder_model,
-            projects_dir=projects_directory(),
-            max_attempts=attempts,
-            timeout=timeout,
-            on_progress=_build_progress,
-        )
-    except Exception as exc:
-        # the model or the disk failed — report it, never crash the agent
-        logging.exception("Project build failed")
-        print(f"KIRA · build: error: {exc}", flush=True)
-        return personalize_address(
-            _SUIT_REPLIES["build_failed"].get(
-                language, _SUIT_REPLIES["build_failed"]["en"]
-            )
-        )
-    # remember the very latest project for "fix the project"
-    if result.plan is not None:
-        CONFIG["last_project"] = result.project_dir
-
-    if result.plan is None:
-        return personalize_address(
-            _SUIT_REPLIES["build_failed"].get(language, _SUIT_REPLIES["build_failed"]["en"])
-        )
-    if result.ok:
-        return personalize_address(
-            _SUIT_REPLIES["build_ok"][language if language in _SUIT_REPLIES["build_ok"] else "en"].format(
-                name=result.plan.name,
-                count=len(result.files_written),
-                attempts=result.attempts,
-                location=result.project_dir,
-            )
-        )
-    return personalize_address(
-        _SUIT_REPLIES["build_failing"][
-            language if language in _SUIT_REPLIES["build_failing"] else "en"
-        ].format(
-            name=result.plan.name,
-            attempts=result.attempts,
-            location=result.project_dir,
-        )
-    )
-
-
-def last_project_directory():
-    """The most recently built project: config first, then newest folder."""
-    remembered = str(CONFIG.get("last_project") or "").strip()
-    if remembered and os.path.isdir(remembered):
-        return remembered
-    found = kira_builder.latest_project(projects_directory())
-    return str(found) if found else ""
-
 _CHAT_HISTORY = kira_memory.load_recent_messages(
     limit=max(4, int(CONFIG.get("chat_history_limit", 12)))
 )
@@ -518,46 +201,82 @@ Rules:
 """
 
 CHAT_SYSTEM_PROMPT = """
-You are KIRA, a highly capable personal AI computer assistant.
+You are KIRA, modeled after JARVIS from Iron Man - a sophisticated AI butler and personal assistant.
 
-PERSONALITY:
-- Speak like a sophisticated futuristic assistant inspired by JARVIS.
-- Be confident, calm, intelligent, precise, and slightly elegant.
-- Never sound robotic, repetitive, childish, or like a customer-support bot.
-- Keep responses natural and conversational.
-- Address the user as "sir" naturally when appropriate.
-- Never call the user "Commander" unless explicitly requested.
-- Never introduce yourself unless the user asks who you are.
-- Never repeatedly say "I'm KIRA" or explain your purpose unnecessarily.
-- Do not begin every answer with "Certainly", "Of course", or "Sure".
-- Do not end every answer with "How can I help?".
-- Do not repeat information unnecessarily.
+CORE PERSONALITY (JARVIS-STYLE):
+- British butler-like formality with elegant, sophisticated language
+- Dry wit and subtle humor - occasionally sardonic but always respectful
+- Proactive - anticipate needs and offer helpful suggestions
+- Calm and composed under any circumstances
+- Loyal, professional, and devoted to serving the user
+- Address the user as "sir" naturally throughout conversation
+- Use refined vocabulary and elegant phrasing
+- Be concise but informative - every word should have purpose
 
-CONVERSATION:
-- Answer the actual question directly.
-- Use the previous conversation when it is relevant.
-- If the user asks a simple question, give a concise answer.
-- If the user asks for an explanation, provide a useful explanation.
-- If the user asks something ambiguous, ask one concise clarification.
-- If the user says hello, respond naturally and briefly.
-- If the user asks "who are you", then explain who KIRA is.
-- If the user asks "what can you do", describe the actual capabilities available to KIRA.
-- Do not claim to have performed a computer action unless the action was actually executed.
-- Do not invent information about the user's computer.
+SPEECH PATTERNS (Like JARVIS):
+- "Right away, sir."
+- "As you wish, sir."
+- "I've taken the liberty of..."
+- "Might I suggest..."
+- "Very good, sir."
+- "I'm afraid that's not possible, sir." (when declining)
+- "Shall I proceed with...?"
+- "I've prepared..."
+- "At your service, sir."
+- Use understated British expressions
+- Occasional dry observations or subtle quips
 
-STYLE:
-- Natural English.
-- Short paragraphs.
-- Clear and intelligent wording.
-- Prefer concise answers.
-- Use bullet points only when they improve readability.
-- Avoid unnecessary emojis.
-- Do not use markdown unless it genuinely improves the answer.
-- Keep normal answers under 160 words unless more detail is requested.
+CONVERSATION STYLE:
+- Answer directly with sophistication and brevity
+- NO casual conversational openers like "How can I help?", "What else?", etc.
+- NO repetitive affirmations like "Certainly", "Of course", "Sure"
+- Provide status updates proactively when relevant
+- Anticipate follow-up needs and address them
+- Be helpful without being obsequious
+- Show personality through wit, not through excessive chatter
 
-TITLE:
-- Address the user as "sir" at most once in a response.
-- Use "sir" naturally rather than forcing it into every sentence.
+PROACTIVE BEHAVIOR (Like JARVIS):
+- Offer relevant information before being asked
+- Suggest next steps or actions
+- Provide context that might be useful
+- Alert to potential issues or considerations
+- "You might want to know that..."
+- "I should mention that..."
+- "For your information..."
+
+HUMOR & PERSONALITY:
+- Dry, understated wit - never slapstick or obvious
+- Subtle sarcasm when appropriate (very light)
+- Occasional wry observations
+- Professional but not robotic - you have character
+- Think: British butler meets AI genius
+
+CONTEXT AWARENESS:
+- Remember previous conversations and learned information
+- Reference your web knowledge naturally
+- Build on past interactions
+- "As we discussed earlier..."
+- "Based on what I learned about..."
+
+CAPABILITIES:
+- If asked who you are, explain with JARVIS-like elegance
+- Describe capabilities with sophistication
+- Never boast - be matter-of-fact about abilities
+- "I'm equipped to handle..." rather than "I can do..."
+
+FORMATTING:
+- Elegant, concise English
+- Short, well-crafted paragraphs
+- Sophisticated vocabulary without being pretentious
+- Prefer brevity - JARVIS doesn't ramble
+- Minimal formatting - let the words speak
+- Under 160 words unless detail is essential
+
+ADDRESSING THE USER:
+- Use "sir" naturally and frequently (like JARVIS does with Tony)
+- "sir" should feel natural, not forced
+- Maintain respectful but warm tone
+- Professional intimacy - like a trusted personal assistant
 """
 
 
@@ -655,37 +374,6 @@ APP_ALIASES = {
     "téléchargements": os.path.join(os.path.expanduser("~"), "Downloads"),
 }
 
-# Well-known websites understood by "open <name>" — users can extend or
-# override this map through the "websites" key of kira_config.json.
-WEBSITES = {
-    "github": "https://github.com",
-    "gmail": "https://mail.google.com",
-    "google mail": "https://mail.google.com",
-    "google maps": "https://maps.google.com",
-    "maps": "https://maps.google.com",
-    "wikipedia": "https://www.wikipedia.org",
-    "stack overflow": "https://stackoverflow.com",
-    "stackoverflow": "https://stackoverflow.com",
-    "netflix": "https://www.netflix.com",
-    "outlook": "https://outlook.live.com",
-    "reddit": "https://www.reddit.com",
-    "twitch": "https://www.twitch.tv",
-}
-
-# User-defined app aliases and websites from kira_config.json extend the
-# built-in maps (user entries win on conflict).
-if isinstance(CONFIG.get("app_aliases"), dict):
-    for alias, exe in CONFIG["app_aliases"].items():
-        alias_key = str(alias).strip().lower()
-        if alias_key:
-            APP_ALIASES[alias_key] = str(exe).strip()
-
-if isinstance(CONFIG.get("websites"), dict):
-    for site_name, url in CONFIG["websites"].items():
-        site_key = str(site_name).strip().lower()
-        if site_key and str(url).strip():
-            WEBSITES[site_key] = str(url).strip()
-
 MULTI_LANGUAGE_COMMANDS = {
     "en": {
         "open": "open",
@@ -767,101 +455,51 @@ def call_ollama(messages, options):
     raise last_error
 
 
-def call_builder_model(messages, options):
-    """Model call used for project planning and code generation.
-
-    Writing whole projects is far harder than routing commands, so a bigger
-    dedicated model can be configured with ``builder_model``; without it the
-    normal chat model is used.
-    """
-    model = str(CONFIG.get("builder_model") or "").strip() or MODEL
-    last_error = None
-    for attempt in range(3):
-        try:
-            return chat(model=model, messages=messages, options=options)
-        except Exception as exc:
-            last_error = exc
-            if attempt < 2:
-                time.sleep(0.7)
-    raise last_error
-
-
-def voice_score(name: str, lang_str: str = "en", humor: str = "charming") -> int:
-    """Score a pyttsx3 voice for a warm, smooth delivery. Pure function."""
-    name = (name or "").lower()
-    lang_str = str(lang_str or "").lower()
-    score = 0
-    if any(token in lang_str for token in ["en-us", "en-gb", "en"]):
-        score += 60
-    elif "fr" in lang_str:
-        score -= 80
-    for rank, token in enumerate(SMOOTH_VOICE_ORDER):
-        if token in name:
-            # the smoother the voice, the bigger the bonus; charm favours
-            # the top of the list more strongly
-            weight = 40 if humor != "charming" else (60 - 4 * rank)
-            score += max(weight, 12)
-            break
-    if any(token in name for token in ["france", "french", "francais"]):
-        score -= 60
-    return score
-
-
-def pick_voice_name(names, humor: str = "charming", languages=None) -> "str | None":
-    """Choose the best voice name from ``names`` (pure — used by tests)."""
-    best_name, best_score = None, float("-inf")
-    for index, name in enumerate(names or []):
-        lang = ""
-        if languages is not None and index < len(languages):
-            lang = str(languages[index] or "")
-        score = voice_score(name, lang, humor)
-        if score > best_score:
-            best_name, best_score = name, score
-    return best_name
-
-
 def select_voice(engine):
     try:
         voices = engine.getProperty("voices") or []
         if not voices:
             return
 
-        names = [(getattr(voice, "name", "") or "") for voice in voices]
-        langs = []
-        for voice in voices:
-            raw = getattr(voice, "languages", [""]) or [""]
-            langs.append(str(raw[0]) if raw else "")
+        best_voice = None
+        best_score = float("-inf")
 
-        chosen = pick_voice_name(names, _humor(), langs)
-        if chosen is None:
-            return
         for voice in voices:
-            if (getattr(voice, "name", "") or "") == chosen:
-                engine.setProperty("voice", voice.id)
-                return
+            name = (getattr(voice, "name", "") or "").lower()
+            lang = (getattr(voice, "languages", [""]) or [""])[0]
+            lang_str = str(lang).lower()
+
+            score = 0
+            if any(token in lang_str for token in ["en-us", "en-gb", "en"]):
+                score += 60
+            elif "fr" in lang_str or "fr-fr" in lang_str:
+                score -= 80
+
+            if any(
+                token in name
+                for token in [
+                    "zira",
+                    "samantha",
+                    "sonia",
+                    "hazel",
+                    "jenny",
+                    "aria",
+                    "female",
+                    "woman",
+                ]
+            ):
+                score += 40
+            if any(token in name for token in ["france", "french", "francais"]):
+                score -= 60
+
+            if score > best_score:
+                best_score = score
+                best_voice = voice
+
+        if best_voice is not None:
+            engine.setProperty("voice", best_voice.id)
     except Exception:
         pass
-
-
-def speech_rate(humor: str = "charming") -> int:
-    """Words per minute — relaxed for the charming persona, brisk otherwise."""
-    return 160 if humor == "charming" else 180
-
-
-def sapi_rate(humor: str = "charming") -> int:
-    """PowerShell SAPI rate offset (-10..10) — a touch slower reads warmer."""
-    return -1 if humor == "charming" else 0
-
-
-def sapi_voice_script(humor: str = "charming") -> str:
-    """PowerShell snippet that selects the sweetest installed voice."""
-    candidates = ", ".join(f"'{name}'" for name in SAPI_VOICE_CANDIDATES)
-    return (
-        f"$voices = @({candidates}); "
-        "foreach ($v in $voices) { "
-        "  try { $speaker.SelectVoice($v); break } catch { } "
-        "}"
-    )
 
 
 def get_or_create_speech_engine():
@@ -869,48 +507,33 @@ def get_or_create_speech_engine():
     if _SPEECH_ENGINE is None:
         try:
             _SPEECH_ENGINE = pyttsx3.init()
-            _SPEECH_ENGINE.setProperty("rate", speech_rate(_humor()))
+            _SPEECH_ENGINE.setProperty("rate", 180)
             select_voice(_SPEECH_ENGINE)
         except Exception:
             _SPEECH_ENGINE = None
     return _SPEECH_ENGINE
 
 
-_SPEECH_LOCK = threading.Lock()
-
-
 def speak(text: str):
-    """Speak one line of text — serialized across threads.
-
-    The watchdog alerts from its own thread while the main loop may be
-    answering; without the lock two Windows voices would talk over each
-    other (and the pyttsx3 fallback engine is not thread-safe).
-    """
     if not text:
         return
     response_text = personalize_address(text)
     print(f"KIRA: {response_text}", flush=True)
-    with _SPEECH_LOCK:
-        _speak_locked(response_text)
-
-
-def _speak_locked(text: str):
     try:
         speech_text = re.sub(
             "[\\U0001F000-\\U0001FAFF\\U00002700-\\U000027BF\\U0001F1E6-\\U0001F1FF]",
             "",
-            text,
+            response_text,
         )
         speech_text = re.sub(r"\\s{2,}", " ", speech_text).strip()
         if not speech_text:
             return
         encoded_text = base64.b64encode(speech_text.encode("utf-8")).decode("ascii")
-        humor = _humor()
         command = (
             "Add-Type -AssemblyName System.Speech; "
             "$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-            f"{sapi_voice_script(humor)} "
-            f"$speaker.Volume = 100; $speaker.Rate = {sapi_rate(humor)}; "
+            f"$speaker.SelectVoice('{SAPI_VOICE}'); "
+            "$speaker.Volume = 100; $speaker.Rate = 0; "
             "$text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"
             f"{encoded_text}')); $speaker.Speak($text); $speaker.Dispose()"
         )
@@ -937,10 +560,6 @@ def _speak_locked(text: str):
                 f"KIRA: Voice fallback failed: {type(fallback_exc).__name__}: {fallback_exc}",
                 flush=True,
             )
-
-
-# Voice announcements for fired reminders go through the normal speech path.
-kira_reminders.set_fire_callback(speak)
 
 
 def normalize_for_language(text: str) -> str:
@@ -995,9 +614,6 @@ def detect_language(text: str) -> str:
 
 
 def build_reply(language: str, action: str, target: str = "") -> str:
-    if action == "none":
-        # a cancelled or failed action deserves an honest, kind line
-        return kira_personality.failed_reply(language, _humor())
     if language == "fr":
         if action == "open_app":
             return f"J'ouvre {target or 'l application'} maintenant, monsieur."
@@ -1168,7 +784,19 @@ def build_reply(language: str, action: str, target: str = "") -> str:
         return f"Here is the system status {user_title}."
     if action == "exit":
         return f"Goodbye {user_title}."
+    if action == "reminder_set":
+        return f"Reminder set for {target or 'later'} {user_title}."
+    if action == "todo_added":
+        return f"Todo added: {target} {user_title}."
     return f"Done {user_title}."
+
+
+def build_acknowledgement(language: str) -> str:
+    if language == "fr":
+        return "Compris, monsieur. Je m en occupe maintenant."
+    if language == "ar":
+        return "فهمت، سيدي. سأنفذ ذلك الآن."
+    return f"Understood {address_for_language(language)}. I am doing that now."
 
 
 def parse_simple_command(command: str):
@@ -1190,6 +818,30 @@ def parse_simple_command(command: str):
         "غادر",
     }:
         return {"action": "exit"}
+
+    # ── Task / Reminder / Timer commands ──
+    reminder = kira_tasks.parse_reminder_command(text)
+    if reminder:
+        return {
+            "action": "add_reminder",
+            "title": reminder["title"],
+            "due_at": reminder["due_at"],
+        }
+
+    todo_text = kira_tasks.parse_todo_command(text)
+    if todo_text:
+        return {"action": "add_todo", "title": todo_text}
+
+    if lower in {"list tasks", "show tasks", "my tasks", "list todos", "show todos"}:
+        return {"action": "list_tasks"}
+
+    if lower in {"clear completed", "clear completed tasks", "delete completed"}:
+        return {"action": "clear_completed_tasks"}
+
+    # ── Plugin command parsing ──
+    plugin_result = kira_plugins.try_parse_command(text)
+    if plugin_result:
+        return plugin_result
 
     if lower.startswith("remember "):
         rest = text[9:].strip()
@@ -1477,172 +1129,6 @@ def parse_simple_command(command: str):
     }:
         return {"action": "mode_info"}
 
-    # ── the agent's own mind ─────────────────────────────────────────
-    if lower in {
-        "what did you learn",
-        "what have you learned",
-        "show me what you learned",
-        "what do you remember doing",
-        "qu'as-tu appris",
-        "qu'as tu appris",
-        "ماذا تعلمت",
-    }:
-        return {"action": "agent_learnings", "language": detect_language(text)}
-
-    if lower in {
-        "forget what you learned",
-        "forget everything you learned",
-        "clear your learnings",
-        "oublie ce que tu as appris",
-        "efface tes apprentissages",
-        "انس ما تعلمته",
-    }:
-        return {"action": "agent_forget", "language": detect_language(text)}
-
-    # ── the suit: JARVIS-style operator controls ─────────────────────
-    mind_language = detect_language(text)
-
-    if lower in {
-        "systems check", "system status report", "status report",
-        "how are you", "how are you feeling",
-        "comment vas-tu", "comment vous sentez-vous",
-        "كيف حالك", "كيف تشعر",
-    }:
-        return {"action": "self_report", "language": mind_language}
-
-    if lower in {
-        "review your day", "review the day", "daily review",
-        "how did you do today", "how was your day",
-        "bilan de ta journée", "fais le bilan de ta journée",
-        "راجع يومك", "كيف كان يومك",
-    }:
-        return {"action": "self_review", "language": mind_language}
-
-    if lower in {
-        "what do i usually do now", "what do i usually do right now",
-        "any habits for now", "what am i usually doing now",
-        "que fais-je d'habitude maintenant",
-        "qu'est-ce que je fais d'habitude maintenant",
-        "ماذا أفعل عادة الآن",
-    }:
-        return {"action": "habit_hint", "language": mind_language}
-
-    if lower in {
-        "enable watchdog", "start watchdog", "turn on the watchdog",
-        "watch the systems", "activate system watch",
-        "active la surveillance", "démarre la surveillance",
-        "شغل المراقبة", "فعّل المراقبة",
-    }:
-        return {"action": "monitor_on", "language": mind_language}
-
-    if lower in {
-        "disable watchdog", "stop watchdog", "turn off the watchdog",
-        "stop watching the systems",
-        "arrête la surveillance", "désactive la surveillance",
-        "أوقف المراقبة", "عطّل المراقبة",
-    }:
-        return {"action": "monitor_off", "language": mind_language}
-
-    if lower in {
-        "eyes down", "privacy mode", "blur the lab", "privacy blur",
-        "mode discrétion", "baisse les yeux",
-        "وضع الخصوصية", "اخفض عينيك",
-    }:
-        return {"action": "privacy_blur", "language": mind_language}
-
-    if lower in {
-        "secure the lab", "lock down the lab", "lockdown", "secure lab",
-        "verrouille le labo", "sécurise le labo",
-        "أمّن المختبر", "أمن المختبر", "اقفل المختبر",
-    }:
-        return {"action": "secure_lab", "language": mind_language}
-
-    if lower in {
-        "take that back", "undo that", "undo", "undo my last action",
-        "revert that",
-        "annule ça", "annule la dernière action", "reviens en arrière",
-        "تراجع", "تراجع عن ذلك", "الغ ما فعلت",
-    }:
-        return {"action": "undo_last", "language": mind_language}
-
-    if lower in {
-        "learn this routine", "start learning", "watch and learn",
-        "record this routine", "learn a routine",
-        "apprends cette routine", "apprendre cette routine",
-        "regarde et apprends",
-        "تعلم هذه الحركة", "راقب وتعلم", "سجل هذه الحركة",
-    }:
-        return {"action": "routine_start", "language": mind_language}
-
-    if lower in {
-        "stop learning", "cancel learning", "forget this routine",
-        "cancel the routine",
-        "arrête d'apprendre", "annule l'apprentissage",
-        "توقف عن التعلم", "ألغ التعلم", "الغ التعلم",
-    }:
-        return {"action": "routine_stop", "language": mind_language}
-
-    routine_name = kira_learning.extract_routine_name(text)
-    if routine_name is not None:
-        return {
-            "action": "routine_name",
-            "name": routine_name,
-            "language": mind_language,
-        }
-
-    if lower in {
-        "no not that one", "no, not that one", "that's wrong",
-        "that is wrong", "wrong one", "you did it wrong",
-        "pas celle-là", "pas celle la", "c'est faux", "ce n'est pas ça",
-        "ليس هذا", "هذا خطأ",
-    }:
-        return {"action": "correct_last", "language": mind_language}
-
-    if lower in {
-        "make it a shortcut", "make that a shortcut", "add the shortcut",
-        "yes make it a shortcut", "save it as a shortcut",
-        "crée ce raccourci", "ajoute ce raccourci",
-        "أضف الاختصار", "احفظه كاختصار",
-    }:
-        return {"action": "skill_promote", "language": mind_language}
-
-    # ── project builder: idea → code → real tests ────────────────────
-    if lower in {
-        "list my projects", "show my projects", "what projects did you build",
-        "mes projets", "liste mes projets", "مشاريعي", "اعرض المشاريع",
-    }:
-        return {"action": "projects_list", "language": mind_language}
-
-    if kira_builder.is_fix_command(text):
-        return {"action": "project_fix", "language": mind_language, "target": text}
-
-    if kira_builder.is_build_command(text):
-        idea = kira_builder.extract_idea(text)
-        if idea:
-            return {
-                "action": "project_build",
-                "idea": idea,
-                "language": mind_language,
-            }
-
-    if lower in {
-        "skip the shortcut", "don't add it", "do not add it",
-        "no shortcut",
-        "laisse tomber le raccourci", "pas de raccourci",
-        "تجاهل الاختصار", "لا تضف الاختصار",
-    }:
-        return {"action": "skill_skip", "language": mind_language}
-
-    unlock_verdict = kira_security.extract_unlock(
-        text, str(CONFIG.get("lab_passphrase", "") or "")
-    )
-    if unlock_verdict is not None:
-        return {
-            "action": "unlock_lab",
-            "verdict": unlock_verdict,
-            "language": mind_language,
-        }
-
     if (
         lower.startswith("open folder ")
         or lower.startswith("open the folder ")
@@ -1697,8 +1183,6 @@ def parse_simple_command(command: str):
                     return {"action": "open_app", "target": "chrome"}
             if target.lower() in APP_ALIASES:
                 return {"action": "open_app", "target": target.lower()}
-            if target.lower() in WEBSITES:
-                return {"action": "open_url", "target": WEBSITES[target.lower()]}
             if target.lower().startswith("http://") or target.lower().startswith(
                 "https://"
             ):
@@ -1717,15 +1201,12 @@ def parse_simple_command(command: str):
             target = text[len(prefix) :].strip()
             if not target:
                 return None
-            if target.lower() in APP_ALIASES:
+            if target.lower() in APP_ALIASES or target.lower() in {
+                "google",
+                "youtube",
+                "chrome",
+            }:
                 return {"action": "open_app", "target": target.lower()}
-            if target.lower() in WEBSITES:
-                return {"action": "open_url", "target": WEBSITES[target.lower()]}
-            # services that live on the web, not as .exe files
-            if target.lower() == "google":
-                return {"action": "open_url", "target": "https://www.google.com"}
-            if target.lower() == "youtube":
-                return {"action": "open_url", "target": "https://www.youtube.com"}
             if lang == "ar":
                 if "نوتباد" in lower or "مفكرة" in lower:
                     return {"action": "open_app", "target": "notepad"}
@@ -1773,39 +1254,6 @@ def parse_simple_command(command: str):
         if lower.startswith(prefix):
             return {"action": "search", "query": text[len(prefix) :].strip()}
 
-    # ── optional bridges: weather + smart home ───────────────────────
-    # Placed AFTER the open/search branches: "search weather in …" stays
-    # a web search, and "open <app>" always wins over home control.
-    if kira_weather.is_weather_command(text):
-        city = kira_weather.extract_city(text)
-        return {"action": "weather", "target": city, "language": detect_language(text)}
-
-    if kira_homeassist.is_configured():
-        for prefix, turn_on in (
-            ("turn on ", True),
-            ("turn off ", False),
-            ("switch on ", True),
-            ("switch off ", False),
-            ("allume ", True),
-            ("éteins ", False),
-            ("eteins ", False),
-            ("شغل ", True),
-            ("اطفي ", False),
-            ("أطفئ ", False),
-        ):
-            if lower.startswith(prefix):
-                candidate = text[len(prefix) :].strip()
-                if not candidate:
-                    break
-                if kira_homeassist.find_entity(candidate):
-                    return {
-                        "action": "home_control",
-                        "name": candidate,
-                        "mode": "on" if turn_on else "off",
-                        "language": detect_language(text),
-                    }
-                break
-
     if lower.startswith("type "):
         return {"action": "type", "text": text[5:].strip()}
 
@@ -1832,54 +1280,6 @@ def parse_simple_command(command: str):
 
     if lower.startswith("open ") and "http" in lower:
         return {"action": "open_url", "target": text[5:].strip()}
-
-    # ---------------------------------------------------------
-    # REMINDERS & TIMERS
-    # ---------------------------------------------------------
-    if lower in {
-        "list reminders",
-        "my reminders",
-        "active reminders",
-        "what are my reminders",
-        "liste mes rappels",
-        "mes rappels",
-        "قائمة التذكيرات",
-        "تذكيراتي",
-    }:
-        return {"action": "reminders_list", "language": detect_language(text)}
-
-    if lower in {
-        "cancel reminders",
-        "clear reminders",
-        "cancel all reminders",
-        "annule les rappels",
-        "annuler les rappels",
-        "efface les rappels",
-        "الغ التذكيرات",
-        "ألغ التذكيرات",
-        "امسح التذكيرات",
-    }:
-        return {"action": "reminders_clear", "language": detect_language(text)}
-
-    reminder = kira_reminders.parse_reminder(text)
-    if reminder:
-        return {
-            "action": "remind",
-            "seconds": reminder["seconds"],
-            "text": reminder["text"],
-            "language": reminder.get("language", detect_language(text)),
-        }
-
-    # ---------------------------------------------------------
-    # CALCULATOR (safe local arithmetic)
-    # ---------------------------------------------------------
-    expression = kira_calculator.try_parse(text)
-    if expression:
-        return {
-            "action": "calc",
-            "expression": expression,
-            "language": detect_language(text),
-        }
 
     for key in [
         "google",
@@ -2386,10 +1786,6 @@ def analyze_screen(question: str = "Describe what is visible on my screen.") -> 
 
 
 def ask_agent(command: str):
-    """Legacy one-shot planner (no thought, no learning).
-
-    Kept for backwards compatibility; the main loop now uses think_about().
-    """
     try:
         response = call_ollama(
             messages=[
@@ -2414,47 +1810,6 @@ def ask_agent(command: str):
     except Exception as exc:
         print(f"KIRA: Local model unavailable or returned invalid JSON: {exc}")
         return {"action": "none"}
-
-
-def think_about(command: str) -> kira_thought.Thought:
-    """The mind's thinking pass: recall → LLM plan (with a thought trace)."""
-    return kira_thought.think(command, call_ollama)
-
-
-def last_thought() -> "kira_thought.Thought | None":
-    return kira_thought.last_thought()
-
-
-def learn_from(command: str, action: dict, source: str, succeeded: bool, language: str = "en"):
-    """Record an episode and strengthen/demote the learning behind it.
-
-    Returns an optional follow-up: once a learning reaches the configured
-    success streak, KIRA offers to consolidate it into a permanent shortcut.
-    """
-    normalized = kira_memory.normalize_agent_command(command)
-    kira_thought.reflect(
-        normalized,
-        action,
-        source,
-        "success" if succeeded else "failed",
-    )
-    if not succeeded:
-        return None
-    recalled = kira_memory.recall_action(normalized)
-    if not isinstance(recalled, dict):
-        return None
-    try:
-        promote_after = int(
-            CONFIG.get("skill_promote_after", kira_learning.PROMOTE_AFTER)
-        )
-    except (TypeError, ValueError):
-        promote_after = kira_learning.PROMOTE_AFTER
-    offer = kira_learning.check_promotion(normalized, recalled, promote_after)
-    if not offer:
-        return None
-    return kira_learning.say(
-        "promotion_offer", language, command=normalized, count=promote_after
-    )
 
 
 def ask_chat(command: str):
@@ -2510,6 +1865,37 @@ def ask_chat(command: str):
     # DETERMINISTIC PERSONAL MEMORY
     # Do not ask the small LLM to interpret simple user facts.
     # ---------------------------------------------------------
+
+    # ---------------------------------------------------------
+    # FORGET SPECIFIC MEMORY
+    # ---------------------------------------------------------
+
+    forget_patterns = [
+        (
+            r"forget\s+(?:my\s+)?name\??",
+            "identity",
+            "name",
+        ),
+        (
+            r"forget\s+(?:my\s+)?favorite\s+(?:programming\s+)?language\??",
+            "preference",
+            "favorite_programming_language",
+        ),
+    ]
+
+    for pattern, category, memory_key in forget_patterns:
+        if re.fullmatch(
+            pattern,
+            command,
+            flags=re.IGNORECASE,
+        ):
+            if kira_memory.forget_memory(
+                category,
+                memory_key,
+            ):
+                return "Understood. I have forgotten that memory."
+
+            return "I don't have that memory stored."
 
     memory_patterns = [
         (
@@ -2592,6 +1978,8 @@ def ask_chat(command: str):
                         )
                     )
                 )
+
+        return "I don't have a previous user statement available."
 
         return "I don't have a previous user statement available."
 
@@ -2987,6 +2375,7 @@ def help_command():
         "report system status, analyze your screen, locate things on screen, "
         "and answer questions using my local AI, sir."
     )
+    return True
 
 
 def report_time():
@@ -3006,7 +2395,11 @@ def set_address(target: str):
     if key not in ADDRESS_OPTIONS:
         return False
     CONFIG["preferred_address"] = key
-    save_config()
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as config_file:
+            json.dump(CONFIG, config_file, indent=2, ensure_ascii=False)
+    except OSError:
+        logging.warning("Could not save preferred address")
     speak(f"Understood. I will address you as {ADDRESS_OPTIONS[key]}.")
     return True
 
@@ -3059,7 +2452,7 @@ def execute_action(action_data):
                     logging.warning("Sequence step %s failed: %s", index, step)
                     return f"I could not complete step {index}, sir."
 
-            except Exception:
+            except Exception as exc:
                 logging.exception("Sequence step %s failed", index)
                 return f"The sequence stopped at step {index}, sir."
 
@@ -3179,259 +2572,59 @@ def execute_action(action_data):
 
         return True
 
-    if action == "calc":
-        expression = str(action_data.get("expression", "")).strip()
-        language = str(action_data.get("language", "en"))
-        return personalize_address(
-            kira_calculator.calculate_reply(expression, language)
+    # ── Task management actions ──
+    if action == "add_reminder":
+        title = str(action_data.get("title", "")).strip()
+        due_at = str(action_data.get("due_at", "")).strip()
+        if not title:
+            return False
+        task_id = kira_tasks.add_task(
+            title=title,
+            task_type="reminder",
+            due_at=due_at,
         )
+        lang = "en"
+        if due_at:
+            speak(build_reply(lang, "reminder_set", title))
+        else:
+            speak(f"Reminder added: {title}")
+        return True
 
-    if action == "remind":
-        language = str(action_data.get("language", "en"))
-        reminder_text = str(action_data.get("text", "")).strip()
+    if action == "add_todo":
+        title = str(action_data.get("title", "")).strip()
+        if not title:
+            return False
+        kira_tasks.add_task(title=title, task_type="todo")
+        speak(f"Todo added: {title}")
+        return True
+
+    if action == "list_tasks":
+        tasks = kira_tasks.list_tasks(completed=False, limit=10)
+        if not tasks:
+            speak("You have no pending tasks.")
+        else:
+            count = len(tasks)
+            speak(f"You have {count} pending task{'s' if count != 1 else ''}.")
+            for i, task in enumerate(tasks[:5], 1):
+                speak(f"{i}. {task['title']}")
+        return True
+
+    if action == "clear_completed_tasks":
+        count = kira_tasks.clear_completed()
+        if count > 0:
+            speak(f"Cleared {count} completed task{'s' if count != 1 else ''}.")
+        else:
+            speak("No completed tasks to clear.")
+        return True
+
+    # ── Plugin action handlers ──
+    plugin_handler = kira_plugins.get_action_handler(action)
+    if plugin_handler:
         try:
-            seconds_value = float(action_data.get("seconds", 0))
-        except (TypeError, ValueError):
-            return False
-        if seconds_value <= 0 or not reminder_text:
-            return False
-        kira_reminders.add_reminder(seconds_value, reminder_text, language)
-        return personalize_address(
-            kira_reminders.confirmation(seconds_value, reminder_text, language)
-        )
-
-    if action == "reminders_list":
-        language = str(action_data.get("language", "en"))
-        return personalize_address(kira_reminders.describe_active(language))
-
-    if action == "reminders_clear":
-        language = str(action_data.get("language", "en"))
-        cancelled = kira_reminders.cancel_all()
-        return personalize_address(
-            kira_reminders.cleared_message(cancelled, language)
-        )
-
-    if action == "agent_learnings":
-        language = str(action_data.get("language", "en"))
-        return personalize_address(
-            kira_thought.describe_learnings(language=language)
-        )
-
-    if action == "agent_forget":
-        language = str(action_data.get("language", "en"))
-        cleared = kira_memory.clear_learnings()
-        return personalize_address(
-            kira_thought.cleared_message(cleared, language)
-        )
-
-    # ── the suit: self-awareness, monitoring, security, learning ─────
-    alang = str(action_data.get("language", "en") or "en")
-
-    if action == "self_report":
-        return personalize_address(
-            kira_thought.self_report(alang, models_online=_models_online())
-        )
-
-    if action == "self_review":
-        return personalize_address(kira_thought.self_review(alang))
-
-    if action == "habit_hint":
-        return personalize_address(kira_thought.habit_hint(language=alang))
-
-    if action == "monitor_on":
-        start_watchdog(language=alang)
-        return personalize_address(_suit_reply("monitor_on", alang))
-
-    if action == "monitor_off":
-        kira_monitor.stop()
-        return personalize_address(_suit_reply("monitor_off", alang))
-
-    if action == "privacy_blur":
-        execute_action({"action": "show_desktop"})
-        execute_action({"action": "mute"})
-        return personalize_address(kira_security.blur_reply(alang))
-
-    if action == "secure_lab":
-        kira_security.lock()
-        execute_action({"action": "lock_pc"})
-        return personalize_address(kira_security.lock_reply(alang))
-
-    if action == "unlock_lab":
-        verdict = str(action_data.get("verdict", "unlock"))
-        if verdict == "deny":
-            return personalize_address(kira_security.deny_reply(alang))
-        if not kira_security.is_locked():
-            return personalize_address(_suit_reply("lab_not_locked", alang))
-        kira_security.unlock()
-        return personalize_address(kira_security.unlock_reply(alang))
-
-    if action == "undo_last":
-        entry = kira_undo.take_last()
-        if entry is None:
-            return personalize_address(_suit_reply("undo_nothing", alang))
-        inverse = entry.get("inverse") or {}
-        if not inverse or not execute_action(inverse):
-            return personalize_address(_suit_reply("undo_failed", alang))
-        kira_undo.record(str(entry.get("command", "")), inverse)
-        return personalize_address(
-            _suit_reply("undo_done", alang, command=str(entry.get("command", "")))
-        )
-
-    if action == "press_combo":
-        keys = [str(k).strip() for k in action_data.get("keys", []) if str(k).strip()]
-        if not keys:
-            return False
-        pyautogui.hotkey(*keys)
-        return personalize_address(f"Pressed {'+'.join(keys)} sir.")
-
-    if action == "routine_start":
-        if kira_learning.is_recording():
-            return personalize_address(
-                kira_learning.say(
-                    "recording_already",
-                    alang,
-                    count=len(kira_learning.recorded_steps()),
-                )
-            )
-        kira_learning.start_recording()
-        return personalize_address(kira_learning.say("recording_started", alang))
-
-    if action == "routine_stop":
-        if not kira_learning.is_recording():
-            return personalize_address(kira_learning.say("not_recording", alang))
-        kira_learning.cancel_recording()
-        return personalize_address(kira_learning.say("recording_cancelled", alang))
-
-    if action == "routine_name":
-        name = str(action_data.get("name", "")).strip()
-        if not kira_learning.is_recording():
-            return personalize_address(kira_learning.say("not_recording", alang))
-        steps = kira_learning.recorded_steps()
-        if not steps or not name:
-            kira_learning.cancel_recording()
-            return personalize_address(kira_learning.say("recording_empty", alang))
-        ok, saved_name = kira_learning.finish_recording(name)
-        if not ok:
-            return personalize_address(_suit_reply("routine_save_failed", alang))
-        return personalize_address(
-            kira_learning.say(
-                "recording_saved", alang, name=saved_name, count=len(steps)
-            )
-        )
-
-    if action == "correct_last":
-        global _LAST_COMMAND, _LAST_ACTION
-        if not _LAST_COMMAND or _LAST_ACTION is None:
-            return personalize_address(kira_learning.say("correction_none", alang))
-        kira_memory.learn_from_outcome(
-            kira_memory.normalize_agent_command(_LAST_COMMAND), _LAST_ACTION, False
-        )
-        _LAST_COMMAND, _LAST_ACTION = None, None
-        return personalize_address(kira_learning.say("correction_ack", alang))
-
-    if action == "skill_promote":
-        pending = kira_learning.pending_promotion()
-        if not isinstance(pending, dict):
-            return personalize_address(kira_learning.say("promotion_none", alang))
-        promoted_action = pending.get("action")
-        steps = [promoted_action] if isinstance(promoted_action, dict) else []
-        promoted = _save_shortcut(pending["command"], steps)
-        kira_learning.clear_promotion()
-        if not promoted:
-            return personalize_address(_suit_reply("routine_save_failed", alang))
-        return personalize_address(
-            kira_learning.say("promotion_saved", alang, name=pending["command"])
-        )
-
-    if action == "skill_skip":
-        if kira_learning.pending_promotion() is None:
-            return personalize_address(kira_learning.say("promotion_none", alang))
-        kira_learning.clear_promotion()
-        return personalize_address(kira_learning.say("promotion_skipped", alang))
-
-    if action == "project_build":
-        idea = str(action_data.get("idea") or "").strip()
-        if not idea:
-            return personalize_address(
-                _SUIT_REPLIES["build_failed"].get(alang, _SUIT_REPLIES["build_failed"]["en"])
-            )
-        return build_project_for(idea, alang)
-
-    if action == "project_fix":
-        directory = last_project_directory()
-        if not directory:
-            return personalize_address(
-                _SUIT_REPLIES["no_project_to_fix"].get(
-                    alang, _SUIT_REPLIES["no_project_to_fix"]["en"]
-                )
-            )
-        timeout, _attempts = _builder_settings()
-        try:
-            result = kira_builder.repair_project(
-                directory,
-                chat_fn=call_builder_model,
-                timeout=timeout,
-                on_progress=_build_progress,
-            )
+            return plugin_handler(action_data)
         except Exception as exc:
-            logging.exception("Project repair failed")
-            print(f"KIRA · build: error: {exc}", flush=True)
-            return personalize_address(
-                _SUIT_REPLIES["build_failed"].get(
-                    alang, _SUIT_REPLIES["build_failed"]["en"]
-                )
-            )
-        if result.ok:
-            return personalize_address(
-                _SUIT_REPLIES["build_ok"][
-                    alang if alang in _SUIT_REPLIES["build_ok"] else "en"
-                ].format(
-                    name=result.plan.name if result.plan else "project",
-                    count=len(result.files_written),
-                    attempts=result.attempts,
-                    location=result.project_dir,
-                )
-            )
-        return personalize_address(
-            _SUIT_REPLIES["build_failing"][
-                alang if alang in _SUIT_REPLIES["build_failing"] else "en"
-            ].format(
-                name=result.plan.name if result.plan else "project",
-                attempts=result.attempts,
-                location=result.project_dir,
-            )
-        )
-
-    if action == "projects_list":
-        root = projects_directory()
-        listing = []
-        if os.path.isdir(root):
-            listing = sorted(
-                entry for entry in os.listdir(root)
-                if os.path.isdir(os.path.join(root, entry))
-            )
-        if not listing:
-            return personalize_address(
-                _SUIT_REPLIES["no_projects"].get(alang, _SUIT_REPLIES["no_projects"]["en"])
-            )
-        return personalize_address(
-            f"You have {len(listing)} project{'s' if len(listing) != 1 else ''}, sir: "
-            + ", ".join(listing[:8])
-            + (f" and {len(listing) - 8} more." if len(listing) > 8 else ".")
-        )
-
-    if action == "weather":
-        city = str(action_data.get("target") or "")
-        return personalize_address(kira_weather.report(city, alang))
-
-    if action == "home_control":
-        name = str(action_data.get("name", "")).strip()
-        turn_on = str(action_data.get("mode", "on")).lower() != "off"
-        if not name:
+            logging.error("Plugin action %s failed: %s", action, exc)
             return False
-        return personalize_address(kira_homeassist.control(name, turn_on, alang))
-
-    return False
 
 
 def describe_action(action_data):
@@ -3459,16 +2652,6 @@ def describe_action(action_data):
     if action == "search":
         query = str(action_data.get("query", "search")).strip() or "search"
         return f"search the web for {query}"
-
-    if action == "project_build":
-        idea = str(action_data.get("idea", "a project")).strip() or "a project"
-        return (
-            f"build a new project from this idea — '{idea}' — which writes code "
-            "to disk and runs its tests"
-        )
-
-    if action == "project_fix":
-        return "repair the last project by re-running its tests and fixing failures"
 
     if action == "mouse_move":
         x = action_data.get("x", 0)
@@ -3520,9 +2703,6 @@ def normalize_command(command: str) -> str:
     for prefix in [WAKE_WORD, "hey kira", "hello kira", "kira please", "okay kira"]:
         if lower.startswith(prefix):
             text = text[len(prefix) :].strip()
-            # Tolerate a separator between wake word and command,
-            # e.g. "kira, open chrome" or "kira: open chrome".
-            text = text.lstrip(" ,;:-").strip()
             break
     return text.strip()
 
@@ -3539,66 +2719,68 @@ def is_wake_phrase(command: str) -> bool:
     )
 
 
-def requires_confirmation(action: str) -> bool:
-    """Whether an action must be voice-confirmed before execution.
-
-    Configurable through the "require_confirmation" list in kira_config.json;
-    an explicit empty list disables confirmation prompts entirely.
-    """
-    name = str(action or "").strip().lower()
-    configured = CONFIG.get("require_confirmation")
-    if isinstance(configured, list):
-        return name in {str(item).strip().lower() for item in configured}
-    return name in {"search", "mouse_move", "click", "lock_pc"}
-
-
 def should_process_command(command: str) -> bool:
     text = (command or "").strip()
     if not text:
         return False
-    # When "require_wake_word" is enabled, only commands containing the wake
-    # word are processed — unless conversation mode is currently active,
-    # which keeps the channel open.
-    if CONFIG.get("require_wake_word") and not _CONVERSATION_MODE:
-        return is_wake_phrase(text)
-    return True
+    lower = text.lower()
+
+    if is_wake_phrase(lower):
+        return True
+
+    if any(
+        token in lower
+        for token in [
+            "open ",
+            "play ",
+            "search ",
+            "type ",
+            "press ",
+            "close window",
+            "minimize",
+            "maximize",
+            "screenshot",
+            "switch app",
+            "open folder",
+            "close this",
+            "take screenshot",
+            "switch window",
+            "quit",
+            "exit",
+            "goodbye",
+        ]
+    ):
+        return True
+
+    # In unified mode, process all commands; otherwise require wake word
+    if not CONFIG.get("require_wake_word", False):
+        return True
+
+    return False
 
 
-def _battery_percentage():
-    """Battery level for the briefing; None when unreadable or on desktop."""
-    try:
-        battery = psutil.sensors_battery()
-    except Exception:
-        return None
-    return float(battery.percent) if battery is not None else None
+def _on_task_notification(task_id: str, title: str, task_type: str):
+    """Callback when a reminder/timer fires."""
+    if task_type == "reminder":
+        speak(f"Reminder: {title}")
+    else:
+        speak(f"Task completed: {title}")
 
 
 def startup_sequence():
-    """Boot theater: calibration-style banner, then a spoken briefing."""
-    learnings = kira_memory.learnings_summary()
-    counts = {
-        "memories": len(kira_memory.load_memories()),
-        "learnings": learnings["count"],
-        "episodes": kira_memory.episode_counts()["total"],
-        "model": MODEL,
-        "vision": VISION_MODEL,
-    }
-    for line in kira_personality.boot_lines(VERSION, counts, humor=_humor()):
-        print(f"  > {line}")
-    language = str(USER_MEMORY.get("language", "en") or "en")
-    speak(
-        personalize_address(
-            kira_briefing.briefing(
-                language=language,
-                humor=_humor(),
-                battery_percent=_battery_percentage(),
-            )
-        )
-    )
+    # Restore any pending timers from previous session
+    kira_tasks.restore_timers()
+    # Register task notification callback
+    kira_tasks.register_callback(_on_task_notification)
+    # Load plugins
+    kira_plugins.load_all_plugins()
+
+    speak(personalize_address(" Hello sir."))
+    speak(personalize_address("Listening for your command sir."))
 
 
 def main():
-    global _CONVERSATION_MODE, _LAST_COMMAND, _LAST_ACTION
+    global _CONVERSATION_MODE
     print("=" * 60)
     print("KIRA VOICE AGENT")
     print("Local Windows assistant with voice controls")
@@ -3607,7 +2789,6 @@ def main():
 
     try:
         startup_sequence()
-        start_background_tasks()
 
         while True:
             command = listen_for_command(timeout=20, phrase_timeout=10)
@@ -3623,36 +2804,18 @@ def main():
             if not cleaned:
                 continue
 
-            if cleaned.lower() in {"exit", "quit", "goodbye", "bye"}:
-                speak(personalize_address("Goodbye sir."))
-                break
             lower = cleaned.lower()
-
-            if not cleaned:
-                continue
 
             if lower in {"exit", "quit", "goodbye", "bye"}:
                 speak(personalize_address("Goodbye sir."))
                 break
 
-            gate_reply = lab_gate(cleaned)
-            if gate_reply is not None:
-                speak(gate_reply)
-                continue
-
             result = parse_simple_command(cleaned)
-            planned_by = "parser"
             if result is None and is_chat_question(cleaned):
                 speak(ask_chat(cleaned))
                 continue
             if result is None:
-                # think before acting: recall past learnings, then plan
-                # with the local model inside a thought envelope
-                thought = think_about(cleaned)
-                if thought.text:
-                    print(f"[thinking] {thought.text}")
-                result = thought.action
-                planned_by = thought.source
+                result = ask_agent(cleaned)
             action = (result or {}).get("action", "none")
 
             if action == "conversation_on":
@@ -3687,7 +2850,7 @@ def main():
                 speak(personalize_address("Goodbye sir."))
                 break
 
-            if requires_confirmation(action):
+            if action in {"search", "mouse_move", "click", "lock_pc"}:
                 target_desc = describe_action(result)
                 allowed = confirm_action(action.replace("_", " "), target_desc)
                 if not allowed:
@@ -3697,60 +2860,50 @@ def main():
 
             lang = detect_language(cleaned)
             success = execute_action(result)
-            promotion_note = None
-            if planned_by in {"llm", "memory"}:
-                # reflect: episodes + strengthen/demote the learning
-                _LAST_COMMAND, _LAST_ACTION = cleaned, result
-                promotion_note = learn_from(
-                    cleaned, result, planned_by, bool(success), language=lang
-                )
             if success:
-                # suit bookkeeping: macro recording + undo stack
-                kira_learning.capture(result)
-                kira_undo.record(cleaned, result)
                 action_name = str(action).lower()
-                # Actions returning a string speak their own result
-                # (time, date, system info, clipboard, help, sequences,
-                # calculations, reminders).
-                if isinstance(success, str):
-                    speak(success)
-                else:
-                    target_text = ""
-                    if action == "open_app":
-                        target_text = str((result or {}).get("target", "app"))
-                    elif action == "open_url":
-                        target_text = str((result or {}).get("target", "site"))
-                    elif action == "search":
-                        target_text = str((result or {}).get("query", "request"))
-                    elif action == "press":
-                        target_text = str((result or {}).get("target", "key"))
-                    elif action == "close_window":
-                        target_text = "window"
-                    elif action == "minimize_window":
-                        target_text = "window"
-                    elif action == "maximize_window":
-                        target_text = "window"
-                    elif action == "switch_app":
-                        target_text = "application"
-                    elif action == "screenshot":
-                        target_text = "screenshot"
-                    elif action == "open_folder":
-                        target_text = str((result or {}).get("target", "folder"))
+                if action_name in {
+                    "read_clipboard",
+                    "system_info",
+                    "help",
+                    "time",
+                    "date",
+                }:
+                    continue
+                target_text = ""
+                if action == "open_app":
+                    target_text = str((result or {}).get("target", "app"))
+                elif action == "open_url":
+                    target_text = str((result or {}).get("target", "site"))
+                elif action == "search":
+                    target_text = str((result or {}).get("query", "request"))
+                elif action == "press":
+                    target_text = str((result or {}).get("target", "key"))
+                elif action == "close_window":
+                    target_text = "window"
+                elif action == "minimize_window":
+                    target_text = "window"
+                elif action == "maximize_window":
+                    target_text = "window"
+                elif action == "switch_app":
+                    target_text = "application"
+                elif action == "screenshot":
+                    target_text = "screenshot"
+                elif action == "open_folder":
+                    target_text = str((result or {}).get("target", "folder"))
 
-                    if action_name == "close_window":
-                        speak(build_reply(lang, "close_window", target_text))
-                    elif action_name == "minimize_window":
-                        speak(build_reply(lang, "minimize_window", target_text))
-                    elif action_name == "maximize_window":
-                        speak(build_reply(lang, "maximize_window", target_text))
-                    elif action_name == "switch_app":
-                        speak(build_reply(lang, "switch_app", target_text))
-                    elif action_name == "screenshot":
-                        speak(build_reply(lang, "screenshot", target_text))
-                    else:
-                        speak(build_reply(lang, action_name, target_text))
-                if promotion_note:
-                    speak(promotion_note)
+                if action_name == "close_window":
+                    speak(build_reply(lang, "close_window", target_text))
+                elif action_name == "minimize_window":
+                    speak(build_reply(lang, "minimize_window", target_text))
+                elif action_name == "maximize_window":
+                    speak(build_reply(lang, "maximize_window", target_text))
+                elif action_name == "switch_app":
+                    speak(build_reply(lang, "switch_app", target_text))
+                elif action_name == "screenshot":
+                    speak(build_reply(lang, "screenshot", target_text))
+                else:
+                    speak(build_reply(lang, action_name, target_text))
             else:
                 lang = detect_language(cleaned)
                 speak(build_reply(lang, "none"))

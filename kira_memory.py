@@ -1,26 +1,46 @@
 import os
 import re
-import json
 import sqlite3
 import uuid
+import threading
 from datetime import datetime
 
+# Import caching
+try:
+    from kira_cache import memory_cache
+    CACHE_ENABLED = True
+except ImportError:
+    CACHE_ENABLED = False
 
 DB_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "kira_memory.db",
 )
 
+# Thread-local storage for connection pooling
+_connection_local = threading.local()
+
+
 def _connect():
-    connection = sqlite3.connect(
-        DB_PATH,
-        timeout=5,
-    )
-
-    connection.execute("PRAGMA journal_mode=DELETE")
-    connection.execute("PRAGMA synchronous=NORMAL")
-
-    return connection
+    """Get thread-local database connection with optimizations."""
+    if not hasattr(_connection_local, "connection"):
+        connection = sqlite3.connect(
+            DB_PATH,
+            timeout=5,
+            check_same_thread=False,
+        )
+        
+        # Performance optimizations
+        connection.execute("PRAGMA journal_mode=WAL")           # Write-Ahead Logging
+        connection.execute("PRAGMA synchronous=NORMAL")         # Balance safety/speed
+        connection.execute("PRAGMA temp_store=MEMORY")          # Temp tables in RAM
+        connection.execute("PRAGMA cache_size=-64000")          # 64MB cache (was 2MB)
+        connection.execute("PRAGMA mmap_size=268435456")        # 256MB memory-mapped I/O
+        connection.execute("PRAGMA page_size=4096")             # Optimal page size
+        
+        _connection_local.connection = connection
+    
+    return _connection_local.connection
 
 
 def initialize():
@@ -49,46 +69,6 @@ def initialize():
                 updated_at TEXT NOT NULL,
                 UNIQUE(category, memory_key)
             )
-            """
-        )
-
-        # ── the agent's own mind ──────────────────────────────────────
-        # Episodes: what KIRA understood, planned, did, and how it went.
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS agent_episodes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                command_text TEXT NOT NULL,
-                thought TEXT NOT NULL DEFAULT '',
-                action_json TEXT NOT NULL,
-                source TEXT NOT NULL,
-                outcome TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-
-        # Learnings: command -> action mappings that worked before.
-        # KIRA recalls these instead of asking the model again, and
-        # demotes them when they fail (so it stops repeating mistakes).
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS agent_learnings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                command_text TEXT NOT NULL UNIQUE,
-                action_json TEXT NOT NULL,
-                success_count INTEGER NOT NULL DEFAULT 0,
-                failure_count INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-
-        connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_episodes_created
-            ON agent_episodes(created_at)
             """
         )
 
@@ -228,35 +208,40 @@ def save_memory(category, key, value, confidence=1.0):
     now = datetime.now().isoformat(timespec="seconds")
 
     try:
-        with _connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO memories
-                (
-                    category,
-                    memory_key,
-                    memory_value,
-                    confidence,
-                    created_at,
-                    updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
-
-                ON CONFLICT(category, memory_key)
-                DO UPDATE SET
-                    memory_value = excluded.memory_value,
-                    confidence = excluded.confidence,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    category,
-                    key,
-                    value,
-                    float(confidence),
-                    now,
-                    now,
-                ),
+        connection = _connect()
+        connection.execute(
+            """
+            INSERT INTO memories
+            (
+                category,
+                memory_key,
+                memory_value,
+                confidence,
+                created_at,
+                updated_at
             )
+            VALUES (?, ?, ?, ?, ?, ?)
+
+            ON CONFLICT(category, memory_key)
+            DO UPDATE SET
+                memory_value = excluded.memory_value,
+                confidence = excluded.confidence,
+                updated_at = excluded.updated_at
+            """,
+            (
+                category,
+                key,
+                value,
+                float(confidence),
+                now,
+                now,
+            ),
+        )
+        
+        # Invalidate cache for this memory
+        if CACHE_ENABLED:
+            cache_key = f"memory:{category}:{key}"
+            memory_cache.set(cache_key, value)  # Update cache with new value
 
         return True
 
@@ -365,21 +350,32 @@ def load_memories(category=None):
 
 
 def get_memory(category, key, default=None):
+    # Check cache first
+    if CACHE_ENABLED:
+        cache_key = f"memory:{category}:{key}"
+        cached_value = memory_cache.get(cache_key)
+        if cached_value is not None:
+            return cached_value
+    
     try:
-        with _connect() as connection:
-            row = connection.execute(
-                """
-                SELECT memory_value
-                FROM memories
-                WHERE category = ?
-                AND memory_key = ?
-                LIMIT 1
-                """,
-                (category, key),
-            ).fetchone()
+        connection = _connect()
+        row = connection.execute(
+            """
+            SELECT memory_value
+            FROM memories
+            WHERE category = ?
+            AND memory_key = ?
+            LIMIT 1
+            """,
+            (category, key),
+        ).fetchone()
 
         if row:
-            return row[0]
+            value = row[0]
+            # Cache the result
+            if CACHE_ENABLED:
+                memory_cache.set(cache_key, value)
+            return value
 
     except sqlite3.Error:
         pass
@@ -454,314 +450,44 @@ def update_memory(category, key, value, confidence=1.0) -> bool:
     )
 
 
-# ── the agent's own mind: episodes & learnings ──────────────────────────────
-
-def normalize_agent_command(text) -> str:
-    """Canonical form used to match commands to past learnings."""
-    value = re.sub(r"\s+", " ", str(text or "").strip().lower())
-    return value.strip(" .!?,;:")
-
-
-def save_episode(command, thought, action, source, outcome) -> bool:
-    if outcome not in {"success", "failed", "unknown"}:
-        outcome = "unknown"
+def prune_old_conversations(keep_days=30):
+    """Delete conversations older than the given number of days."""
     try:
-        with _connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO agent_episodes
-                (command_text, thought, action_json, source, outcome, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    normalize_agent_command(command) or str(command or ""),
-                    str(thought or ""),
-                    json.dumps(action or {}, ensure_ascii=False),
-                    str(source or "unknown"),
-                    outcome,
-                    datetime.now().isoformat(timespec="seconds"),
-                ),
+        cutoff = (
+            datetime.now()
+            - __import__("datetime").timedelta(days=keep_days)
+        ).isoformat(timespec="seconds")
+
+        with _connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM conversations WHERE created_at < ?",
+                (cutoff,),
             )
-        return True
-    except sqlite3.Error:
-        return False
-
-
-def recent_episodes(limit=10):
-    try:
-        with _connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT command_text, thought, action_json, source, outcome, created_at
-                FROM agent_episodes
-                ORDER BY id DESC
-                LIMIT ?
-                """,
-                (max(1, int(limit)),),
-            ).fetchall()
-        return [
-            {
-                "command": command,
-                "thought": thought,
-                "action": json.loads(action_json),
-                "source": source,
-                "outcome": outcome,
-                "created_at": created_at,
-            }
-            for command, thought, action_json, source, outcome, created_at in rows
-        ]
-    except sqlite3.Error:
-        return []
-
-
-def learn_from_outcome(command, action, succeeded) -> bool:
-    """Upsert a command->action learning; bumps success/failure counters."""
-    command_key = normalize_agent_command(command)
-    if not command_key or not isinstance(action, dict):
-        return False
-    now = datetime.now().isoformat(timespec="seconds")
-    bumped = "success_count" if succeeded else "failure_count"
-    try:
-        with _connect() as connection:
-            connection.execute(
-                f"""
-                INSERT INTO agent_learnings
-                (command_text, action_json, success_count, failure_count,
-                 created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(command_text) DO UPDATE SET
-                    action_json = excluded.action_json,
-                    {bumped} = {bumped} + 1,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    command_key,
-                    json.dumps(action, ensure_ascii=False),
-                    1 if succeeded else 0,
-                    0 if succeeded else 1,
-                    now,
-                    now,
-                ),
-            )
-        return True
-    except sqlite3.Error:
-        return False
-
-
-def recall_action(command):
-    """Return a stored action for a command — only while successes dominate.
-
-    Reflexion: the first failure that pulls failures level with successes
-    makes the learning ineligible again, so KIRA stops repeating mistakes.
-    """
-    command_key = normalize_agent_command(command)
-    if not command_key:
-        return None
-    try:
-        with _connect() as connection:
-            row = connection.execute(
-                """
-                SELECT action_json, success_count, failure_count
-                FROM agent_learnings
-                WHERE command_text = ?
-                LIMIT 1
-                """,
-                (command_key,),
-            ).fetchone()
-    except sqlite3.Error:
-        return None
-    if not row:
-        return None
-    action_json, success_count, failure_count = row
-    if success_count < 1 or success_count <= failure_count:
-        return None
-    try:
-        action = json.loads(action_json)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(action, dict):
-        return None
-    return {
-        "action": action,
-        "success_count": success_count,
-        "failure_count": failure_count,
-    }
-
-
-def find_similar_learnings(command, limit=5):
-    """Candidate learnings sharing content words with the command (fuzzy recall)."""
-    words = {
-        w for w in re.findall(r"[\w\u0600-\u06FF]{4,}", str(command or "").lower())
-    }
-    if not words:
-        return []
-    try:
-        with _connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT command_text, action_json, success_count, failure_count
-                FROM agent_learnings
-                """
-            ).fetchall()
-    except sqlite3.Error:
-        return []
-
-    scored = []
-    for command_text, action_json, success_count, failure_count in rows:
-        if success_count < 1 or success_count <= failure_count:
-            continue
-        stored_words = set(
-            re.findall(r"[\w\u0600-\u06FF]{4,}", command_text.lower())
-        )
-        if not stored_words:
-            continue
-        overlap = len(words & stored_words)
-        # both directions must mostly agree — guards against one shared word
-        score = overlap / max(1, min(len(words), len(stored_words)))
-        if score >= 0.75 and overlap:
-            scored.append((score, command_text, action_json))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    results = []
-    for score, command_text, action_json in scored[: max(1, int(limit))]:
-        try:
-            results.append({"command": command_text, "action": json.loads(action_json)})
-        except json.JSONDecodeError:
-            continue
-    return results
-
-
-def top_learnings(limit=5):
-    try:
-        with _connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT command_text, action_json, success_count, failure_count
-                FROM agent_learnings
-                ORDER BY success_count DESC, updated_at DESC
-                LIMIT ?
-                """,
-                (max(1, int(limit)),),
-            ).fetchall()
-    except sqlite3.Error:
-        return []
-    results = []
-    for command_text, action_json, success_count, failure_count in rows:
-        try:
-            action = json.loads(action_json)
-        except json.JSONDecodeError:
-            continue
-        results.append(
-            {
-                "command": command_text,
-                "action": action,
-                "success_count": success_count,
-                "failure_count": failure_count,
-            }
-        )
-    return results
-
-
-def clear_learnings() -> int:
-    try:
-        with _connect() as connection:
-            cursor = connection.execute("DELETE FROM agent_learnings")
             return cursor.rowcount
+    except (sqlite3.Error, Exception):
+        return 0
+
+
+def conversation_count():
+    """Return the total number of stored conversation messages."""
+    try:
+        with _connect() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()
+            return row[0] if row else 0
     except sqlite3.Error:
         return 0
 
 
-def clear_episodes() -> int:
-    try:
-        with _connect() as connection:
-            cursor = connection.execute("DELETE FROM agent_episodes")
-            return cursor.rowcount
-    except sqlite3.Error:
-        return 0
+def build_memory_context(category=None, limit=20):
+    """Build a text summary of stored memories for chat context injection."""
+    memories = load_memories(category=category)
+    if not memories:
+        return ""
 
-
-# ── analytics the mind reads about itself ────────────────────────────────────
-
-def episode_counts() -> dict:
-    """Aggregate counts for the self-report command."""
-    try:
-        with _connect() as connection:
-            total, success, failed = connection.execute(
-                """
-                SELECT COUNT(*),
-                       SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END),
-                       SUM(CASE WHEN outcome = 'failed' THEN 1 ELSE 0 END)
-                FROM agent_episodes
-                """
-            ).fetchone()
-        return {
-            "total": total or 0,
-            "success": success or 0,
-            "failed": failed or 0,
-        }
-    except sqlite3.Error:
-        return {"total": 0, "success": 0, "failed": 0}
-
-
-def learnings_summary() -> dict:
-    try:
-        with _connect() as connection:
-            count, uses, failures = connection.execute(
-                """
-                SELECT COUNT(*), SUM(success_count), SUM(failure_count)
-                FROM agent_learnings
-                """
-            ).fetchone()
-        return {
-            "count": count or 0,
-            "uses": uses or 0,
-            "failures": failures or 0,
-        }
-    except sqlite3.Error:
-        return {"count": 0, "uses": 0, "failures": 0}
-
-
-def episodes_on(day_iso: str):
-    """All episodes for one calendar day (``YYYY-MM-DD``)."""
-    try:
-        with _connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT command_text, outcome, created_at
-                FROM agent_episodes
-                WHERE created_at LIKE ?
-                ORDER BY id DESC
-                """,
-                (day_iso + "%",),
-            ).fetchall()
-        return [
-            {"command": command, "outcome": outcome, "created_at": created_at}
-            for command, outcome, created_at in rows
-        ]
-    except sqlite3.Error:
-        return []
-
-
-def successful_episode_hours() -> list:
-    """(command, hour) pairs — raw material for habit anticipation."""
-    try:
-        with _connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT command_text, created_at
-                FROM agent_episodes
-                WHERE outcome = 'success'
-                """
-            ).fetchall()
-    except sqlite3.Error:
-        return []
-    pairs = []
-    for command, created_at in rows:
-        try:
-            hour = int(str(created_at)[11:13])
-        except (ValueError, IndexError):
-            continue
-        pairs.append((command, hour))
-    return pairs
+    lines = ["KIRA MEMORY CONTEXT:"]
+    for mem in memories[:limit]:
+        lines.append(f"- [{mem['category']}] {mem['key']}: {mem['value']}")
+    return "\n".join(lines)
 
 
 initialize()
