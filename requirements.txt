@@ -1,9 +1,28 @@
-ollama
-pyautogui
-pyttsx3
-SpeechRecognition
-sounddevice
-numpy
-pyperclip
-psutil
-vosk
+# KIRA Core Dependencies
+ollama>=0.3.0
+pyautogui>=0.9.54
+pyttsx3>=2.90
+SpeechRecognition>=3.10.0
+sounddevice>=0.4.6
+numpy>=1.24.0
+pyperclip>=1.8.2
+psutil>=5.9.0
+vosk>=0.3.45
+
+# UI Dependencies
+customtkinter>=5.2.0
+Pillow>=10.0.0
+
+# Native App Dependencies (pywebview creates the desktop window)
+pywebview>=4.0.0
+
+# High-quality neural TTS (Microsoft Edge voices - sounds very human)
+edge-tts>=6.1.0
+
+# Web access (search and browse the internet)
+duckduckgo-search>=6.0.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
+# Optional: Web API (already included in Python stdlib)
+# http.server is built-in, no extra dependency needed

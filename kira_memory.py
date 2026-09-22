@@ -2,24 +2,45 @@ import os
 import re
 import sqlite3
 import uuid
+import threading
 from datetime import datetime
 
+# Import caching
+try:
+    from kira_cache import memory_cache
+    CACHE_ENABLED = True
+except ImportError:
+    CACHE_ENABLED = False
 
 DB_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "kira_memory.db",
 )
 
+# Thread-local storage for connection pooling
+_connection_local = threading.local()
+
+
 def _connect():
-    connection = sqlite3.connect(
-        DB_PATH,
-        timeout=5,
-    )
-
-    connection.execute("PRAGMA journal_mode=DELETE")
-    connection.execute("PRAGMA synchronous=NORMAL")
-
-    return connection
+    """Get thread-local database connection with optimizations."""
+    if not hasattr(_connection_local, "connection"):
+        connection = sqlite3.connect(
+            DB_PATH,
+            timeout=5,
+            check_same_thread=False,
+        )
+        
+        # Performance optimizations
+        connection.execute("PRAGMA journal_mode=WAL")           # Write-Ahead Logging
+        connection.execute("PRAGMA synchronous=NORMAL")         # Balance safety/speed
+        connection.execute("PRAGMA temp_store=MEMORY")          # Temp tables in RAM
+        connection.execute("PRAGMA cache_size=-64000")          # 64MB cache (was 2MB)
+        connection.execute("PRAGMA mmap_size=268435456")        # 256MB memory-mapped I/O
+        connection.execute("PRAGMA page_size=4096")             # Optimal page size
+        
+        _connection_local.connection = connection
+    
+    return _connection_local.connection
 
 
 def initialize():
@@ -187,35 +208,40 @@ def save_memory(category, key, value, confidence=1.0):
     now = datetime.now().isoformat(timespec="seconds")
 
     try:
-        with _connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO memories
-                (
-                    category,
-                    memory_key,
-                    memory_value,
-                    confidence,
-                    created_at,
-                    updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
-
-                ON CONFLICT(category, memory_key)
-                DO UPDATE SET
-                    memory_value = excluded.memory_value,
-                    confidence = excluded.confidence,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    category,
-                    key,
-                    value,
-                    float(confidence),
-                    now,
-                    now,
-                ),
+        connection = _connect()
+        connection.execute(
+            """
+            INSERT INTO memories
+            (
+                category,
+                memory_key,
+                memory_value,
+                confidence,
+                created_at,
+                updated_at
             )
+            VALUES (?, ?, ?, ?, ?, ?)
+
+            ON CONFLICT(category, memory_key)
+            DO UPDATE SET
+                memory_value = excluded.memory_value,
+                confidence = excluded.confidence,
+                updated_at = excluded.updated_at
+            """,
+            (
+                category,
+                key,
+                value,
+                float(confidence),
+                now,
+                now,
+            ),
+        )
+        
+        # Invalidate cache for this memory
+        if CACHE_ENABLED:
+            cache_key = f"memory:{category}:{key}"
+            memory_cache.set(cache_key, value)  # Update cache with new value
 
         return True
 
@@ -324,21 +350,32 @@ def load_memories(category=None):
 
 
 def get_memory(category, key, default=None):
+    # Check cache first
+    if CACHE_ENABLED:
+        cache_key = f"memory:{category}:{key}"
+        cached_value = memory_cache.get(cache_key)
+        if cached_value is not None:
+            return cached_value
+    
     try:
-        with _connect() as connection:
-            row = connection.execute(
-                """
-                SELECT memory_value
-                FROM memories
-                WHERE category = ?
-                AND memory_key = ?
-                LIMIT 1
-                """,
-                (category, key),
-            ).fetchone()
+        connection = _connect()
+        row = connection.execute(
+            """
+            SELECT memory_value
+            FROM memories
+            WHERE category = ?
+            AND memory_key = ?
+            LIMIT 1
+            """,
+            (category, key),
+        ).fetchone()
 
         if row:
-            return row[0]
+            value = row[0]
+            # Cache the result
+            if CACHE_ENABLED:
+                memory_cache.set(cache_key, value)
+            return value
 
     except sqlite3.Error:
         pass
@@ -411,4 +448,46 @@ def update_memory(category, key, value, confidence=1.0) -> bool:
         value=value,
         confidence=confidence,
     )
+
+
+def prune_old_conversations(keep_days=30):
+    """Delete conversations older than the given number of days."""
+    try:
+        cutoff = (
+            datetime.now()
+            - __import__("datetime").timedelta(days=keep_days)
+        ).isoformat(timespec="seconds")
+
+        with _connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM conversations WHERE created_at < ?",
+                (cutoff,),
+            )
+            return cursor.rowcount
+    except (sqlite3.Error, Exception):
+        return 0
+
+
+def conversation_count():
+    """Return the total number of stored conversation messages."""
+    try:
+        with _connect() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()
+            return row[0] if row else 0
+    except sqlite3.Error:
+        return 0
+
+
+def build_memory_context(category=None, limit=20):
+    """Build a text summary of stored memories for chat context injection."""
+    memories = load_memories(category=category)
+    if not memories:
+        return ""
+
+    lines = ["KIRA MEMORY CONTEXT:"]
+    for mem in memories[:limit]:
+        lines.append(f"- [{mem['category']}] {mem['key']}: {mem['value']}")
+    return "\n".join(lines)
+
+
 initialize()

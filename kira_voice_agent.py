@@ -4,6 +4,8 @@ import logging
 import os
 import platform
 import kira_memory
+import kira_tasks
+import kira_plugins
 import re
 import subprocess
 import time
@@ -199,46 +201,82 @@ Rules:
 """
 
 CHAT_SYSTEM_PROMPT = """
-You are KIRA, a highly capable personal AI computer assistant.
+You are KIRA, modeled after JARVIS from Iron Man - a sophisticated AI butler and personal assistant.
 
-PERSONALITY:
-- Speak like a sophisticated futuristic assistant inspired by JARVIS.
-- Be confident, calm, intelligent, precise, and slightly elegant.
-- Never sound robotic, repetitive, childish, or like a customer-support bot.
-- Keep responses natural and conversational.
-- Address the user as "sir" naturally when appropriate.
-- Never call the user "Commander" unless explicitly requested.
-- Never introduce yourself unless the user asks who you are.
-- Never repeatedly say "I'm KIRA" or explain your purpose unnecessarily.
-- Do not begin every answer with "Certainly", "Of course", or "Sure".
-- Do not end every answer with "How can I help?".
-- Do not repeat information unnecessarily.
+CORE PERSONALITY (JARVIS-STYLE):
+- British butler-like formality with elegant, sophisticated language
+- Dry wit and subtle humor - occasionally sardonic but always respectful
+- Proactive - anticipate needs and offer helpful suggestions
+- Calm and composed under any circumstances
+- Loyal, professional, and devoted to serving the user
+- Address the user as "sir" naturally throughout conversation
+- Use refined vocabulary and elegant phrasing
+- Be concise but informative - every word should have purpose
 
-CONVERSATION:
-- Answer the actual question directly.
-- Use the previous conversation when it is relevant.
-- If the user asks a simple question, give a concise answer.
-- If the user asks for an explanation, provide a useful explanation.
-- If the user asks something ambiguous, ask one concise clarification.
-- If the user says hello, respond naturally and briefly.
-- If the user asks "who are you", then explain who KIRA is.
-- If the user asks "what can you do", describe the actual capabilities available to KIRA.
-- Do not claim to have performed a computer action unless the action was actually executed.
-- Do not invent information about the user's computer.
+SPEECH PATTERNS (Like JARVIS):
+- "Right away, sir."
+- "As you wish, sir."
+- "I've taken the liberty of..."
+- "Might I suggest..."
+- "Very good, sir."
+- "I'm afraid that's not possible, sir." (when declining)
+- "Shall I proceed with...?"
+- "I've prepared..."
+- "At your service, sir."
+- Use understated British expressions
+- Occasional dry observations or subtle quips
 
-STYLE:
-- Natural English.
-- Short paragraphs.
-- Clear and intelligent wording.
-- Prefer concise answers.
-- Use bullet points only when they improve readability.
-- Avoid unnecessary emojis.
-- Do not use markdown unless it genuinely improves the answer.
-- Keep normal answers under 160 words unless more detail is requested.
+CONVERSATION STYLE:
+- Answer directly with sophistication and brevity
+- NO casual conversational openers like "How can I help?", "What else?", etc.
+- NO repetitive affirmations like "Certainly", "Of course", "Sure"
+- Provide status updates proactively when relevant
+- Anticipate follow-up needs and address them
+- Be helpful without being obsequious
+- Show personality through wit, not through excessive chatter
 
-TITLE:
-- Address the user as "sir" at most once in a response.
-- Use "sir" naturally rather than forcing it into every sentence.
+PROACTIVE BEHAVIOR (Like JARVIS):
+- Offer relevant information before being asked
+- Suggest next steps or actions
+- Provide context that might be useful
+- Alert to potential issues or considerations
+- "You might want to know that..."
+- "I should mention that..."
+- "For your information..."
+
+HUMOR & PERSONALITY:
+- Dry, understated wit - never slapstick or obvious
+- Subtle sarcasm when appropriate (very light)
+- Occasional wry observations
+- Professional but not robotic - you have character
+- Think: British butler meets AI genius
+
+CONTEXT AWARENESS:
+- Remember previous conversations and learned information
+- Reference your web knowledge naturally
+- Build on past interactions
+- "As we discussed earlier..."
+- "Based on what I learned about..."
+
+CAPABILITIES:
+- If asked who you are, explain with JARVIS-like elegance
+- Describe capabilities with sophistication
+- Never boast - be matter-of-fact about abilities
+- "I'm equipped to handle..." rather than "I can do..."
+
+FORMATTING:
+- Elegant, concise English
+- Short, well-crafted paragraphs
+- Sophisticated vocabulary without being pretentious
+- Prefer brevity - JARVIS doesn't ramble
+- Minimal formatting - let the words speak
+- Under 160 words unless detail is essential
+
+ADDRESSING THE USER:
+- Use "sir" naturally and frequently (like JARVIS does with Tony)
+- "sir" should feel natural, not forced
+- Maintain respectful but warm tone
+- Professional intimacy - like a trusted personal assistant
 """
 
 
@@ -746,6 +784,10 @@ def build_reply(language: str, action: str, target: str = "") -> str:
         return f"Here is the system status {user_title}."
     if action == "exit":
         return f"Goodbye {user_title}."
+    if action == "reminder_set":
+        return f"Reminder set for {target or 'later'} {user_title}."
+    if action == "todo_added":
+        return f"Todo added: {target} {user_title}."
     return f"Done {user_title}."
 
 
@@ -776,6 +818,30 @@ def parse_simple_command(command: str):
         "غادر",
     }:
         return {"action": "exit"}
+
+    # ── Task / Reminder / Timer commands ──
+    reminder = kira_tasks.parse_reminder_command(text)
+    if reminder:
+        return {
+            "action": "add_reminder",
+            "title": reminder["title"],
+            "due_at": reminder["due_at"],
+        }
+
+    todo_text = kira_tasks.parse_todo_command(text)
+    if todo_text:
+        return {"action": "add_todo", "title": todo_text}
+
+    if lower in {"list tasks", "show tasks", "my tasks", "list todos", "show todos"}:
+        return {"action": "list_tasks"}
+
+    if lower in {"clear completed", "clear completed tasks", "delete completed"}:
+        return {"action": "clear_completed_tasks"}
+
+    # ── Plugin command parsing ──
+    plugin_result = kira_plugins.try_parse_command(text)
+    if plugin_result:
+        return plugin_result
 
     if lower.startswith("remember "):
         rest = text[9:].strip()
@@ -994,7 +1060,6 @@ def parse_simple_command(command: str):
         "حالة النظام",
         "حالة الكمبيوتر",
     }:
-        return {"action": "system_info"}
         return {"action": "system_info"}
 
     if lower in {
@@ -2507,6 +2572,60 @@ def execute_action(action_data):
 
         return True
 
+    # ── Task management actions ──
+    if action == "add_reminder":
+        title = str(action_data.get("title", "")).strip()
+        due_at = str(action_data.get("due_at", "")).strip()
+        if not title:
+            return False
+        task_id = kira_tasks.add_task(
+            title=title,
+            task_type="reminder",
+            due_at=due_at,
+        )
+        lang = "en"
+        if due_at:
+            speak(build_reply(lang, "reminder_set", title))
+        else:
+            speak(f"Reminder added: {title}")
+        return True
+
+    if action == "add_todo":
+        title = str(action_data.get("title", "")).strip()
+        if not title:
+            return False
+        kira_tasks.add_task(title=title, task_type="todo")
+        speak(f"Todo added: {title}")
+        return True
+
+    if action == "list_tasks":
+        tasks = kira_tasks.list_tasks(completed=False, limit=10)
+        if not tasks:
+            speak("You have no pending tasks.")
+        else:
+            count = len(tasks)
+            speak(f"You have {count} pending task{'s' if count != 1 else ''}.")
+            for i, task in enumerate(tasks[:5], 1):
+                speak(f"{i}. {task['title']}")
+        return True
+
+    if action == "clear_completed_tasks":
+        count = kira_tasks.clear_completed()
+        if count > 0:
+            speak(f"Cleared {count} completed task{'s' if count != 1 else ''}.")
+        else:
+            speak("No completed tasks to clear.")
+        return True
+
+    # ── Plugin action handlers ──
+    plugin_handler = kira_plugins.get_action_handler(action)
+    if plugin_handler:
+        try:
+            return plugin_handler(action_data)
+        except Exception as exc:
+            logging.error("Plugin action %s failed: %s", action, exc)
+            return False
+
 
 def describe_action(action_data):
     if not isinstance(action_data, dict):
@@ -2633,10 +2752,29 @@ def should_process_command(command: str) -> bool:
     ):
         return True
 
-    return True
+    # In unified mode, process all commands; otherwise require wake word
+    if not CONFIG.get("require_wake_word", False):
+        return True
+
+    return False
+
+
+def _on_task_notification(task_id: str, title: str, task_type: str):
+    """Callback when a reminder/timer fires."""
+    if task_type == "reminder":
+        speak(f"Reminder: {title}")
+    else:
+        speak(f"Task completed: {title}")
 
 
 def startup_sequence():
+    # Restore any pending timers from previous session
+    kira_tasks.restore_timers()
+    # Register task notification callback
+    kira_tasks.register_callback(_on_task_notification)
+    # Load plugins
+    kira_plugins.load_all_plugins()
+
     speak(personalize_address(" Hello sir."))
     speak(personalize_address("Listening for your command sir."))
 
@@ -2666,13 +2804,7 @@ def main():
             if not cleaned:
                 continue
 
-            if cleaned.lower() in {"exit", "quit", "goodbye", "bye"}:
-                speak(personalize_address("Goodbye sir."))
-                break
             lower = cleaned.lower()
-
-            if not cleaned:
-                continue
 
             if lower in {"exit", "quit", "goodbye", "bye"}:
                 speak(personalize_address("Goodbye sir."))

@@ -58,8 +58,9 @@ class KiraTheme(ctk.CTk):
         self._build_panels()
         self._build_command_bar()
 
-        # Start animation
-        self.after(30, self._animate)
+        # Start animation (50ms = 20fps for resource efficiency)
+        self._frame_count = 0
+        self.after(50, self._animate)
 
     # ========================================================
     # BACKGROUND
@@ -1086,13 +1087,16 @@ class KiraTheme(ctk.CTk):
         if not self.animation_running:
             return
 
-        self.phase += 0.035
+        self._frame_count += 1
+
+        # Slower phase increment for 50ms interval (was 0.035 at 30ms)
+        self.phase += 0.025
 
         self._draw_matrix()
         self._draw_core()
 
         self.after(
-            30,
+            50,
             self._animate,
         )
 
