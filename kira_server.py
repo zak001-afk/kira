@@ -59,6 +59,9 @@ STATIC_NAMES = {"LICENSE", "LICENSE.txt", "NOTICE", "NOTICE.txt"}
 
 MAX_BODY_BYTES = 64 * 1024
 
+# How long a failed command keeps the HUD in its FAULT state.
+ERROR_LINGER = 6.0
+
 
 # ── simulation (used by --simulate and by tests) ─────────────────────────────
 
@@ -86,6 +89,7 @@ class KiraService:
         self.started_at = time.time()
         self._lock = threading.Lock()
         self._pending = None          # command awaiting confirmation
+        self._error_until = 0.0       # keep the HUD in FAULT until this time
         self._proactive: "queue.Queue" = queue.Queue()
         self._history: list = []
         self._watchdog = None
@@ -189,19 +193,41 @@ class KiraService:
 
     # ── commands ─────────────────────────────────────────────────────────
 
-    def handle_command(self, text: str, confirm: bool = False) -> dict:
+    def handle_command(self, text: str, confirm: bool = False,
+                       cancel: bool = False) -> dict:
         """Route one command exactly like the CLI and desktop UI do."""
         text = str(text or "").strip()
 
-        # A confirmation arrives as {text: "", confirm: true} — the pending
-        # action, not this (empty) text, is what runs.
+        # Answering the question: "cancel" disarms it for good, "confirm" runs
+        # it. The swap is locked so two clicks cannot execute it twice.
+        if cancel:
+            with self._lock:
+                pending, self._pending = self._pending, None
+            if pending is None:
+                return {"reply": "", "kind": "empty", "state": self.state}
+            reply = "Cancelled, sir."
+            self._record("kira", reply, "cancelled")
+            self.state = "READY"
+            return {"reply": reply, "kind": "cancelled", "state": "READY",
+                    "mode": self.mode}
+
         pending = None
-        if confirm and self._pending is not None:
-            pending, self._pending = self._pending, None
-            text = pending["text"]
+        if confirm:
+            with self._lock:
+                pending, self._pending = self._pending, None
+            if pending is not None:
+                text = pending["text"]
 
         if not text:
             return {"reply": "", "kind": "empty", "state": self.state}
+
+        if pending is None:
+            # A new order abandons whatever question was waiting: without
+            # this, ignoring a confirmation and later clicking CONFIRM would
+            # run a command the user had moved on from.
+            with self._lock:
+                self._pending = None
+            self._record("you", text)
 
         self.state = "EXECUTING" if pending is not None else "THINKING"
         try:
@@ -225,15 +251,19 @@ class KiraService:
                 "reply": f"Something went wrong handling that, sir: {exc}",
                 "kind": "error",
             }
-        finally:
-            if pending is None:
-                self.state = "READY"
 
         reply = str(result.get("reply") or "")
         kind = result.get("kind", "reply")
         if reply:
             self._record("kira", reply, kind)
-        self.state = result.get("state") or "READY"
+
+        if kind == "error":
+            # the HUD shows FAULT while this lasts, then returns to standby
+            self.state = "ERROR"
+            self._error_until = time.time() + ERROR_LINGER
+        else:
+            self.state = str(result.get("state") or "READY")
+
         payload = dict(result)
         payload.setdefault("reply", reply)
         payload["mode"] = self.mode
@@ -264,12 +294,29 @@ class KiraService:
 
         action = (result or {}).get("action", "none")
 
+        # Chat-session controls never reach execute_action on the desktop
+        # either (main_window handles them in its own router) — without this
+        # the browser would answer "I could not do that" to all of them.
+        control = self._control_reply(action, thought)
+        if control is not None:
+            return control
+
         if action == "none":
             return {"reply": backend.ask_chat(cleaned), "kind": "chat"}
 
-        if backend.requires_confirmation(action) and planned_by == "parser":
-            # the browser cannot answer KIRA's voice prompt — ask the page
-            self._pending = {"text": cleaned, "action": result, "source": planned_by}
+        if backend.requires_confirmation(action):
+            # The browser cannot answer KIRA's spoken prompt, so the question
+            # goes to the page. This applies to plans the model made as well:
+            # the whitelist contains sensitive actions (search, click, lock),
+            # and the desktop confirms those whichever layer planned them.
+            thought_text = getattr(thought, "text", "") if thought else ""
+            with self._lock:
+                self._pending = {
+                    "text": cleaned,
+                    "action": result,
+                    "source": planned_by,
+                    "thought": thought_text,
+                }
             return {
                 "reply": backend.describe_action(result),
                 "kind": "confirm",
@@ -282,6 +329,30 @@ class KiraService:
             {"text": cleaned, "action": result, "source": planned_by},
             thought=thought,
         )
+
+    def _control_reply(self, action: str, thought) -> "dict | None":
+        """Reply to the session controls the desktop handles outside execute."""
+        backend = self.backend
+        if action == "conversation_on":
+            backend._CONVERSATION_MODE = True
+            return {"reply": "Conversation mode is on.", "kind": "action",
+                    "action": action, "ok": True, "state": "LISTENING"}
+        if action == "conversation_off":
+            backend._CONVERSATION_MODE = False
+            return {"reply": "Conversation mode is off.", "kind": "action",
+                    "action": action, "ok": True}
+        if action == "chat_reset":
+            backend.reset_chat()
+            return {"reply": "New conversation started.", "kind": "action",
+                    "action": action, "ok": True}
+        if action == "mode_info":
+            return {"reply": "Unified mode is active.", "kind": "action",
+                    "action": action, "ok": True}
+        if action == "exit":
+            # the desktop quits here; a browser tab must not kill the server
+            return {"reply": "Goodbye sir. I'll be here when you come back.",
+                    "kind": "action", "action": action, "ok": True}
+        return None
 
     def _execute(self, pending: dict, thought=None) -> dict:
         backend = self.backend
@@ -302,7 +373,10 @@ class KiraService:
             backend.kira_learning.capture(result)
             backend.kira_undo.record(pending["text"], result)
 
-        if isinstance(success, str):
+        # An action that returns a string speaks for itself (time, date,
+        # information, calculations, reminders…). An *empty* string is a
+        # failure, not a silent success — the CLI reads it the same way.
+        if isinstance(success, str) and success:
             reply = success
         elif not success:
             reply = backend.build_reply(language, "none")
@@ -323,8 +397,12 @@ class KiraService:
             "action": action,
             "ok": bool(success),
         }
-        if thought is not None and getattr(thought, "text", ""):
-            payload["thought"] = thought.text
+        # the thought may come from the live pass or, after a confirmation,
+        # from the question that was waiting for an answer
+        thought_text = getattr(thought, "text", "") if thought is not None else ""
+        thought_text = thought_text or str(pending.get("thought") or "")
+        if thought_text:
+            payload["thought"] = thought_text
         return payload
 
     def _simulate(self, text: str) -> dict:
@@ -370,6 +448,10 @@ class KiraService:
     # ── telemetry ────────────────────────────────────────────────────────
 
     def telemetry(self) -> dict:
+        # a FAILED command lingers as ERROR so the HUD can show FAULT
+        if self.state == "ERROR" and time.time() >= self._error_until:
+            self.state = "READY"
+
         data = {
             "online": self.online,
             "mode": self.mode,
@@ -443,9 +525,10 @@ class KiraRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        # Deliberately NO Access-Control-Allow-Origin. The interface is served
+        # from this origin, so it needs none — and a wildcard would let any
+        # website you visit drive KIRA through your browser.
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Cache-Control", "no-store")
         # never send X-Frame-Options: the UI is embedded in preview panes
         for key, value in (extra or {}).items():
@@ -467,17 +550,36 @@ class KiraRequestHandler(BaseHTTPRequestHandler):
         self._json({"error": message, "status": status}, status)
 
     def _read_json(self) -> dict:
+        """Parse a JSON object body, or {} if there is nothing usable.
+
+        Two rules matter for safety, not tidiness:
+
+        * The body is always drained (or the connection is closed), otherwise
+          what is left in the socket is read as the *next* request on a
+          keep-alive connection.
+        * A JSON content type is required. ``application/json`` is not a
+          CORS-"simple" type, so browsers preflight it — which means a foreign
+          page cannot blind-POST commands here with a form/text body.
+        """
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except (TypeError, ValueError):
             return {}
-        if length <= 0 or length > MAX_BODY_BYTES:
+        if length <= 0:
+            return {}
+        if length > MAX_BODY_BYTES:
+            self.close_connection = True  # refuse to read it, do not desync
             return {}
         try:
             raw = self.rfile.read(length)
         except (BrokenPipeError, ConnectionResetError, OSError):
             self.close_connection = True
             return {}
+
+        content_type = (self.headers.get("Content-Type") or "").lower()
+        if "json" not in content_type:
+            return {}
+
         try:
             data = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -556,9 +658,12 @@ class KiraRequestHandler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         payload = self._read_json()
         if path == "/api/command":
-            text = payload.get("text", "")
-            confirm = bool(payload.get("confirm"))
-            result = self.service.handle_command(text, confirm=confirm)
+            if payload.get("cancel"):
+                result = self.service.handle_command("", cancel=True)
+            elif payload.get("confirm"):
+                result = self.service.handle_command("", confirm=True)
+            else:
+                result = self.service.handle_command(payload.get("text", ""))
             self._json(result)
             return
         if path == "/api/listen":
@@ -591,9 +696,15 @@ def create_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
     return KiraWebServer((host, int(port)), service)
 
 
-def local_addresses(port: int) -> list:
-    """Best-effort list of URLs this server can be reached at."""
+def local_addresses(port: int, host: str = DEFAULT_HOST) -> list:
+    """Best-effort list of URLs this server is *actually* reachable at.
+
+    Only addresses the bind covers are returned: advertising LAN URLs for a
+    loopback-only server sends people to a URL that cannot connect.
+    """
     urls = [f"http://127.0.0.1:{port}"]
+    if host in {"127.0.0.1", "localhost", "::1"}:
+        return urls
     try:
         import socket
 
@@ -649,7 +760,10 @@ def main(argv=None) -> int:
         ]
     if not args.no_watchdog:
         service.start_background()
-    banner += [f"open      : {url}" for url in local_addresses(server.server_address[1])]
+    banner += [
+        f"open      : {url}"
+        for url in local_addresses(server.server_address[1], args.host)
+    ]
     banner += ["press CTRL+C to stop", "=" * 62]
     # flushed on purpose: users launch this from a shortcut with blocked stdout
     print("\n".join(banner), flush=True)

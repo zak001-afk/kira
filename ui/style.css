@@ -905,6 +905,19 @@ body.no-webgl #fallback-core {
   border-color: var(--red);
 }
 
+.quick-actions button:disabled,
+.chip-button:disabled {
+  opacity: 0.35;
+
+  cursor: not-allowed;
+}
+
+.quick-actions button:disabled:hover {
+  color: #777;
+
+  border-color: rgba(255, 32, 32, 0.35);
+}
+
 /* =========================================================
    CONFIRMATION BAR
    ========================================================= */

@@ -401,6 +401,11 @@ Design notes:
 - **Local by default.** It binds `127.0.0.1`. `--host 0.0.0.0` is fine on a
   home network, but understand what you are exposing: the API can drive your
   computer — keep it off public networks and off port-forwarding.
+- **Other websites cannot drive it.** The server sends no CORS headers at all
+  (the page is served from the same origin and needs none) and only accepts
+  JSON request bodies, which browsers preflight — so a page you visit cannot
+  quietly POST commands to your agent, and a cancelled confirmation is
+  disarmed rather than merely hidden.
 - **Watchdog alerts reach the page.** The proactive monitor runs on the
   server, so battery/CPU warnings appear in the browser conversation (and are
   spoken) even when the desktop UI is closed.
@@ -527,7 +532,7 @@ kira/
 dev_mode.bat        # auto-restarts KIRA whenever a source file changes
 
 pip install -r requirements-dev.txt
-pytest              # 709 unit tests — no mic, display or Ollama needed
+pytest              # 741 unit tests — no mic, display or Ollama needed
 ruff check .        # lint
 python -m compileall dev.py kira_memory.py kira_thought.py kira_voice_agent.py kira_server.py main_window.py scripts tests
 ```
@@ -537,7 +542,7 @@ WebGL needed) — it runs the real `ui/app.js` against a fake DOM and a fake
 API, then against the vendored Three.js build:
 
 ```powershell
-node scripts/check_ui.mjs    # 29 UI checks: boot, commands, thoughts, confirm, mic, alerts, fallback
+node scripts/check_ui.mjs    # 34 UI checks: boot, commands, thoughts, confirm, cancel, mic, alerts, timeouts, fallback
 ```
 
 Tests stub the hardware-facing modules (`pyautogui`, audio, Ollama, …) in
@@ -553,6 +558,10 @@ build_kira.bat
 This runs PyInstaller with `KIRA.spec` (which bundles `customtkinter`, icons
 and the config), then copies `dist\KIRA` to your Desktop and creates a
 shortcut. You do **not** need to rebuild while developing — use dev mode.
+
+The build ships the desktop UI. The **browser interface runs from source**
+(`python kira_server.py`) — run it in a terminal or make a shortcut, since it
+is a console program that needs the `ui/` folder next to it.
 
 ## Troubleshooting
 

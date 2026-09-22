@@ -310,6 +310,83 @@ class TestRouting:
         assert result["reply"] == "Screenshot saved, sir."
 
 
+class TestSessionControls:
+    """These actions bypass execute_action on the desktop, so the server has
+    to answer them itself — otherwise the browser reports a failure."""
+
+    def test_conversation_mode_toggles_the_backend_flag(self):
+        service, backend = service_with_backend(
+            simple_result={"action": "conversation_on"},
+            confirm_actions=set(),
+        )
+        backend._CONVERSATION_MODE = False
+        result = service.handle_command("conversation mode on")
+        assert result["ok"] is True
+        assert backend._CONVERSATION_MODE is True
+        assert "on" in result["reply"].lower()
+        assert backend.executed == [], "a session control went to execute_action"
+
+        backend.simple_result = {"action": "conversation_off"}
+        service.handle_command("conversation mode off")
+        assert backend._CONVERSATION_MODE is False
+
+    def test_chat_reset_starts_a_new_session(self):
+        service, backend = service_with_backend(
+            simple_result={"action": "chat_reset"},
+            confirm_actions=set(),
+        )
+        backend.reset_chat = lambda: backend.__setattr__("reset_called", True)
+        result = service.handle_command("start a new chat")
+        assert result["ok"] is True
+        assert backend.reset_called is True
+
+    def test_mode_info_answers_plainly(self):
+        service, backend = service_with_backend(
+            simple_result={"action": "mode_info"},
+            confirm_actions=set(),
+        )
+        assert service.handle_command("what mode are you in")["reply"]
+        assert backend.executed == []
+
+    def test_goodbye_does_not_stop_the_server(self):
+        """The desktop app quits on 'exit' — a web server must not."""
+        service, backend = service_with_backend(
+            simple_result={"action": "exit"},
+            confirm_actions=set(),
+        )
+        result = service.handle_command("goodbye")
+        assert "goodbye" in result["reply"].lower()
+        assert backend.executed == []
+
+
+class TestReplyBuilding:
+    def test_an_empty_string_result_is_a_failure_not_a_silence(self):
+        """execute_action() returning "" used to produce no reply at all."""
+        service, _ = service_with_backend(
+            simple_result={"action": "volume_up"},
+            confirm_actions=set(),
+            execute_result="",
+        )
+        result = service.handle_command("volume up")
+        assert result["ok"] is False
+        assert result["reply"], "the user was left with no answer at all"
+
+    def test_action_targets_reach_the_reply(self):
+        service, _ = service_with_backend(
+            simple_result={"action": "search", "query": "weather in tunis"},
+            confirm_actions=set(),
+        )
+        result = service.handle_command("search for the weather")
+        assert "weather in tunis" in result["reply"]
+
+    def test_folder_and_press_targets_are_passed_through(self):
+        service, _ = service_with_backend(
+            simple_result={"action": "press", "target": "enter"},
+            confirm_actions=set(),
+        )
+        assert "enter" in service.handle_command("press enter")["reply"]
+
+
 class TestConfirmation:
     def test_dangerous_action_asks_the_page_first(self):
         service, backend = service_with_backend(
@@ -350,28 +427,121 @@ class TestConfirmation:
         assert result["kind"] == "empty"
         assert backend.executed == []
 
-    def test_llm_plans_are_not_double_confirmed(self):
-        """Confirmation is the parser's job; the model's plan already ran."""
+    def test_cancelling_disarms_the_action_for_good(self):
+        service, backend = service_with_backend(
+            simple_result={"action": "open_app", "target": "chrome"},
+        )
+        service.handle_command("open chrome")
+        cancelled = service.handle_command("", cancel=True)
+        assert cancelled["kind"] == "cancelled"
+        assert service._pending is None
+        assert backend.executed == []
+
+        # a stray CONFIRM afterwards must do nothing at all
+        assert service.handle_command("", confirm=True)["kind"] == "empty"
+        assert backend.executed == [], "a cancelled action still ran"
+
+    def test_cancelling_with_nothing_pending_is_harmless(self):
+        service, backend = service_with_backend()
+        result = service.handle_command("", cancel=True)
+        assert result["kind"] == "empty"
+        assert backend.executed == []
+
+    def test_ignoring_the_question_cancels_it(self):
+        """Moving on must not leave a loaded CONFIRM button behind."""
+        service, backend = service_with_backend(
+            simple_result={"action": "open_app", "target": "chrome"},
+        )
+        service.handle_command("open chrome")
+        assert service._pending is not None
+
+        # the user typed something else instead of answering
+        backend.simple_result = {"action": "volume_up"}
+        service.handle_command("volume up")
+        assert service._pending is None, "the old question was still armed"
+
+        # a late CONFIRM click must do nothing at all
+        result = service.handle_command("", confirm=True)
+        assert result["kind"] == "empty"
+        assert backend.executed == [{"action": "volume_up"}], (
+            "a stale confirmation executed a command the user had abandoned"
+        )
+
+    def test_the_new_command_becomes_the_pending_one(self):
+        service, backend = service_with_backend(
+            simple_result={"action": "open_app", "target": "chrome"},
+        )
+        service.handle_command("open chrome")
+        backend.simple_result = {"action": "open_app", "target": "vscode"}
+        service.handle_command("open vscode")
+        service.handle_command("", confirm=True)
+        assert backend.executed == [{"action": "open_app", "target": "vscode"}]
+
+    def test_llm_plans_are_confirmed_too(self):
+        """The whitelist holds sensitive actions; whoever planned it, ask."""
         service, backend = service_with_backend(
             simple_result=None,
-            think_result=FakeClock({"action": "open_app", "target": "vscode"}, source="llm"),
+            think_result=FakeClock(
+                {"action": "open_app", "target": "vscode"},
+                source="llm",
+                text="The user means the code editor.",
+            ),
         )
         result = service.handle_command("open my editor")
-        assert "needs_confirmation" not in result
+        assert result["needs_confirmation"] is True
+        assert backend.executed == [], "a model-planned action ran without asking"
+
+        done = service.handle_command("", confirm=True)
+        assert done["ok"] is True
         assert backend.executed == [{"action": "open_app", "target": "vscode"}]
+        assert done["thought"] == "The user means the code editor.", (
+            "the thought was lost across the confirmation"
+        )
+
+    def test_llm_plans_without_a_confirmation_rule_still_run(self):
+        service, backend = service_with_backend(
+            simple_result=None,
+            think_result=FakeClock({"action": "volume_up"}, source="llm"),
+            confirm_actions=set(),
+        )
+        result = service.handle_command("louder")
+        assert "needs_confirmation" not in result
+        assert backend.executed == [{"action": "volume_up"}]
 
 
 class TestHistory:
     def test_both_sides_are_recorded(self):
+        """A reload must restore the user's half of the conversation too."""
         service, _ = service_with_backend(
             simple_result={"action": "volume_up"},
             confirm_actions=set(),
         )
         service.handle_command("volume up")
         messages = service.history(10)
-        assert [message["role"] for message in messages] == ["kira"]
-        assert messages[0]["text"] == "Done: volume_up"
-        assert messages[0]["kind"] == "action"
+        assert [message["role"] for message in messages] == ["you", "kira"]
+        assert messages[0]["text"] == "volume up"
+        assert messages[1]["text"] == "Done: volume_up"
+        assert messages[1]["kind"] == "action"
+
+    def test_failed_commands_are_recorded(self):
+        service, _ = service_with_backend(simple_result={"action": "none"})
+        service.handle_command("do something impossible")
+        roles = [message["role"] for message in service.history(10)]
+        assert roles == ["you", "kira"]
+
+    def test_empty_commands_are_not_recorded(self):
+        service, _ = service_with_backend()
+        service.handle_command("   ")
+        assert service.history(10) == []
+
+    def test_a_confirmation_does_not_duplicate_the_user_line(self):
+        service, _ = service_with_backend(
+            simple_result={"action": "open_app", "target": "chrome"},
+        )
+        service.handle_command("open chrome")
+        service.handle_command("", confirm=True)
+        roles = [message["role"] for message in service.history(10)]
+        assert roles == ["you", "kira", "kira"], roles
 
     def test_limit_takes_the_tail(self):
         service, _ = service_with_backend()
@@ -449,6 +619,45 @@ class TestProactive:
         assert service._watchdog is None
 
 
+class TestFaultState:
+    """The HUD renders FAULT from an ERROR state — something must produce it."""
+
+    def test_a_failure_raises_the_fault_state(self):
+        service = kira_server.KiraService(simulate=False)
+        service.backend = None
+        service.reason = "no backend"
+        service.handle_command("open chrome")
+        assert service.state == "ERROR"
+        assert service.telemetry()["state"] == "ERROR"
+
+    def test_the_fault_state_clears_by_itself(self):
+        service = kira_server.KiraService(simulate=False)
+        service.backend = None
+        service.reason = "no backend"
+        service.handle_command("open chrome")
+        service._error_until = 0  # as if the linger window had passed
+        assert service.telemetry()["state"] == "READY"
+        assert service.state == "READY"
+
+    def test_success_leaves_no_fault_behind(self):
+        service, _ = service_with_backend(
+            simple_result={"action": "volume_up"},
+            confirm_actions=set(),
+        )
+        service.handle_command("volume up")
+        assert service.telemetry()["state"] == "READY"
+
+    def test_an_action_failure_is_not_a_fault(self):
+        """A command that ran and failed is KIRA's business, not a HUD fault."""
+        service, _ = service_with_backend(
+            simple_result={"action": "open_app", "target": "ghost"},
+            confirm_actions=set(),
+            execute_result=False,
+        )
+        service.handle_command("open ghost")
+        assert service.telemetry()["state"] == "READY"
+
+
 class TestTelemetry:
     def test_shape_is_stable_without_dependencies(self):
         service = kira_server.KiraService(simulate=True)
@@ -488,6 +697,102 @@ class TestTelemetry:
         data = service.telemetry()
         assert data["model"] == "fake-model"
         assert data["skills"] is None
+
+
+# ── the real backend, not a fake ─────────────────────────────────────────────
+
+
+class TestBackendContract:
+    """The fakes above model the backend; these tests hold it to the model.
+
+    `tests/conftest.py` stubs the hardware, so the real `kira_voice_agent`
+    imports fine here. If the agent renames or drops anything the server
+    calls, this fails instead of the browser quietly breaking.
+    """
+
+    def test_every_backend_attribute_the_server_calls_exists(self):
+        source = (ROOT / "kira_server.py").read_text(encoding="utf-8")
+        wanted = {
+            name
+            for name in re.findall(r"\bbackend\.([A-Za-z_][A-Za-z0-9_]*)", source)
+            if name not in {"py", "exc"}  # locals, not backend attributes
+        }
+        assert len(wanted) >= 15, f"only found {wanted} — did the server change shape?"
+
+        import kira_voice_agent as backend
+
+        missing = sorted(name for name in wanted if not hasattr(backend, name))
+        assert missing == [], f"kira_server.py calls attributes the backend lacks: {missing}"
+
+    def test_every_telemetry_reader_exists(self):
+        import kira_voice_agent as backend
+
+        for name in ("VERSION", "MODEL", "CONFIG", "USER_MEMORY"):
+            assert hasattr(backend, name), f"the backend lost {name}"
+
+        for name in ("learnings_summary", "episode_counts", "load_memories"):
+            assert callable(getattr(backend.kira_memory, name, None)), name
+
+        summarised = backend.kira_memory.learnings_summary()
+        counted = backend.kira_memory.episode_counts()
+        assert isinstance(summarised.get("count"), int)
+        assert isinstance(counted.get("total"), int)
+
+
+class TestRealBackendPipeline:
+    """One command end to end through the actual agent, with only the
+    hardware-touching executor replaced."""
+
+    def _service(self, monkeypatch, reply="Done, sir."):
+        import kira_voice_agent as backend
+
+        service = kira_server.KiraService(simulate=False)
+        service.backend = backend
+        service.reason = ""
+        executed = []
+
+        def fake_execute(action):
+            executed.append(action)
+            return reply
+
+        monkeypatch.setattr(backend, "execute_action", fake_execute)
+        return service, executed
+
+    def test_a_parsed_command_runs_without_the_model(self, monkeypatch):
+        service, executed = self._service(monkeypatch)
+        result = service.handle_command("volume up")
+        assert executed == [{"action": "volume_up"}]
+        assert result["action"] == "volume_up"
+        assert result["ok"] is True
+        assert result["reply"] == "Done, sir."
+        assert result["mode"] == "live"
+
+    def test_a_sensitive_action_is_held_for_the_page(self, monkeypatch):
+        service, executed = self._service(monkeypatch)
+        pending = service.handle_command("search for a restaurant")
+        assert pending["needs_confirmation"] is True
+        assert pending["action_name"] == "search"
+        assert executed == [], "a sensitive action ran before confirmation"
+
+        done = service.handle_command("", confirm=True)
+        assert [action["action"] for action in executed] == ["search"]
+        assert done["ok"] is True
+
+    def test_history_round_trips_through_a_real_command(self, monkeypatch):
+        service, _ = self._service(monkeypatch)
+        service.handle_command("volume up")
+        messages = service.history(10)
+        assert [message["role"] for message in messages] == ["you", "kira"]
+        assert messages[0]["text"] == "volume up"
+
+    def test_telemetry_reports_the_real_agent(self, monkeypatch):
+        service, _ = self._service(monkeypatch)
+        data = service.telemetry()
+        assert data["online"] is True
+        assert data["mode"] == "live"
+        assert data["model"] == getattr(service.backend, "MODEL")
+        assert isinstance(data["skills"], int)
+        assert data["version"] == service.backend.VERSION
 
 
 # ── HTTP layer ───────────────────────────────────────────────────────────────
@@ -595,6 +900,19 @@ class TestHttpApi:
         assert done["ok"] is True
         assert web.backend.executed == [{"action": "open_app", "target": "chrome"}]
 
+    def test_cancel_endpoint_disarms_without_running(self, web):
+        web.backend.simple_result = {"action": "open_app", "target": "chrome"}
+        web.backend.confirm_actions = {"open_app"}
+        request_json(web, "POST", "/api/command", {"text": "open chrome"})
+
+        _, cancelled = request_json(web, "POST", "/api/command", {"cancel": True})
+        assert cancelled["kind"] == "cancelled"
+        assert web.backend.executed == []
+
+        _, late = request_json(web, "POST", "/api/command", {"confirm": True})
+        assert late["kind"] == "empty"
+        assert web.backend.executed == []
+
     def test_history_reflects_commands(self, web):
         request_json(web, "POST", "/api/command", {"text": "volume up"})
         _, data = request_json(web, "GET", "/api/history?limit=5")
@@ -696,9 +1014,73 @@ class TestStaticFiles:
     def test_preview_headers(self, web):
         """The UI must be embeddable and never cached by the preview pane."""
         _, headers, _ = request(web, "GET", "/")
-        assert headers.get("Access-Control-Allow-Origin") == "*"
         assert headers.get("Cache-Control") == "no-store"
         assert "X-Frame-Options" not in headers
+        assert headers.get("X-Content-Type-Options") == "nosniff"
+
+
+class TestBrowserIsolation:
+    """KIRA's API can drive the machine, so a foreign page must not reach it.
+
+    The interface is served from this origin, so it needs no CORS headers —
+    and handing out `Access-Control-Allow-Origin: *` would let any website the
+    user visits talk to their local agent.
+    """
+
+    def test_no_wildcard_cors_is_ever_sent(self, web):
+        for method, path in (("GET", "/"), ("GET", "/api/state"), ("GET", "/api/health")):
+            _, headers, _ = request(web, method, path)
+            assert "Access-Control-Allow-Origin" not in headers, (
+                f"{method} {path} handed out CORS access"
+            )
+
+    def test_preflight_does_not_grant_cross_origin_access(self, web):
+        status, headers, _ = request(web, "OPTIONS", "/api/command")
+        assert status == 204
+        assert "Access-Control-Allow-Origin" not in headers
+        assert "Access-Control-Allow-Methods" not in headers
+
+    def test_a_form_style_post_cannot_run_a_command(self, web):
+        """text/plain/form bodies skip preflight in browsers — refuse them."""
+        connection = http.client.HTTPConnection(web.host, web.port, timeout=5)
+        try:
+            body = json.dumps({"text": "open chrome", "confirm": True})
+            for content_type in (
+                "text/plain",
+                "application/x-www-form-urlencoded",
+                "multipart/form-data; boundary=x",
+                None,
+            ):
+                headers = {"Content-Type": content_type} if content_type else {}
+                connection.request("POST", "/api/command", body=body, headers=headers)
+                response = connection.getresponse()
+                payload = json.loads(response.read())
+                assert response.status == 200
+                assert payload["kind"] == "empty", (
+                    f"{content_type!r} body was treated as a command"
+                )
+        finally:
+            connection.close()
+        assert web.backend.executed == [], "a cross-origin-style POST executed an action"
+
+    def test_json_posts_still_work(self, web):
+        status, data = request_json(web, "POST", "/api/command", {"text": "volume up"})
+        assert (status, data["ok"]) == (200, True)
+
+    def test_an_oversized_body_is_refused_and_the_socket_closed(self, web):
+        connection = http.client.HTTPConnection(web.host, web.port, timeout=5)
+        try:
+            connection.request(
+                "POST",
+                "/api/command",
+                body=b"x" * (kira_server.MAX_BODY_BYTES + 10),
+                headers={"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            assert json.loads(response.read())["kind"] == "empty"
+        finally:
+            connection.close()
+        assert web.backend.executed == []
 
 
 class TestClientAborts:
@@ -830,9 +1212,23 @@ class TestVendoredThree:
     """The reactor must not depend on a CDN — KIRA is a local-first agent."""
 
     def test_no_external_urls_are_referenced(self):
+        """Nothing in the page may need the network — KIRA is local-first.
+
+        Data URIs are stripped first: they are inline content, and the SVG
+        namespace inside one (`http://www.w3.org/2000/svg`) is an identifier,
+        not a fetch.
+        """
+        # XML namespace identifiers look like URLs but are never fetched
+        namespaces = {
+            "http://www.w3.org/2000/svg",
+            "http://www.w3.org/1999/xhtml",
+            "http://www.w3.org/1999/xlink",
+        }
         for name in ("index.html", "app.js", "style.css"):
             text = (ROOT / "ui" / name).read_text(encoding="utf-8")
             for url in re.findall(r"https?://[^\s\"'<>)]+", text):
+                if url in namespaces:
+                    continue
                 assert "localhost" in url or "127.0.0.1" in url, (
                     f"ui/{name} reaches out to {url}"
                 )
@@ -937,3 +1333,10 @@ class TestCliEntry:
 
     def test_local_addresses_always_include_loopback(self):
         assert kira_server.local_addresses(9999)[0] == "http://127.0.0.1:9999"
+
+    def test_loopback_binding_does_not_advertise_lan_urls(self):
+        """Printing a LAN URL for a 127.0.0.1 server sends people nowhere."""
+        assert kira_server.local_addresses(9999, "127.0.0.1") == [
+            "http://127.0.0.1:9999"
+        ]
+        assert len(kira_server.local_addresses(9999, "0.0.0.0")) >= 1

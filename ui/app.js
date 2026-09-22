@@ -64,24 +64,53 @@ const modeLabel = $("mode-label");
    API CLIENT
    ========================================================= */
 
+/* Every call is on a leash: a hung backend must not leave the HUD saying
+   PROCESSING forever. Commands get a long leash (a local model can be slow),
+   polls and the microphone a short one. */
+const TIMEOUTS = { state: 8000, history: 10000, command: 120000, listen: 30000 };
+
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+  const { timeoutMs = 15000, ...rest } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(path, {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      ...rest,
+    });
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      throw new Error(`no answer from KIRA within ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  return response.json();
 }
 
-const apiState = () => api("/api/state");
-const apiHistory = (limit = 30) => api(`/api/history?limit=${limit}`);
-const apiReset = () => api("/api/reset", { method: "POST", body: "{}" });
+const apiState = () => api("/api/state", { timeoutMs: TIMEOUTS.state });
+const apiHistory = (limit = 30) =>
+  api(`/api/history?limit=${limit}`, { timeoutMs: TIMEOUTS.history });
+const apiReset = () =>
+  api("/api/reset", { method: "POST", body: "{}", timeoutMs: TIMEOUTS.history });
+const apiListen = () =>
+  api("/api/listen", { method: "POST", body: "{}", timeoutMs: TIMEOUTS.listen });
 const apiCommand = (text, confirm = false) =>
   api("/api/command", {
     method: "POST",
     body: JSON.stringify({ text, confirm }),
+    timeoutMs: TIMEOUTS.command,
+  });
+const apiCancel = () =>
+  api("/api/command", {
+    method: "POST",
+    body: JSON.stringify({ cancel: true }),
+    timeoutMs: TIMEOUTS.command,
   });
 
 /* =========================================================
@@ -161,6 +190,10 @@ if ("speechSynthesis" in window) {
   };
 }
 
+/* While KIRA talks, the reactor should show SPEAKING. The server's state is
+   READY by then, so this is tracked locally and polls leave it alone. */
+let speakingUntil = 0;
+
 function speak(text) {
   if (!appState.speak || !("speechSynthesis" in window) || !text) return;
   const cleaned = String(text)
@@ -168,22 +201,40 @@ function speak(text) {
     .replace(/\s{2,}/g, " ")
     .trim();
   if (!cleaned) return;
+
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(cleaned);
   if (!preferredVoice) preferredVoice = pickVoice();
   if (preferredVoice) utterance.voice = preferredVoice;
   utterance.rate = 0.98; // a touch slower reads warmer
   utterance.pitch = 1.02;
+
+  // a rough ceiling in case the browser never fires onend
+  speakingUntil = Date.now() + 1500 + cleaned.length * 70;
+  utterance.onstart = () => {
+    setActivity("SPEAKING");
+  };
+  utterance.onend = endSpeaking;
+  utterance.onerror = endSpeaking;
+  setActivity("SPEAKING");
   window.speechSynthesis.speak(utterance);
 }
 
-function setSpeaking(on) {
-  if (on && appState.state !== "ERROR") {
+function endSpeaking() {
+  speakingUntil = 0;
+  if (appState.state === "SPEAKING") setActivity("READY");
+}
+
+/* Back to standby — unless KIRA is still answering out loud, or a button is
+   waiting for an answer. Without this the command handler would stamp
+   STANDBY over its own reply the millisecond it started speaking it. */
+function settleActivity() {
+  if (appState.pendingConfirm) return;
+  if (speakingUntil > Date.now()) {
     setActivity("SPEAKING");
-    window.setTimeout(() => {
-      if (appState.state === "SPEAKING") setActivity("READY");
-    }, 2200);
+    return;
   }
+  setActivity("READY");
 }
 
 /* =========================================================
@@ -237,7 +288,12 @@ function setMeter(id, value) {
 function applyTelemetry(data) {
   setOnline(data.online, data.mode, data.reason);
 
-  if (data.state && data.state !== "SPEAKING") setActivity(data.state);
+  // the browser is mid-sentence: keep showing SPEAKING until it finishes
+  if (speakingUntil > Date.now()) {
+    setActivity("SPEAKING");
+  } else if (data.state) {
+    setActivity(data.state);
+  }
 
   $("cpu").textContent = percent(data.cpu);
   $("memory").textContent = percent(data.memory);
@@ -280,6 +336,9 @@ function setBusy(busy, label = "PROCESSING") {
   appState.busy = busy;
   sendButton.disabled = busy;
   micButton.disabled = busy;
+  document
+    .querySelectorAll("#quick-actions button")
+    .forEach((button) => (button.disabled = busy));
   showThinking(busy, label);
   if (busy) setActivity(label === "LISTENING" ? "LISTENING" : "THINKING");
 }
@@ -298,9 +357,25 @@ function renderResult(data) {
   }
 }
 
+/* The guarded entry point for anything a user triggers. */
 async function sendCommand(text) {
+  if (appState.busy) return;
+  await runCommand(text);
+}
+
+/* The work itself. The microphone calls this directly, because asking for a
+   command already counts as busy — going through sendCommand() would drop the
+   phrase it just heard. */
+async function runCommand(text) {
   const value = String(text || "").trim();
-  if (!value || appState.busy) return;
+  if (!value) return;
+
+  // a new order abandons any question still on screen (the server does the
+  // same), so a stale CONFIRM click can never run an old command
+  if (appState.pendingConfirm) {
+    appState.pendingConfirm = false;
+    confirmBar.hidden = true;
+  }
 
   addMessage("you", value);
   commandInput.value = "";
@@ -313,7 +388,7 @@ async function sendCommand(text) {
     addMessage("kira", `I could not reach my local brain, sir — ${error}`, "failed");
   } finally {
     setBusy(false);
-    if (!appState.pendingConfirm) setActivity("READY");
+    settleActivity();
     commandInput.focus();
   }
 }
@@ -321,16 +396,32 @@ async function sendCommand(text) {
 async function answerConfirmation(confirmed) {
   confirmBar.hidden = true;
   appState.pendingConfirm = false;
+
+  if (!confirmed) {
+    // disarms the waiting action on the server too, so a stale CONFIRM can
+    // never run something the user explicitly cancelled
+    try {
+      await apiCancel();
+    } catch (error) {
+      /* local state is already cleared; nothing can run by accident */
+    }
+    addMessage("you", "cancelled", "note");
+    addMessage("kira", "As you wish, sir. Nothing was done.");
+    speak("As you wish, sir. Nothing was done.");
+    settleActivity();
+    return;
+  }
+
   setBusy(true, "EXECUTING");
   try {
-    const data = await apiCommand("", confirmed);
+    const data = await apiCommand("", true);
     renderResult({ ...data, needs_confirmation: false });
-    addMessage("you", confirmed ? "confirmed" : "cancelled", "note");
+    addMessage("you", "confirmed", "note");
   } catch (error) {
     addMessage("kira", `The confirmation failed, sir — ${error}`, "failed");
   } finally {
     setBusy(false);
-    setActivity("READY");
+    settleActivity();
   }
 }
 
@@ -340,9 +431,9 @@ async function listenOnce() {
   micButton.textContent = "HEARING";
   setBusy(true, "LISTENING");
   try {
-    const data = await api("/api/listen", { method: "POST", body: "{}" });
+    const data = await apiListen();
     if (data.text) {
-      await sendCommand(data.text);
+      await runCommand(data.text);
     } else if (data.error) {
       addMessage("kira", `My microphone is unavailable, sir — ${data.error}`, "failed");
     } else {
@@ -354,7 +445,7 @@ async function listenOnce() {
     micButton.classList.remove("listening");
     micButton.textContent = "MIC";
     setBusy(false);
-    setActivity("READY");
+    settleActivity();
   }
 }
 
@@ -480,8 +571,6 @@ function drawMatrix() {
 /* =========================================================
    3D REACTOR (optional — degrades to the CSS core)
    ========================================================= */
-
-let reactorAPI = null;
 
 /* Any failure here — missing WebGL, a lost GPU context, an import problem —
    must cost the user the reactor, never the interface. */
@@ -869,16 +958,16 @@ async function buildReactor() {
     composer.render();
   }
 
+  // the matrix canvas has its own resize listener (boot); this one is only
+  // about the renderer and its composer
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     composer.setSize(window.innerWidth, window.innerHeight);
-    resizeMatrix();
   });
 
   animate();
-  reactorAPI = { scene, reactor };
 }
 
 /* =========================================================

@@ -48,16 +48,65 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Aborted browser requests (reloads, cancelled polls) no longer raise inside
   the server's request thread.
 
+### Fixed — review pass (the interface, tested against the real agent)
+- **The microphone dropped every phrase it heard.** Asking for a command
+  marks the HUD busy, and the busy guard then swallowed the recognised text —
+  so the button animated, the log looked fine, and nothing was ever sent.
+  The mic now calls the work directly instead of the guarded entry point, and
+  a regression check proves the heard phrase reaches the API.
+- **CANCEL only hid the question.** The action stayed armed on the server, so
+  a later CONFIRM click could still run something the user had explicitly
+  cancelled. Cancel now disarms it (`POST /api/command {cancel: true}`), and
+  starting a new command clears a question that was never answered.
+- **A wildcard CORS header let any website drive KIRA.** The interface is
+  served from this origin and needs no CORS, so the header is gone; JSON
+  bodies are now required, which browsers preflight (a `text/plain` or form
+  body — the shapes that skip preflight — is refused). Oversized bodies close
+  the connection instead of desyncing the next request on it.
+- **The user's own lines were never recorded**, so a page reload restored
+  KIRA's half of the conversation only.
+- **The FAULT state was unreachable**: nothing ever produced an `ERROR` state,
+  so the reactor could never show a fault. A failed command now raises it for
+  a few seconds and it clears itself.
+- **The SPEAKING state was dead code** (nothing called it) — and once wired,
+  the command handler was resetting the HUD to standby the instant a reply
+  started being spoken over it. Speech now drives the state, and polls leave
+  it alone until the line finishes.
+- **Session controls failed in the browser.** `conversation mode on/off`,
+  `start a new chat`, and `what mode are you in` are handled outside
+  `execute_action` on the desktop, so the page answered "I could not do
+  that". All four (plus a friendly `goodbye` that does not stop the server)
+  are now answered properly.
+- **Model-planned sensitive actions ran without asking.** The desktop
+  confirms whitelisted sensitive actions whoever planned them; the browser
+  only asked for parser plans. Now every sensitive action is confirmed by the
+  page, and the plan's thought survives the round trip.
+- **A hung backend froze the HUD** on "PROCESSING" forever. Requests now have
+  leashes (8 s polls, 120 s commands, 30 s microphone) and a timeout is
+  reported honestly.
+- **An empty string result produced a silent no-op** instead of an apology.
+- `--host 127.0.0.1` no longer prints LAN URLs that cannot be connected to.
+- The startup banner is flushed, so it appears in piped logs and shortcuts;
+  the page carries an inline icon so browsers stop 404-ing on `/favicon.ico`.
+
 ### Tests
-- 80 new tests: the service routing pipeline against a fake backend (lab
-  gate, chat fallback, LLM/memory plans, confirmation, learning promotion,
-  failure handling), simulation and offline modes, the watchdog alert
-  callback, telemetry shape, real HTTP endpoints over a live socket,
-  traversal/extension defence, preview headers, aborted clients, vendored
-  module graph (every import resolves, nothing reaches a CDN), markup
-  structure and click-through CSS. A Node smoke check
-  (`scripts/check_ui.mjs`, 29 checks) drives the real `ui/app.js` headlessly.
-  **709 passing.**
+- 112 new/extended tests: the service routing pipeline against a fake backend
+  (lab gate, chat fallback, LLM/memory plans, confirmation, cancellation,
+  learning promotion, failure handling), the session controls, reply
+  building, simulation and offline modes, the watchdog alert callback,
+  telemetry shape, browser isolation (no wildcard CORS, no form-path
+  commands), real HTTP endpoints over a live socket, traversal/extension
+  defence, preview headers, aborted and oversized bodies, vendored module
+  graph (every import resolves, nothing reaches a CDN), markup structure and
+  click-through CSS.
+- **Against the real agent, not a fake:** a contract test asserts every
+  backend attribute the server calls still exists (so an agent rename breaks
+  CI instead of the page), and end-to-end tests route real commands —
+  `volume up`, a sensitive `search` held for confirmation — through the
+  actual `kira_voice_agent`.
+- A Node smoke check (`scripts/check_ui.mjs`, 34 checks) drives the real
+  `ui/app.js` headlessly with a fake DOM and API, including the microphone
+  regression, cancel, timeouts and the SPEAKING behaviour. **741 passing.**
 
 ## [2.5.0] — 2026-09-21
 
