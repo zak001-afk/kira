@@ -81,6 +81,13 @@ WINDOW_HEIGHT = 900
 class QuietHandler(SimpleHTTPRequestHandler):
     """HTTP handler that serves UI files with minimal logging."""
     
+    # WebView2 must pick up new UI modules after a git pull, not a cached build.
+    extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".mjs": "text/javascript"}
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def log_message(self, format, *args):
         pass  # Suppress access logs
 

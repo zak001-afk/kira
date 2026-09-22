@@ -105,6 +105,17 @@
           <span id="activity">STANDBY</span>
         </div>
 
+        <div class="speech-diagnostics">
+          <div class="speech-build">SPEECH SYNC 02</div>
+          <div id="motion-status" role="status">VOICE IDLE</div>
+          <div class="voice-meter" aria-hidden="true"><span id="voice-level"></span></div>
+          <div class="motion-controls">
+            <button id="motion-toggle" type="button">MOTION: AUTO</button>
+            <button id="motion-test" type="button">TEST MOTION</button>
+            <button id="voice-test" type="button">TEST VOICE</button>
+          </div>
+        </div>
+
         <div class="telemetry-divider"></div>
         <div class="panel-label">TASKS</div>
         <div class="tasks-list" id="tasks-list">
@@ -158,6 +169,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=speech-sync-2"></script>
   </body>
 </html>

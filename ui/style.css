@@ -698,3 +698,14 @@ body { position: relative; }
   .command-area { left: 4%; right: 4%; }
   .core-caption { display: none; }
 }
+
+/* Speech-sync diagnostics stay visible even when the OS disables animation. */
+.speech-diagnostics { pointer-events: auto; position: relative; margin-top: 14px; font: 9px/1.5 monospace; letter-spacing: 0.5px; }
+.speech-build { color: #888; font-size: 8px; margin-bottom: 4px; }
+#motion-status { color: #ff9999; min-height: 27px; }
+.voice-meter { height: 4px; background: #301212; overflow: hidden; margin: 4px 0 8px; }
+#voice-level { display: block; height: 100%; background: #ff5050; transform: scaleX(0); transform-origin: left; }
+.motion-controls { display: flex; gap: 5px; flex-wrap: wrap; }
+.motion-controls button { cursor: pointer; border: 1px solid #743030; color: #ddd; background: #180b0b; padding: 6px; font: inherit; }
+.motion-controls button:hover, .motion-controls button:focus-visible { border-color: #ff5050; color: white; }
+.telemetry-panel { overflow-y: auto; pointer-events: auto; }

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
@@ -149,6 +150,31 @@ const energyMaterial = new THREE.MeshBasicMaterial({
   blending: THREE.AdditiveBlending,
   depthWrite: false,
 });
+// Deform on the GPU: the voice gives the energy shell a soft, living surface.
+// Reuse uniforms/buffers each frame; no per-frame geometry reconstruction.
+const voiceUniforms = {
+  voiceTime: { value: 0 },
+  voiceEnergy: { value: 0 },
+  voiceLow: { value: 0 },
+  voiceHigh: { value: 0 },
+};
+energyMaterial.onBeforeCompile = (shader) => {
+  Object.assign(shader.uniforms, voiceUniforms);
+  shader.vertexShader = `
+    uniform float voiceTime;
+    uniform float voiceEnergy;
+    uniform float voiceLow;
+    uniform float voiceHigh;
+  ` + shader.vertexShader;
+  shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", `
+    #include <begin_vertex>
+    float wave = sin(position.y * 5.0 + voiceTime * 3.0)
+               * cos(position.x * 4.0 - voiceTime * 2.0);
+    float detail = sin(position.z * 9.0 + voiceTime * 5.0);
+    transformed += normal * (wave * (voiceEnergy * 0.12 + voiceLow * 0.16)
+                           + detail * voiceHigh * 0.06);
+  `);
+};
 const energySphere = new THREE.Mesh(energyGeometry, energyMaterial);
 reactor.add(energySphere);
 
@@ -417,51 +443,126 @@ function drawMatrix() {
    ANIMATION
    ========================================================= */
 
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+let motionPreference = "auto";
+try {
+  const saved = localStorage.getItem("kira.motion");
+  if (["auto", "on", "off"].includes(saved)) motionPreference = saved;
+} catch { /* private/embedded browsers may block storage */ }
+const motionButton = document.getElementById("motion-toggle");
+const motionStatus = document.getElementById("motion-status");
+const voiceMeter = document.getElementById("voice-level");
+const motionTest = document.getElementById("motion-test");
+const voiceTest = document.getElementById("voice-test");
+let motionDemoStarted = -Infinity;
+function motionDisabled() {
+  return motionPreference === "off" || (motionPreference === "auto" && reducedMotion.matches);
+}
+function updateMotionButton() {
+  motionButton.textContent = `MOTION: ${motionPreference.toUpperCase()}`;
+  motionButton.title = "Auto follows Windows reduced motion. On explicitly enables movement. Off keeps it still.";
+}
+motionButton.addEventListener("click", () => {
+  const choices = ["auto", "on", "off"];
+  motionPreference = choices[(choices.indexOf(motionPreference) + 1) % choices.length];
+  try { localStorage.setItem("kira.motion", motionPreference); } catch { /* optional */ }
+  updateMotionButton();
+});
+motionTest.addEventListener("click", () => { motionDemoStarted = performance.now(); });
+voiceTest.addEventListener("click", () => {
+  if (!speech.enabled) return;
+  speech.unlock();
+  speak("My core moves with my voice. A short pause. Now I am speaking again.");
+});
+updateMotionButton();
+let lastFrame = performance.now();
+let voiceRotation = 0;
+
 function animate() {
   requestAnimationFrame(animate);
-  const time = performance.now() * 0.001;
+  const now = performance.now();
+  const time = now * 0.001;
+  const dt = Math.min((now - lastFrame) / 1000, 0.1);
+  lastFrame = now;
+  const voice = speech.motion.sample(now);
+  const disabled = motionDisabled();
+  const demoAge = (now - motionDemoStarted) / 1000;
+  const demo = demoAge >= 0 && demoAge < 3;
+  const demoEnergy = demo ? Math.sin(demoAge * Math.PI / 3) * (0.35 + 0.6 * Math.sin(demoAge * 9) ** 2) : 0;
+  const level = demo ? demoEnergy : voice.energy;
+  voiceMeter.style.transform = `scaleX(${voice.energy.toFixed(3)})`;
+  const label = disabled ? (motionPreference === "auto" ? "MOTION OFF · SYSTEM SETTING" : "MOTION OFF")
+    : demo ? "TEST MOTION · NO AUDIO"
+    : !speech.enabled ? "VOICE MUTED"
+    : !voice.active ? (speechState === "THINKING" ? "WAITING FOR VOICE" : "VOICE IDLE")
+    : voice.source === "audio" ? (voice.energy > 0.015 ? "VOICE SYNC · AUDIO" : "VOICE SYNC · QUIET / NO SIGNAL")
+    : voice.source === "words" ? "VOICE SYNC · WORD TIMING" : "VOICE SYNC · ESTIMATED";
+  if (motionStatus.textContent !== label) motionStatus.textContent = label;
+  // Reduced motion keeps a quiet brightness cue, not speech-driven movement.
+  const energy = disabled ? 0 : level;
+  const low = disabled ? 0 : demo ? demoEnergy * 0.6 : voice.low;
+  const high = disabled ? 0 : demo ? demoEnergy * 0.3 : voice.high;
+  const light = level * (disabled ? 0.12 : 1);
+  const motionTime = disabled ? 0 : time;
+  const step = disabled ? 0 : dt;
+  voiceRotation += energy * step;
+  voiceUniforms.voiceTime.value = motionTime;
+  voiceUniforms.voiceEnergy.value = energy;
+  voiceUniforms.voiceLow.value = low;
+  voiceUniforms.voiceHigh.value = high;
 
-  // Reactor
-  reactor.rotation.y = time * 0.12;
-  reactor.rotation.x = Math.sin(time * 0.18) * 0.08;
-  armorGroup.rotation.y = -time * 0.08;
-  verticalArmor.rotation.y = time * 0.05;
-  halo.rotation.z = time * 1.8;
-  neuralCore.rotation.z = time * 0.35;
-  innerRing.rotation.z = time * 1.2;
-  secondRing.rotation.z = -time * 0.8;
-  neuralOrbit1.rotation.x = time * 0.7;
-  neuralOrbit1.rotation.y = time * 0.4;
-  neuralOrbit2.rotation.x = -time * 0.5;
-  neuralOrbit2.rotation.z = time * 0.8;
-  energyDisc.scale.setScalar(1 + Math.sin(time * 4) * 0.08);
-  beamGroup.rotation.z = -time * 0.25;
+  // Keep the original silhouette. Vowels expand the core; crisp consonants
+  // brighten the inner rings. Silence releases smoothly to its idle breath.
+  reactor.rotation.y = motionTime * 0.12;
+  reactor.rotation.x = Math.sin(motionTime * 0.18) * 0.08;
+  // Make the whole visible neuron breathe, not just its tiny central light.
+  reactor.scale.set(1.05 + energy * 0.12, 1.05 + energy * 0.23, 1.05 + energy * 0.12);
+  reactor.position.y = Math.sin(motionTime * 3.5) * energy * 0.14;
+  armorGroup.rotation.y = -motionTime * 0.08;
+  verticalArmor.rotation.y = motionTime * 0.05;
+  halo.rotation.z = motionTime * 1.8 + voiceRotation * 0.5;
+  halo.scale.setScalar(1 + low * 0.25);
+  haloMat.opacity = 0.35 + light * 0.12;
+  neuralCore.rotation.z = motionTime * 0.35 + voiceRotation * 0.65;
+  neuralCore.scale.setScalar(1 + energy * 0.2);
+  innerRing.rotation.z = motionTime * 1.2 + voiceRotation;
+  innerRing.scale.setScalar(1 + high * 0.25);
+  secondRing.rotation.z = -motionTime * 0.8 - voiceRotation * 0.7;
+  secondRing.scale.setScalar(1 + low * 0.2);
+  neuralOrbit1.rotation.x = motionTime * 0.7 + voiceRotation;
+  neuralOrbit1.rotation.y = motionTime * 0.4;
+  neuralOrbit2.rotation.x = -motionTime * 0.5;
+  neuralOrbit2.rotation.z = motionTime * 0.8 + voiceRotation;
+  energyDisc.scale.setScalar(1 + Math.sin(motionTime * 4) * 0.04 + energy * 0.2);
+  beamGroup.rotation.z = -motionTime * 0.25;
+  beamGroup.scale.setScalar(1 + low * 0.12);
+  beamMat.opacity = 0.45 + light * 0.14;
 
-  // Orbital rings
-  ring1.rotation.z += 0.0025;
-  ring1.rotation.x += 0.001;
-  ring2.rotation.y += 0.003;
-  ring2.rotation.z -= 0.0012;
-  ring3.rotation.x -= 0.0015;
-  ring3.rotation.y += 0.0018;
-  ring4.rotation.z += 0.0035;
+  // Frame-rate independent ring movement.
+  ring1.rotation.z += step * 0.15;
+  ring1.rotation.x += step * 0.06;
+  ring2.rotation.y += step * 0.18;
+  ring2.rotation.z -= step * 0.072;
+  ring3.rotation.x -= step * 0.09;
+  ring3.rotation.y += step * 0.108;
+  ring4.rotation.z += step * 0.21;
 
-  // Pulsing
-  energySphere.scale.setScalar(1 + Math.sin(time * 2.8) * 0.055);
-  core.scale.setScalar(1 + Math.sin(time * 4.5) * 0.12);
-  coreGlow.scale.setScalar(1 + Math.sin(time * 3.2) * 0.16);
+  energySphere.scale.setScalar(1 + Math.sin(motionTime * 2.8) * 0.03 + energy * 0.1 + low * 0.08);
+  const breath = Math.sin(motionTime * 2.2) * 0.035;
+  core.scale.set(1 + breath + energy * 0.16, 1 + breath + energy * 0.34, 1 + breath + low * 0.2);
+  coreGlow.scale.setScalar(1 + breath + energy * 0.28);
+  glowMaterial.opacity = 0.38 + light * 0.12;
+  whiteGlow.scale.setScalar(1 + breath + high * 0.22 + energy * 0.1);
+  whiteGlowMaterial.opacity = 0.22 + light * 0.07;
+  reactorLight.intensity = 9 + light * 3;
+  bloomPass.strength = 1.45 + light * 0.18;
 
-  const whitePulse = 1 + Math.sin(time * 4.5) * 0.1;
-  whiteGlow.scale.setScalar(whitePulse);
-  whiteGlowMaterial.opacity = 0.22 + Math.sin(time * 4.5) * 0.06;
+  reactorParticles.rotation.y = motionTime * 0.025;
+  reactorParticles.rotation.x = Math.sin(motionTime * 0.15) * 0.15;
+  reactorParticles.scale.setScalar(1 + low * 0.05);
+  particleMat.size = 0.025 + high * 0.012;
 
-  reactorLight.intensity = 9 + Math.sin(time * 4.5) * 3;
-
-  // Particles
-  reactorParticles.rotation.y = time * 0.025;
-  reactorParticles.rotation.x = Math.sin(time * 0.15) * 0.15;
-
-  drawMatrix();
+  if (!disabled) drawMatrix();
   composer.render();
 }
 
@@ -529,8 +630,10 @@ function addMessage(sender, text, isUser = false) {
   conversation.scrollTop = conversation.scrollHeight;
 }
 
-// Activity indicator
+// READY from a command/mic callback must not overwrite ongoing speech.
+let speechState = "READY";
 function setActivity(state) {
+  if (state === "READY" && speechState !== "READY") state = speechState;
   const activityEl = document.getElementById("activity");
   const dotEl = document.getElementById("activity-dot");
   
@@ -551,161 +654,40 @@ function setActivity(state) {
 // ─────────────────────────────────────────────
 
 let speechEnabled = true;
-let currentAudio = null;
-
-async function speak(text) {
-  if (!speechEnabled || !text) return;
-  
-  // Stop any ongoing speech
-  stopSpeaking();
-  
-  // Clean text for speech (remove markdown, URLs, code)
-  const cleanText = text
-    .replace(/```[\s\S]*?```/g, "code block")
-    .replace(/`[^`]+`/g, "")
-    .replace(/https?:\/\/\S+/g, "link")
-    .replace(/[*_~]/g, "")
-    .trim();
-  
-  if (!cleanText) return;
-  
-  try {
-    setActivity("THINKING");
-    console.log("[KIRA] Generating speech:", cleanText.substring(0, 60) + "...");
-    
-    // Call TTS API endpoint
+const speech = new SpeechPlayer({
+  fetchAudio: async (text, { signal }) => {
     const response = await fetch(`${API_BASE}/api/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        text: cleanText,
-        voice: "jenny"  // Use Jenny neural voice
-      }),
+      body: JSON.stringify({ text, voice: "jenny" }),
+      signal,
     });
-    
-    if (!response.ok) {
-      throw new Error(`TTS API error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    if (data.error) {
-      console.error("[KIRA] TTS error:", data.error);
-      console.log("[KIRA] Falling back to browser TTS...");
-      fallbackSpeak(cleanText);
-      return;
-    }
-    
-    if (!data.audio) {
-      console.error("[KIRA] No audio data received");
-      console.log("[KIRA] Falling back to browser TTS...");
-      fallbackSpeak(cleanText);
-      return;
-    }
-    
-    // Decode base64 audio and play
-    const audioBlob = base64ToBlob(data.audio, "audio/mpeg");
-    const audioUrl = URL.createObjectURL(audioBlob);
-    
-    currentAudio = new Audio(audioUrl);
-    
-    currentAudio.onplay = () => {
-      setActivity("SPEAKING");
-      console.log("[KIRA] Speaking (neural voice)...");
-    };
-    
-    currentAudio.onended = () => {
-      setActivity("READY");
-      URL.revokeObjectURL(audioUrl);
-      currentAudio = null;
-    };
-    
-    currentAudio.onerror = (event) => {
-      console.error("[KIRA] Audio playback error:", event);
-      console.log("[KIRA] Falling back to browser TTS...");
-      fallbackSpeak(cleanText);
-      URL.revokeObjectURL(audioUrl);
-      currentAudio = null;
-    };
-    
-    await currentAudio.play();
-    
-  } catch (error) {
-    console.error("[KIRA] TTS failed:", error);
-    console.log("[KIRA] Falling back to browser TTS...");
-    fallbackSpeak(cleanText);
-  }
-}
+    if (!response.ok) throw new Error(`TTS API error: ${response.status}`);
+    return response.json();
+  },
+  onState: (state) => {
+    speechState = state;
+    setActivity(state);
+  },
+});
 
-// Fallback to browser Web Speech API if neural TTS fails
-function fallbackSpeak(text) {
-  if (!window.speechSynthesis) {
-    console.error("[KIRA] No TTS available");
-    setActivity("READY");
-    return;
-  }
-  
-  const utterance = new SpeechSynthesisUtterance(text);
-  
-  // Configure voice - fluent female
-  utterance.rate = 0.95;
-  utterance.pitch = 1.1;
-  utterance.volume = 1.0;
-  
-  // Find the best female voice
-  const voices = window.speechSynthesis.getVoices();
-  const preferredVoice = voices.find(v => 
-    v.lang.startsWith('en') && 
-    (v.name.includes('Female') || v.name.includes('Samantha') || v.name.includes('Zira'))
-  ) || voices.find(v => v.lang.startsWith('en'));
-  
-  if (preferredVoice) {
-    utterance.voice = preferredVoice;
-  }
-  
-  utterance.onstart = () => {
-    setActivity("SPEAKING");
-    console.log("[KIRA] Speaking (browser fallback)...");
-  };
-  
-  utterance.onend = () => {
-    setActivity("READY");
-  };
-  
-  utterance.onerror = (event) => {
-    console.error("[KIRA] Browser TTS error:", event.error);
-    setActivity("READY");
-  };
-  
-  window.speechSynthesis.speak(utterance);
+function speak(text) {
+  return speech.speak(text);
 }
 
 function stopSpeaking() {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
-    currentAudio = null;
-  }
-  setActivity("READY");
+  speech.stop();
 }
 
-// Helper: Convert base64 to Blob
-function base64ToBlob(base64, mimeType) {
-  const byteCharacters = atob(base64);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  return new Blob([byteArray], { type: mimeType });
-}
-
+window.addEventListener("pagehide", () => speech.destroy());
 
 // Mute/unmute toggle
 const muteButton = document.getElementById("mute");
 if (muteButton) {
   muteButton.addEventListener("click", () => {
     speechEnabled = !speechEnabled;
+    speech.setEnabled(speechEnabled);
+    if (speechEnabled) speech.unlock();
     
     // Update icon
     if (speechEnabled) {
@@ -738,7 +720,9 @@ if (muteButton) {
 // Send command to backend (works in both native and browser modes)
 async function sendCommand(text) {
   if (!text.trim()) return;
-  
+  stopSpeaking();
+  speech.unlock(); // user gesture: unlock Web Audio before awaiting the model
+
   addMessage("YOU", text, true);
   setActivity("THINKING");
   
@@ -820,6 +804,7 @@ if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
   recognition.lang = "en-US";
   
   recognition.onstart = () => {
+    stopSpeaking();
     micButton.classList.add("listening");
     setActivity("LISTENING");
   };
@@ -844,6 +829,7 @@ if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
   
   micButton.addEventListener("click", () => {
     if (recognition) {
+      speech.unlock();
       recognition.start();
     }
   });

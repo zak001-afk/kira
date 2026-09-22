@@ -1,0 +1,28 @@
+name: Speech-reactive UI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  speech:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: |
+          node --check ui/app.js
+          node --check ui/speech.mjs
+      - name: Test speech lifecycle and reactor integration
+        run: node --test tests/*.test.mjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test uncached UI module serving
+        run: python -m unittest discover -s tests -p 'test_*.py'

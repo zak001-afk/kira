@@ -128,7 +128,57 @@ build_kira.bat
 Use the command bar at the bottom of the interface to type commands instead of using voice.
 
 ### Web Interface
-Access the web UI at `http://localhost:8765` when the API server is running.
+With `main_window.py` running, the interface is served at `http://127.0.0.1:8766`;
+the API uses port 8765.
+
+### Speech-reactive neural core
+The core now moves with KIRA's spoken reply rather than running a fixed talking
+animation. Neural audio is analysed locally with the Web Audio API: loudness
+controls expansion and glow, while low/high frequencies reshape the energy shell
+and animate the inner rings. Pauses relax the core; playback ending or muting it
+returns it smoothly to idle. No microphone audio is analysed for this effect.
+
+Browser speech uses word-boundary events when the selected voice supplies them.
+Otherwise it uses approximate text-paced motion. This is speech-rhythm animation,
+not phoneme/lip synchronization or word-meaning recognition. If Web Audio is
+unavailable, audio still plays normally with estimated motion. The operating
+system's **Reduce motion** preference disables deformation and moving effects,
+leaving a subtle brightness cue.
+
+**If the core appears still:**
+1. Close KIRA, update your checkout and relaunch `python main_window.py`.
+2. Look for **SPEECH SYNC 02** in the right-hand panel. If it is absent, you
+   are running an older copy/build. The source UI is now served without caching.
+3. Click **MOTION: AUTO** once to select **MOTION: ON**. This is an explicit
+   opt-in to animation even if Windows requests reduced motion; Off/Auto remain
+   available, and your choice is remembered.
+4. Click **TEST MOTION**. The whole core should breathe for three seconds. This
+   checks rendering without audio, Ollama or a command to your computer.
+5. Leave voice output on and click **TEST VOICE**. Watch the red meter:
+   **AUDIO** means real audio samples, **WORD TIMING** means browser word events,
+   and **ESTIMATED** means approximate timing. **QUIET / NO SIGNAL** means no
+   measurable output at that moment; **SYSTEM SETTING** means motion is disabled.
+6. Ask for a longer reply, then mute it mid-sentence. The core should settle.
+
+The complete neuron now expands with speech, so the response is visible rather
+than limited to the small central light. Quiet audio gets gentle gain. A slow
+browser voice no longer stops animating merely because its timing estimate ran
+out; that fallback remains approximate until real speech-end/boundary events.
+If the visual-only test works but voice does not, report the meter/status text
+and whether you can hear the reply. Neither test analyses the microphone.
+
+**Developer checks** (Node.js 22+, no npm packages required):
+```sh
+node --check ui/app.js
+node --check ui/speech.mjs
+node --test tests/*.test.mjs
+python -m unittest discover -s tests -p "test_*.py"
+```
+The tests cover the audio envelope, fallback timing, interruption/mute, stale
+callbacks, resource cleanup and the actual app's reactor wiring with rendering
+and audio test doubles. A real headless Chromium test with decoded PCM audio also exercised the actual
+WebGL renderer and the controls. These checks do not replace a Windows/WebView2
+listening test.
 
 ## 🏗️ Architecture
 

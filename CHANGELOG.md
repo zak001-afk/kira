@@ -1,5 +1,46 @@
 # KIRA Changelog
 
+## Unreleased — Speech sync 02 follow-up
+
+- Add **Motion: Auto / On / Off** (remembered per browser). Auto still respects
+  reduced-motion accessibility settings; On explicitly overrides them. Show
+  when a system preference is suppressing movement instead of silently freezing.
+- Add **Test Motion** (a three-second visual-only check), **Test Voice** (no AI
+  command), a voice-level meter and the visible **SPEECH SYNC 02** build label.
+- Make the whole neuron breathe with the voice, rather than only the tiny core.
+- Preserve low-volume audio with float samples and softer gain. Browser speech
+  now keeps estimated movement until its actual end event, including voices
+  that speak more slowly than the text estimate. Media fallback uses the real
+  clip duration when available. Avoid Array.findLast on older embedded engines.
+- Version UI entrypoints and serve static modules uncached, with an explicit
+  JavaScript MIME type for `.mjs`, to prevent an old WebView UI being reused.
+- Verify 38 Node checks plus two stdlib HTTP tests. A real headless Chromium /
+  WebGL / Web Audio run also verified actual mouse clicks on the controls,
+  reduced-motion override, generated PCM playback, changing neuron scale and
+  cleanup after playback; no script/shader errors. This does not establish
+  which setting/runtime caused the original report on the user's Windows PC.
+
+## Unreleased — Speech-reactive neural core
+
+- Neural voice playback now drives the core's scale, energy-shell deformation,
+  inner-ring movement and glow through a local Web Audio analyser. Loudness and
+  frequency bands follow the actual audio; pauses and the end of a reply relax
+  smoothly to idle. Existing reactor styling and slower Matrix rain are kept.
+- Browser speech uses word-boundary callbacks where supported, with approximate
+  text-paced motion otherwise. No phoneme alignment or semantic analysis is
+  claimed. Web Audio failure does not prevent ordinary audio playback.
+- Respect reduced-motion preferences: no deformation or moving effects, just a
+  subdued speech-brightness cue.
+- Fix voice lifecycle issues relevant to synchronization: stale TTS responses
+  cannot restart muted/replaced speech; browser speech is cancelled on mute;
+  audio URLs and nodes are released on interruption/end; TTS requests and
+  startup have timeouts; READY callbacks no longer overwrite SPEAKING.
+- Add 29 dependency-free Node tests and a focused GitHub Actions check for
+  speech handling and reactor integration. Windows audio/visual verification
+  remains a manual check.
+- Based on the merged V8.1 interface (`f37a6b6`), not the earlier 2.x UI. This
+  change does not resolve the other backend/security findings from that review.
+
 ## Version 8.1 - Resource Efficiency & Extensibility Update
 
 ### 🚀 New Features
