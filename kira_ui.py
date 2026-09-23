@@ -18,10 +18,11 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 UI_DIRECTORY = Path(__file__).resolve().parent / "ui"
-UI_BUILD_ID = "holographic-cockpit-01"
-UI_BUILD_LABEL = "HOLOGRAPHIC COCKPIT 01"
+UI_BUILD_ID = "holographic-cockpit-02-lip-sync-01"
+UI_BUILD_LABEL = "HOLOGRAPHIC COCKPIT 02 / LIP SYNC 01"
 UI_REQUIRED_FILES = (
-    "index.html", "style.css", "app.js", "speech.mjs", "hologram.mjs",
+    "index.html", "style.css", "app.js", "speech.mjs", "hologram.mjs", "lips.mjs", "mouth.mjs",
+    "assets/kira-mouth-interior.webp",
     "assets/kira-hologram.webp", "assets/reticle.svg", "assets/projector.svg",
     "assets/neural-map.svg", "assets/binary-field.svg", "assets/kira-mark.svg",
 )

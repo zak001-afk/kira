@@ -39,7 +39,7 @@ class StaticUiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "speech.mjs").write_text("export const ready = true;", encoding="utf-8")
             with running_server(partial(namespace["QuietHandler"], directory=tmp)) as server:
-                with urlopen(f"http://127.0.0.1:{server.server_port}/speech.mjs?v=cockpit-1", timeout=3) as response:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/speech.mjs?v=lip-sync-1", timeout=3) as response:
                     self.assertEqual(response.status, 200)
                     self.assertEqual(response.headers["Cache-Control"], "no-store")
                     self.assertEqual(response.headers["X-KIRA-UI-Build"], UI_BUILD_ID)
@@ -83,7 +83,7 @@ class UIBundleTests(unittest.TestCase):
                 path = Path(tmp, name)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("old UI", encoding="utf-8")
-            with self.assertRaisesRegex(RuntimeError, "does not match HOLOGRAPHIC COCKPIT 01"):
+            with self.assertRaisesRegex(RuntimeError, "does not match HOLOGRAPHIC COCKPIT 02"):
                 validate_ui_bundle(tmp)
 
 

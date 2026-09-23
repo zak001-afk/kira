@@ -3,14 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="kira-ui-build" content="holographic-cockpit-01" />
+    <meta name="kira-ui-build" content="holographic-cockpit-02-lip-sync-01" />
     <meta name="theme-color" content="#060708" />
     <meta name="description" content="KIRA — your local neural computer agent." />
-    <title>KIRA // HOLOGRAPHIC COCKPIT 01</title>
+    <title>KIRA // HOLOGRAPHIC COCKPIT 02 / LIP SYNC 01</title>
     <link rel="icon" href="./assets/kira-mark.svg" type="image/svg+xml" />
     <link rel="preload" href="./assets/fonts/rajdhani-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="./assets/kira-hologram.webp" as="image" />
-    <link rel="stylesheet" href="./style.css?v=cockpit-1" />
+    <link rel="preload" href="./assets/kira-mouth-interior.webp" as="image" />
+    <link rel="stylesheet" href="./style.css?v=lip-sync-1" />
   </head>
   <body>
     <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -85,7 +86,7 @@
       </section>
 
       <section class="neural-stage" aria-label="KIRA holographic neural projection">
-        <div class="stage-topline"><span><i class="tiny-light"></i> NEURAL COMPUTER AGENT</span><span id="ui-build">HOLOGRAPHIC COCKPIT 01</span></div>
+        <div class="stage-topline"><span><i class="tiny-light"></i> NEURAL COMPUTER AGENT</span><span id="ui-build">COCKPIT 02 / LIP SYNC 01</span></div>
         <div class="stage-coordinate coordinate-left" aria-hidden="true">SYS.01<br /><span>NEURAL<br />PROJECTION</span><b>+ 00.000</b></div>
         <div class="stage-coordinate coordinate-right" aria-hidden="true">KIRA.AI<br /><span>COGNITIVE<br />INTERFACE</span><b>00.000 +</b></div>
 
@@ -96,7 +97,11 @@
             <div class="reticle-track track-one"></div><div class="reticle-track track-two"></div>
           </div>
           <div class="portrait-float"><div class="portrait" id="portrait">
-            <img src="./assets/kira-hologram.webp" width="896" height="1200" alt="KIRA, a blue-eyed android surrounded by a red holographic neural field" fetchpriority="high" />
+            <div class="portrait-surface">
+              <img id="portrait-image" src="./assets/kira-hologram.webp" width="896" height="1200" alt="KIRA, a blue-eyed android whose lips animate with spoken replies" fetchpriority="high" />
+              <canvas id="mouth-canvas" class="mouth-canvas" width="304" height="224" aria-hidden="true" hidden></canvas>
+              <img id="mouth-texture" src="./assets/kira-mouth-interior.webp" width="180" height="62" alt="" hidden />
+            </div>
             <div class="portrait-scanlines" aria-hidden="true"></div>
             <span class="forehead-id" aria-hidden="true">KIRA<small>NEURAL INTERFACE</small></span>
           </div></div>
@@ -193,14 +198,16 @@
         <div class="setting-row"><div><h3>Holographic motion</h3><p>Auto follows your system’s reduced-motion preference.</p></div><button id="motion-toggle" class="control-button" type="button">MOTION: AUTO</button></div>
         <div class="setting-row"><div><h3>Voice input language</h3><p>Language used by browser speech recognition.</p></div><label class="sr-only" for="voice-language">Voice input language</label><select id="voice-language"><option value="en-US">English</option><option value="fr-FR">Français</option><option value="ar-SA">العربية</option></select></div>
         <div class="setting-row"><div><h3>Voice response</h3><p>Read KIRA’s replies aloud.</p></div><button id="settings-voice" class="control-button" type="button">VOICE: ON</button></div>
-        <p class="settings-note">The portrait is a holographic illustration. Its field reacts to speech volume and timing, not facial lip synchronization.</p>
+        <div class="setting-row"><div><h3>Lip synchronization</h3><p>Animate the lips and jaw during spoken replies. Respects the motion preference above.</p></div><button id="lips-toggle" class="control-button" type="button" aria-pressed="true">LIPS: ON</button></div>
+        <p class="settings-note">2D lip animation uses playback volume and word timing when available. Individual speech shapes are estimated from the text, not exact phoneme recognition or a generated talking video.</p>
       </section>
       <section id="diagnostics-panel" class="dialog-panel speech-diagnostics" hidden>
-        <div class="diagnostic-version"><span>HOLOGRAPHIC CORE 01</span><span>SPEECH SYNC 02</span></div>
+        <div class="diagnostic-version"><span>HOLOGRAPHIC CORE 02</span><span>LIP SYNC 01</span></div>
         <p class="dialog-description">Test the neural field without sending a command to your computer.</p>
-        <div class="diagnostic-actions"><button id="motion-test" class="control-button" type="button"><svg class="icon"><use href="#i-activity" /></svg>TEST MOTION</button><button id="voice-test" class="control-button" type="button"><svg class="icon"><use href="#i-volume" /></svg>TEST VOICE</button></div>
+        <div class="diagnostic-actions"><button id="motion-test" class="control-button" type="button"><svg class="icon"><use href="#i-activity" /></svg>TEST MOTION</button><button id="lip-test" class="control-button" type="button"><svg class="icon"><use href="#i-user" /></svg>TEST LIPS</button><button id="voice-test" class="control-button" type="button"><svg class="icon"><use href="#i-volume" /></svg>TEST VOICE</button></div>
         <p id="diagnostic-status" role="status">Ready to test.</p>
-        <dl class="diagnostic-data"><div><dt>API connection</dt><dd id="diagnostic-connection">Connecting…</dd></div><div><dt>Rendering</dt><dd>Local assets / SVG compositor</dd></div><div><dt>Voice synchronization</dt><dd>Audio analysis / word timing fallback</dd></div></dl>
+        <p id="lip-status" class="lip-status" role="status">LIP SYNC · IDLE</p>
+        <dl class="diagnostic-data"><div><dt>API connection</dt><dd id="diagnostic-connection">Connecting…</dd></div><div><dt>Rendering</dt><dd>Local SVG / 2D facial mesh</dd></div><div><dt>Voice synchronization</dt><dd>Audio analysis / word timing fallback</dd></div></dl>
         <p class="settings-note">If the backend is offline, start KIRA with <code>python main_window.py</code> or <code>python launch_web.py</code>. Motion testing works offline.</p>
       </section>
       <section id="tasks-panel" class="dialog-panel" hidden>
@@ -212,6 +219,6 @@
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
     <noscript><div class="noscript-notice">Enable JavaScript to connect to KIRA and use the command interface.</div></noscript>
-    <script type="module" src="./app.js?v=cockpit-1"></script>
+    <script type="module" src="./app.js?v=lip-sync-1"></script>
   </body>
 </html>

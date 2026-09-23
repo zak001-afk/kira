@@ -9,6 +9,11 @@ KIRA_TEST_BROWSER may point to an existing Chromium executable.
 from functools import partial
 from http.server import ThreadingHTTPServer
 import json
+import base64
+import io
+import math
+import struct
+import wave
 import os
 from pathlib import Path
 import sys
@@ -20,6 +25,28 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from kira_ui import KiraUIHandler
 from playwright.sync_api import sync_playwright, expect
+
+
+def voiced_fixture():
+    """Decoded PCM with two voiced intervals and a real silence, not spoken text."""
+    rate = 16000
+    output = io.BytesIO()
+    samples = []
+    for i in range(int(rate * 3.2)):
+        t = i / rate
+        voiced = 0.1 <= t < 0.9 or 1.55 <= t < 2.8
+        envelope = 0.5 + 0.5 * math.sin(t * 18) ** 2
+        value = (math.sin(2 * math.pi * 190 * t) + 0.3 * math.sin(2 * math.pi * 600 * t)) * 0.15 * envelope if voiced else 0
+        samples.append(struct.pack("<h", int(value * 32767)))
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(rate)
+        wav.writeframes(b"".join(samples))
+    return {"audio": base64.b64encode(output.getvalue()).decode("ascii"), "format": "wav", "word_timings": [
+        {"text": "Hello", "start": 0.1, "duration": 0.8},
+        {"text": "Bonjour", "start": 1.55, "duration": 1.25},
+    ]}
 
 
 class CockpitBrowserTests(unittest.TestCase):
@@ -50,6 +77,7 @@ class CockpitBrowserTests(unittest.TestCase):
         self.requests = []
         self.tasks = []
         self.offline = False
+        self.speech_payload = None
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
         self.page.on("request", lambda request: self.requests.append(request))
         self.page.route("**/api/**", self.api)
@@ -82,7 +110,7 @@ class CockpitBrowserTests(unittest.TestCase):
         elif path == "/api/command":
             data = {"response": 'Here is literal text: <img id="injected" src=x onerror="window.injected=true">'}
         elif path == "/api/tts":
-            data = {"error": "No synthesized voice in the browser test fixture"}
+            data = self.speech_payload or {"error": "No synthesized voice in the browser test fixture"}
         else:
             self.fail(f"Unexpected API request: {path}")
         route.fulfill(content_type="application/json", body=json.dumps(data))
@@ -166,6 +194,68 @@ class CockpitBrowserTests(unittest.TestCase):
         self.page.locator("#deck-motion").click()  # on -> off
         expect(self.page.locator("html")).to_have_attribute("data-motion", "off")
         self.page.wait_for_function("getComputedStyle(document.getElementById('halo')).transform === 'matrix(1, 0, 0, 1, 0, 0)'")
+
+    def test_lip_demo_changes_real_pixels_then_returns_to_idle_without_audio(self):
+        self.load()
+        expect(self.page.locator("#mouth-canvas")).to_have_attribute("hidden", "")
+        self.page.locator('[data-dialog="diagnostics"]').click()
+        self.page.locator("#lip-test").click()
+        self.page.wait_for_function("Number(document.getElementById('mouth-canvas').dataset.open) > .3")
+        expect(self.page.locator("#mouth-canvas")).to_be_visible()
+        self.assertEqual(self.page.locator("#mouth-canvas").get_attribute("data-renderer"), "ready")
+        pixels = self.page.locator("#mouth-canvas").evaluate("el => el.getContext('2d').getImageData(0, 0, el.width, el.height).data.some((n, i) => i % 4 === 3 && n > 0)")
+        self.assertTrue(pixels, "lip attributes changed but the mouth was never painted")
+        self.page.wait_for_function("document.getElementById('mouth-canvas').hidden", timeout=7000)
+        self.assertFalse(any("/api/tts" in request.url or "/api/command" in request.url for request in self.requests))
+
+    def start_test_voice(self):
+        self.speech_payload = voiced_fixture()
+        self.page.add_init_script("""(() => {
+          const NativeAudio = window.Audio;
+          window.Audio = function(...args) {
+            const audio = new NativeAudio(...args);
+            window.testAudio = audio;
+            return audio;
+          };
+        })();""")
+        self.load()
+        self.page.locator('[data-dialog="diagnostics"]').click()
+        self.page.locator("#voice-test").click()
+        self.page.wait_for_function("window.testAudio && Number(document.getElementById('mouth-canvas').dataset.open) > .15")
+
+    def test_decoded_audio_drives_lips_and_real_silence_closes_them(self):
+        self.start_test_voice()
+        expect(self.page.locator("#lip-status")).to_contain_text("TTS WORD TIMING")
+        expect(self.page.locator("#mouth-canvas")).to_be_visible()
+        self.page.wait_for_function("window.testAudio.currentTime > 1.25 && window.testAudio.currentTime < 1.52 && Number(document.getElementById('mouth-canvas').dataset.open) < .004", timeout=5000)
+        self.page.wait_for_function("window.testAudio.currentTime > 1.7 && Number(document.getElementById('mouth-canvas').dataset.open) > .15", timeout=5000)
+        expect(self.page.locator("#mouth-canvas")).to_be_visible()
+        self.page.wait_for_function("document.getElementById('activity').textContent === 'READY' && document.getElementById('mouth-canvas').hidden", timeout=5000)
+        expect(self.page.locator("#lip-status")).to_have_text("LIP SYNC · IDLE")
+
+    def test_mute_stops_actual_audio_and_immediately_restores_the_mouth(self):
+        self.start_test_voice()
+        self.page.locator("#mute").click()
+        expect(self.page.locator("#mouth-canvas")).to_be_hidden()
+        self.assertTrue(self.page.evaluate("window.testAudio.paused"))
+        self.assertEqual(float(self.page.locator("#mouth-canvas").get_attribute("data-open")), 0)
+
+    def test_lip_preference_is_persisted_and_global_motion_off_takes_priority(self):
+        self.load()
+        self.page.locator('[data-dialog="settings"]').click()
+        self.page.locator("#lips-toggle").click()
+        expect(self.page.locator("#lips-toggle")).to_have_text("LIPS: OFF")
+        self.page.reload(wait_until="networkidle")
+        expect(self.page.locator("#lip-status")).to_have_text("LIP SYNC · OFF")
+        self.page.locator('[data-dialog="settings"]').click()
+        self.page.locator("#lips-toggle").click()
+        self.page.locator("#motion-toggle").click()  # auto -> on
+        self.page.locator("#motion-toggle").click()  # on -> off
+        self.page.locator("#close-dialog").click()
+        self.page.locator('[data-dialog="diagnostics"]').click()
+        self.page.locator("#lip-test").click()
+        expect(self.page.locator("#mouth-canvas")).to_be_hidden()
+        expect(self.page.locator("#toast")).to_contain_text("Enable Motion: On")
 
     def test_offline_state_is_explicit_and_does_not_show_fake_telemetry(self):
         self.offline = True

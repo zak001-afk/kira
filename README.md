@@ -137,9 +137,10 @@ KIRA's native window and browser mode use the same redesigned `ui/` interface:
   an incomplete command.
 - Responsive layouts, keyboard focus indicators and reduced-motion support.
 
-The portrait is an original AI-generated illustration, not a live avatar or a
-lip-synced video. SVG/CSS render the field without WebGL, a CDN or external font
-requests. The bundled artwork and fonts also work offline. AI replies, desktop
+The portrait is an original AI-generated illustration with a local 2D lip/jaw
+rig, not a generated talking video or a full 3D avatar. SVG/CSS render the field;
+a small Canvas 2D mesh deforms the actual lip/skin pixels during speech. No WebGL,
+CDN or external font requests are needed. The bundled artwork and fonts also work offline. AI replies, desktop
 control and neural speech still require their existing backend dependencies.
 
 Start the application normally:
@@ -179,7 +180,7 @@ not download an unmerged feature branch: fetch and switch to the branch containi
 the redesign, or merge its pull request before updating `main`.
 
 After updating, close the previous KIRA window and relaunch. The new title and UI
-read **HOLOGRAPHIC COCKPIT 01**. The console prints `[KIRA UI]`, the Python interpreter
+read **HOLOGRAPHIC COCKPIT 02 / LIP SYNC 01**. The console prints `[KIRA UI]`, the Python interpreter
 and the absolute `ui/` path so you can identify the actual checkout being served.
 The launcher rejects a missing or older UI bundle instead of quietly mixing versions.
 Keep your `.venv`, configuration and local database; do not use a destructive reset
@@ -193,10 +194,10 @@ or muting playback returns it to idle. No microphone audio is analysed for this
 effect. Slow ambient orbital motion is independent of speech.
 
 Browser speech uses word-boundary events when available, with approximate
-text-paced motion otherwise. This is speech-rhythm animation, **not** phoneme/lip
-synchronization or word-meaning recognition. Without Web Audio, playback still
-works with estimated timing. **Reduce motion** disables all ambient animation,
-waveform movement and speech displacement, leaving a subtle brightness cue.
+text-paced motion otherwise. This field motion does not recognize word meaning.
+The additional mouth rig estimates speech shapes as described below. Without
+Web Audio, playback still works with estimated timing. **Reduce motion** disables all ambient animation,
+waveform movement, lip/jaw movement and speech displacement, leaving a subtle brightness cue.
 
 **Check motion and voice:**
 1. Open **SETTINGS** in the right panel, or use **HOLOGRAM** on the lower console.
@@ -209,25 +210,68 @@ waveform movement and speech displacement, leaving a subtle brightness cue.
    boundaries, **ESTIMATED** for approximate timing, or **QUIET / NO SIGNAL**.
 4. Mute a reply mid-sentence; the portrait and rings settle back to idle.
 
+### Lip synchronization (LIP SYNC 01)
+The face now speaks as well as the field moving. The 2D facial rig opens the jaw,
+rounds/widens the lips for vowel-like shapes, closes them for M/B/P-like shapes,
+and provides a small lower-lip movement for F/V-like shapes. It warps the original
+portrait texture and composites a small matching oral photograph, rather than
+placing a cartoon mouth over the face. Its position follows the portrait at every
+screen size, including `object-fit` letterboxing.
+
+**Timing and its limits:**
+- `/api/tts` now includes optional `word_timings` (start/duration in seconds),
+  captured from the same Edge TTS stream as the MP3 and cached alongside it.
+  Existing MP3 clients remain compatible. Edge versions with or without the
+  `boundary` option are supported, and missing timing metadata never blocks audio.
+- Word boundaries give a better time anchor; individual visemes within each word
+  are **estimated from spelling**, not measured phonemes or forced alignment.
+  English, French and Arabic letters have lightweight shape heuristics; irregular
+  pronunciations, accents and other languages are approximate.
+- Real playback time drives the timeline, and measured audio level gates the jaw.
+  Leading silence, pauses, buffering, end-of-playback, interruptions and mute
+  release or reset the mouth. Browser word events are used when available; the
+  fallback is explicitly labelled as estimated timing.
+- The animation stays still while waiting for a response or listening to the
+  microphone. It only samples KIRA's own output audio. No talking-head model,
+  face-recognition library, extra cloud service or GPU inference is added.
+
+**Try it:** keep voice enabled and **SETTINGS → LIPS: ON**. Open **DIAGNOSTICS** and
+click **TEST VOICE** for “Hello. Bonjour…” using the actual speech player.
+**TEST LIPS** is a separate, labelled four-second visual check with no audio, AI
+request or desktop action. Lip animation can be disabled independently; global
+**MOTION: OFF** or the system's Reduce Motion in Auto mode also disables it.
+
+The result is lightweight, audio-synchronized **2D approximation**, not human-
+quality phoneme-perfect lip synchronization. A new portrait would need new facial
+landmarks. If Canvas is unavailable, ordinary speech and the static portrait
+remain available.
+
 **Developer checks** (Node.js 22+ and Python, no npm packages required):
 ```sh
 node --check ui/app.js
 node --check ui/speech.mjs
 node --check ui/hologram.mjs
+node --check ui/lips.mjs
+node --check ui/mouth.mjs
 node --test tests/*.test.mjs
 python -m unittest discover -s tests -p "test_*.py"
 ```
 These cover the audio envelope and lifecycle, actual controller/compositor wiring,
 reduced motion, safe message rendering, command concurrency, unavailable data,
-static assets and the same-origin API proxy. Optional real-browser regressions:
+static assets, the same-origin API proxy, viseme timing, mouth geometry, and the
+TTS word-timing cache. Optional real-browser regressions:
 ```sh
 pip install playwright
 playwright install chromium
 python tests/cockpit_browser.py
 ```
 The browser suite uses API fixtures, never desktop actions. It checks nine screen
-sizes, commands, task creation/completion, persisted settings, offline states and reduced motion.
-These checks do not replace a Windows/WebView2 listening and desktop-control test.
+sizes, commands, task creation/completion, persisted settings, offline states and
+reduced motion. A decoded-PCM fixture exercises the real audio analyser and mouth
+renderer, including speech intervals, silence, end-of-playback and mute; the tests
+also check real painted mouth pixels. This is not a listening test of the Edge
+service or a validation of human-quality phonemes. These checks do not replace a
+Windows/WebView2 listening and desktop-control test.
 
 ## 🏗️ Architecture
 

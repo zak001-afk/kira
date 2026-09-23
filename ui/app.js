@@ -1,5 +1,6 @@
-import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
-import { Hologram } from "./hologram.mjs?v=cockpit-1";
+import { SpeechPlayer } from "./speech.mjs?v=lip-sync-1";
+import { lipDemoPose } from "./lips.mjs";
+import { Hologram } from "./hologram.mjs?v=lip-sync-1";
 
 /* KIRA / cockpit controller. The desktop and browser share the same local UI.
    API calls stay on this origin; kira_ui.py proxies them to the local backend. */
@@ -14,6 +15,8 @@ let commandCount = 0;
 let messageSequence = 0;
 let speechState = "READY";
 let motionDemoStarted = -Infinity;
+let lipDemoStarted = -Infinity;
+let lipsEnabled = preference("kira.lips", ["on", "off"], "on") === "on";
 let lastFrame = -Infinity;
 let animationId;
 let toastTimer;
@@ -126,7 +129,7 @@ const speech = new SpeechPlayer({
 speech.setEnabled(speechEnabled);
 const hologram = new Hologram(document);
 function speak(text) { return speech.speak(text); }
-function stopSpeaking() { speech.stop(); }
+function stopSpeaking() { speech.stop(); hologram.mouth.reset(); lipDemoStarted = -Infinity; }
 
 function updateVoiceControls() {
   const name = speechEnabled ? "i-volume" : "i-muted";
@@ -146,6 +149,7 @@ function toggleVoice() {
   speechEnabled = !speechEnabled;
   speech.setEnabled(speechEnabled);
   if (speechEnabled) speech.unlock();
+  else { hologram.mouth.reset(); lipDemoStarted = -Infinity; }
   savePreference("kira.voice", speechEnabled ? "on" : "off");
   updateVoiceControls();
 }
@@ -161,6 +165,7 @@ function updateMotionButton() {
   writeText("deck-motion-state", `MOTION: ${motionPreference.toUpperCase()}`);
   $("motion-toggle").title = "Auto follows system reduced motion. On explicitly enables movement. Off keeps the projection still.";
   $("deck-motion").querySelector(".button-light").classList.toggle("off", motionDisabled());
+  if (motionDisabled()) { hologram.mouth.reset(); lipDemoStarted = -Infinity; }
 }
 function cycleMotion() {
   const choices = ["auto", "on", "off"];
@@ -180,11 +185,33 @@ $("motion-test").addEventListener("click", () => {
   $("system-dialog").close();
   notify("Testing the holographic field · 3 seconds · no audio");
 });
+function updateLipsButton() {
+  writeText("lips-toggle", lipsEnabled ? "LIPS: ON" : "LIPS: OFF");
+  $("lips-toggle").setAttribute("aria-pressed", String(lipsEnabled));
+}
+$("lips-toggle").addEventListener("click", () => {
+  lipsEnabled = !lipsEnabled;
+  savePreference("kira.lips", lipsEnabled ? "on" : "off");
+  if (!lipsEnabled) { hologram.mouth.reset(); lipDemoStarted = -Infinity; }
+  updateLipsButton();
+});
+$("lip-test").addEventListener("click", () => {
+  if (motionDisabled() || !lipsEnabled) {
+    notify("Enable Motion: On and Lips: On in Settings to test the mouth.");
+    return;
+  }
+  stopSpeaking();
+  lipDemoStarted = performance.now();
+  $("system-dialog").close();
+  notify("Testing lip shapes · 4 seconds · no audio or desktop command");
+});
+updateLipsButton();
 $("voice-test").addEventListener("click", () => {
   if (!speech.enabled) return;
   speech.unlock();
   $("system-dialog").close();
-  speak("I am Kira. My neural field moves with my voice. A short pause. Always at your service, Operator.");
+  lipDemoStarted = -Infinity;
+  speak("Hello. Bonjour. I am Kira. My lips now follow my voice. A little pause. Welcome back, Operator.");
 });
 updateMotionButton();
 
@@ -199,7 +226,19 @@ function animate(now = performance.now()) {
   const demoAge = (now - motionDemoStarted) / 1000;
   const demo = demoAge >= 0 && demoAge < 3;
   const demoEnergy = demo ? Math.sin(demoAge * Math.PI / 3) * (0.35 + 0.6 * Math.sin(demoAge * 9) ** 2) : null;
-  hologram.update(voice, { disabled, demoEnergy, time: now / 1000 });
+  const lipDemo = lipDemoPose((now - lipDemoStarted) / 1000);
+  const projection = hologram.update(voice, { disabled, demoEnergy, time: now / 1000, lipsEnabled, lipDemo });
+  const rendererState = hologram.mouth.renderer.state;
+  const lipLabel = disabled ? "LIP SYNC · MOTION DISABLED"
+    : !lipsEnabled ? "LIP SYNC · OFF"
+    : ["unsupported", "unavailable"].includes(rendererState) ? "LIP SYNC · RENDERER UNAVAILABLE"
+    : rendererState === "loading" ? "LIP SYNC · LOADING PORTRAIT"
+    : lipDemo ? "LIP SYNC · VISUAL TEST / NO AUDIO"
+    : !voice.active ? "LIP SYNC · IDLE"
+    : projection.mouth.source === "word-timings" ? "LIP SYNC · TTS WORD TIMING / ESTIMATED SHAPES"
+    : projection.mouth.source === "word-events" ? "LIP SYNC · BROWSER WORD TIMING / ESTIMATED SHAPES"
+    : "LIP SYNC · ESTIMATED TIMING";
+  writeText("lip-status", lipLabel);
   $("voice-level").style.transform = `scaleX(${voice.energy.toFixed(3)})`;
   const label = disabled ? (motionPreference === "auto" ? "MOTION OFF · SYSTEM SETTING" : "MOTION OFF")
     : demo ? "TEST MOTION · NO AUDIO"
@@ -514,6 +553,7 @@ window.addEventListener("pagehide", () => {
   reducedMotion.removeEventListener?.("change", updateMotionButton);
   recognition?.abort();
   speech.destroy();
+  hologram.destroy();
 });
 // A back/forward-cache restore needs fresh timers and a new audio context.
 window.addEventListener("pageshow", (event) => {

@@ -1,4 +1,6 @@
-// Speech-driven motion, independent of Three.js. No microphone is sampled.
+import { VisemeTimeline, wordTimeline, REST_MOUTH } from "./lips.mjs";
+
+// Audio-driven field and mouth timing. Only playback, never the microphone.
 const clamp = (value, low = 0, high = 1) => Math.min(high, Math.max(low, value));
 
 export function cleanForSpeech(text) {
@@ -8,18 +10,6 @@ export function cleanForSpeech(text) {
     .replace(/https?:\/\/\S+/g, "link")
     .replace(/[*_~]/g, "")
     .trim();
-}
-
-// Web Speech doesn't expose its audio. Word boundaries anchor this estimated
-// envelope; voices without boundary events use the same text-paced fallback.
-function wordTimeline(text, rate = 1) {
-  let start = 0;
-  return Array.from(text.matchAll(/\S+/gu), (match) => {
-    const duration = (110 + Math.min(match[0].length, 12) * 30) / rate;
-    const word = { index: match.index, start, duration };
-    start += duration + (/[.!?…]$/.test(match[0]) ? 260 : /[,;:]$/.test(match[0]) ? 120 : 35);
-    return word;
-  });
 }
 
 // Older embedded WebView2 runtimes may not implement Array.findLast.
@@ -33,7 +23,7 @@ function lastBefore(items, value, key) {
 export class SpeechMotion {
   constructor(now = () => performance.now()) {
     this.now = now;
-    this.frame = { energy: 0, low: 0, high: 0, active: false, source: "idle" };
+    this.frame = { energy: 0, low: 0, high: 0, level: 0, active: false, source: "idle", mouth: { ...REST_MOUTH } };
     this.last = now();
     this.stop();
   }
@@ -46,10 +36,14 @@ export class SpeechMotion {
     this.words = [];
     this.offset = 0;
     this.hasBoundary = false;
+    this.articulation = null;
+    this.audioOnset = null;
+    this.frame.mouth = { ...REST_MOUTH };
+    this.frame.level = 0;
     // Keep the envelope: sample() releases it gently back to idle.
   }
 
-  startAudio(analyser, media, text) {
+  startAudio(analyser, media, text, timings = []) {
     this.stop();
     this.mode = "audio";
     this.media = media;
@@ -60,6 +54,7 @@ export class SpeechMotion {
       this.bins = new Uint8Array(analyser.frequencyBinCount);
     }
     this.words = wordTimeline(text);
+    this.articulation = new VisemeTimeline(text, { timings });
   }
 
   startBrowser(text, rate = 1) {
@@ -67,6 +62,7 @@ export class SpeechMotion {
     this.mode = "browser";
     this.started = this.now();
     this.words = wordTimeline(text, rate);
+    this.articulation = new VisemeTimeline(text, { rate });
   }
 
   boundary(charIndex) {
@@ -137,6 +133,28 @@ export class SpeechMotion {
       energy = this.estimatedEnergy(elapsed, true);
       low = energy * 0.45;
       high = energy * 0.3;
+    }
+    this.frame.level = energy; // Unsmeared signal closes the lips during silence.
+    this.frame.mouth = { ...REST_MOUTH };
+    if (active && this.articulation) {
+      let elapsed = now - this.started + this.offset;
+      let duration = 0;
+      let ready = true;
+      if (this.mode === "audio") {
+        elapsed = this.media.currentTime * 1000;
+        duration = Number.isFinite(this.media.duration) ? this.media.duration * 1000 : 0;
+        // With no word metadata, remove leading decoder/TTS silence from the
+        // estimated timeline. The actual media clock still controls progression.
+        if (this.analyser && !this.articulation.measured) {
+          if (this.audioOnset === null && energy > 0.012) this.audioOnset = elapsed;
+          ready = this.audioOnset !== null;
+          elapsed = Math.max(0, elapsed - (this.audioOnset || 0));
+          duration = Math.max(0, duration - (this.audioOnset || 0));
+        }
+      }
+      if (ready) this.frame.mouth = this.articulation.sample(elapsed, {
+        duration, boundaries: this.hasBoundary, keepAlive: this.mode === "browser",
+      });
     }
     for (const [key, target] of [["energy", energy], ["low", low], ["high", high]]) {
       const smoothing = 1 - Math.exp(-dt / (target > this.frame[key] ? 0.045 : 0.16));
@@ -231,7 +249,8 @@ export class SpeechPlayer {
       this.clearTimer(session);
       if (data.error || !data.audio) throw new Error(data.error || "No speech audio");
       const bytes = Uint8Array.from(this.env.atob(data.audio), (char) => char.charCodeAt(0));
-      session.url = this.env.URL.createObjectURL(new this.env.Blob([bytes], { type: "audio/mpeg" }));
+      const mime = data.format === "wav" ? "audio/wav" : "audio/mpeg";
+      session.url = this.env.URL.createObjectURL(new this.env.Blob([bytes], { type: mime }));
       const audio = session.audio = new this.env.Audio(session.url);
       // Do not route audio into a suspended context: that would mute it.
       if (this.context?.state === "running") {
@@ -252,7 +271,8 @@ export class SpeechPlayer {
       }
       audio.onplaying = () => {
         if (!this.isCurrent(session) || session.fallback) return;
-        this.motion.startAudio(session.analyser, audio, cleanText);
+        if (this.motion.mode === "audio" && this.motion.media === audio) this.motion.resume();
+        else this.motion.startAudio(session.analyser, audio, cleanText, data.word_timings);
         this.onState("SPEAKING");
       };
       const pause = () => {

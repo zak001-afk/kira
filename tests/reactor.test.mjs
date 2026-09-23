@@ -4,10 +4,11 @@ import vm from "node:vm";
 import { readFileSync } from "node:fs";
 import { SpeechPlayer } from "../ui/speech.mjs";
 import { Hologram, projectionFrame, waveformPath } from "../ui/hologram.mjs";
+import { lipDemoPose } from "../ui/lips.mjs";
 import { playerRig } from "./support/speech-fakes.mjs";
 
 // Run the actual cockpit controller with DOM/audio doubles. Rendering now uses
-// local SVG/CSS, not a WebGL shader; keep testing speech -> visible field wiring.
+// local SVG/CSS/Canvas, not a WebGL shader; keep testing speech -> visible field wiring.
 function appRig(options = {}) {
   const rig = playerRig(options);
   const elements = new Map(), listeners = new Map(), requests = [];
@@ -64,7 +65,7 @@ function appRig(options = {}) {
     addEventListener(name, callback) { listeners.set(`document:${name}`, callback); },
   };
   const context = vm.createContext({
-    ...rig.env, Hologram,
+    ...rig.env, Hologram, lipDemoPose,
     SpeechPlayer: class extends SpeechPlayer {
       constructor(options) { super({ ...options, env: rig.env }); }
     },
@@ -301,4 +302,34 @@ test("the live conversation is bounded without touching persisted history", () =
   for (let i = 0; i < 120; i++) rig.probe.addMessage("KIRA", `Reply ${i}`);
   assert.equal(rig.element("conversation").children.length, 100);
   assert.ok(!rig.requests.some(r => r.init.method === "POST"));
+});
+
+
+test("the actual app passes TTS word shapes to its mouth compositor", async () => {
+  const rig = appRig({ response: async url => url === "/api/tts"
+    ? { audio: "YWJj", word_timings: [{ text: "Hello", start: 0, duration: 1 }] } : {} });
+  await rig.probe.speak("Hello");
+  rig.audios[0].currentTime = 0.35;
+  rig.step();
+  assert.ok(rig.probe.hologram.frame.mouth.open > 0.1);
+  assert.ok(rig.probe.hologram.frame.mouth.wide > 0.5);
+  assert.equal(rig.element("mouth-canvas").dataset.viseme, "EE");
+  rig.element("mute").click();
+  assert.equal(rig.probe.hologram.mouth.motion.pose.open, 0);
+  assert.equal(rig.element("mouth-canvas").hidden, true);
+});
+
+test("lip settings persist and a visual lip test never starts speech or a command", () => {
+  const rig = appRig();
+  const before = rig.requests.length;
+  rig.element("lip-test").click();
+  rig.step(1000);
+  assert.ok(rig.probe.hologram.frame.mouth.open > 0.2);
+  assert.equal(rig.requests.length, before);
+  assert.equal(rig.audios.length, 0);
+  rig.element("lips-toggle").click();
+  assert.equal(rig.storage.get("kira.lips"), "off");
+  assert.equal(rig.probe.hologram.mouth.motion.pose.open, 0);
+  rig.step(500);
+  assert.equal(rig.probe.hologram.frame.mouth.open, 0);
 });

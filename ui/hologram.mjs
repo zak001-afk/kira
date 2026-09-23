@@ -1,4 +1,6 @@
-// Speech-reactive compositor. No CDN, WebGL, microphone sampling or lip-sync claim.
+import { MouthAnimator } from "./mouth.mjs";
+
+// Offline speech-reactive field and 2D facial compositor. No microphone sampling.
 const clamp = (n, max = 1) => Math.min(max, Math.max(0, Number(n) || 0));
 
 export function projectionFrame(voice, { disabled = false, demoEnergy = null, time = 0 } = {}) {
@@ -37,6 +39,7 @@ export class Hologram {
     this.halo = document.getElementById("halo");
     this.portrait = document.getElementById("portrait");
     this.wave = document.getElementById("voice-wave");
+    this.mouth = new MouthAnimator(document);
     this.segments = [];
     const container = document.getElementById("activity-segments");
     for (let i = 0; i < 28; i++) {
@@ -56,6 +59,12 @@ export class Hologram {
     // A static, very quiet trace when idle. Movement only comes from speech/test.
     this.wave.setAttribute("d", waveformPath(frame.energy, frame.energy > 0.002 ? frame.time : 0));
     this.segments.forEach((segment, i) => segment.classList.toggle("lit", i < Math.round(frame.energy * 28)));
+    frame.mouth = this.mouth.update(voice, {
+      now: (options.time || 0) * 1000, disabled: options.disabled,
+      enabled: options.lipsEnabled !== false, demo: options.lipDemo,
+    });
     return frame;
   }
+
+  destroy() { this.mouth.destroy(); }
 }

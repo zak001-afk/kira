@@ -401,7 +401,8 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._send_json({
                 "success": True,
                 "audio": audio_base64,
-                "format": "mp3"
+                "format": "mp3",
+                "word_timings": kira_tts.get_word_timings(audio_path),
             })
             
         except Exception as e:
