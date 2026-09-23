@@ -12,12 +12,12 @@
   --bg:#050608;--red:#ed3845;--red-bright:#ff6470;--red-dim:#8c2630;
   --line:rgba(208,46,58,.25);--line-bright:rgba(235,51,65,.6);
   --text:#b6b9bd;--muted:#757880;--quiet:#45474e;--cyan:#8cb5c3;
-  --mono:'Share Tech Mono','Consolas',monospace;--display:Orbitron,sans-serif;
+  --mono:'Share Tech Mono',KiraArabic,'Consolas',monospace;--display:Orbitron,sans-serif;
   --panel-cut:polygon(0 24px,24px 0,calc(100% - 25px) 17px,100% 43px,100% calc(100% - 37px),calc(100% - 23px) calc(100% - 12px),20px 100%,0 calc(100% - 23px));
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:100%;height:100%;background:var(--bg)}
-body{font-family:Rajdhani,'Segoe UI',sans-serif;color:var(--text);font-weight:500;overflow:hidden;-webkit-font-smoothing:antialiased}
+body{font-family:Rajdhani,KiraArabic,'Segoe UI',sans-serif;color:var(--text);font-weight:500;overflow:hidden;-webkit-font-smoothing:antialiased}
 button,input,select{font:inherit}
 button{cursor:pointer;color:inherit;border:0;background:none;-webkit-tap-highlight-color:transparent}
 button,input,select{outline:none}
@@ -418,3 +418,29 @@ html[data-motion='off'] *,html[data-motion='off'] *:before,html[data-motion='off
 @media(prefers-reduced-motion:reduce){
   html:not([data-motion='on']) *,html:not([data-motion='on']) *:before,html:not([data-motion='on']) *:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
 }
+
+/* System-language preferences; the mechanical layout stays in its original order. */
+@font-face{font-family:KiraArabic;src:url('./assets/fonts/noto-sans-arabic-arabic-400-normal.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:KiraArabic;src:url('./assets/fonts/noto-sans-arabic-arabic-600-normal.woff2') format('woff2');font-weight:500 700;font-display:swap}
+.language-status{font:11px/1.6 var(--mono);color:var(--cyan);margin:5px 0 13px}
+.setting-row>div{min-width:0;flex:1}
+.setting-row select{max-width:47%;min-width:120px;text-overflow:ellipsis}
+.message{unicode-bidi:plaintext}
+html[lang=ar]{--mono:KiraArabic,'Segoe UI',sans-serif;--display:KiraArabic,'Segoe UI',sans-serif}
+html[lang=ar] body{font-family:KiraArabic,'Segoe UI',sans-serif;font-size:14px}
+html[dir=rtl] #hud{direction:ltr}
+html[dir=rtl] .panel-surface,html[dir=rtl] .system-dialog,html[dir=rtl] .quick-actions button{direction:rtl}
+html[dir=rtl] .panel-surface *,html[dir=rtl] .system-dialog *,html[dir=rtl] .quick-actions button *{letter-spacing:0}
+html[dir=rtl] .message-meta{direction:ltr}
+html[dir=rtl] .message-content{text-align:start}
+html[dir=rtl] .quick-actions button{text-align:start}
+html[dir=rtl] #send .icon{transform:scaleX(-1)}
+html[dir=rtl] .brand h1,html[dir=rtl] .stage-topline,html[dir=rtl] .console-brand{direction:ltr;font-family:Orbitron,sans-serif}
+html[dir=rtl] .data-rows dd,html[dir=rtl] .resource-row strong,html[dir=rtl] .session-info time{direction:ltr}
+@media(max-width:540px){.setting-row{flex-wrap:wrap;gap:10px}.setting-row select{max-width:100%;width:100%}.setting-row>div{flex-basis:100%}}
+html[lang=ar] .telemetry-panel .panel-heading h2{line-height:1.3}
+html[lang=ar] .telemetry-section h3{line-height:1.4}
+html[lang=ar] .data-rows,html[lang=ar] .resource-row{line-height:1.3}
+html[lang=ar] .telemetry-section{padding-top:9px;padding-bottom:8px}
+html[lang=ar] .setting-row h3{line-height:1.5}
+.system-dialog .dialog-heading{position:sticky;top:-27px;z-index:3;background:#120e15;padding-top:8px}

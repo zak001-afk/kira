@@ -10,6 +10,7 @@ public network is not recommended.
 """
 
 import argparse
+import os
 from functools import partial
 from http.client import HTTPConnection, HTTPException
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -18,11 +19,13 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 UI_DIRECTORY = Path(__file__).resolve().parent / "ui"
-UI_BUILD_ID = "holographic-cockpit-02-lip-sync-01"
-UI_BUILD_LABEL = "HOLOGRAPHIC COCKPIT 02 / LIP SYNC 01"
+UI_BUILD_ID = "holographic-cockpit-03-languages-01"
+UI_BUILD_LABEL = "HOLOGRAPHIC COCKPIT 03 / LANGUAGES 01"
 UI_REQUIRED_FILES = (
     "index.html", "style.css", "app.js", "speech.mjs", "hologram.mjs", "lips.mjs", "mouth.mjs",
-    "assets/kira-mouth-interior.webp",
+    "assets/kira-mouth-interior.webp", "i18n.mjs", "locale.mjs",
+    "assets/fonts/noto-sans-arabic-arabic-400-normal.woff2",
+    "assets/fonts/noto-sans-arabic-arabic-600-normal.woff2",
     "assets/kira-hologram.webp", "assets/reticle.svg", "assets/projector.svg",
     "assets/neural-map.svg", "assets/binary-field.svg", "assets/kira-mark.svg",
 )
@@ -52,6 +55,15 @@ def print_ui_info(directory):
     print(f"[KIRA UI] {UI_BUILD_LABEL}", flush=True)
     print(f"[KIRA UI] Python: {sys.executable}", flush=True)
     print(f"[KIRA UI] Files: {directory}", flush=True)
+
+
+def webview_profile_directory():
+    """Persist UI preferences outside the source tree / frozen program files."""
+    if os.environ.get("LOCALAPPDATA"):
+        base = Path(os.environ["LOCALAPPDATA"])
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share")))
+    return base / "KIRA" / "WebViewProfile"
 
 
 class KiraUIHandler(SimpleHTTPRequestHandler):

@@ -1,4 +1,6 @@
-import { SpeechPlayer } from "./speech.mjs?v=lip-sync-1";
+import { I18n, UI_LANGUAGES, interfaceLanguage } from "./i18n.mjs";
+import { speechLocale, baseLanguage, FALLBACK_LANGUAGES, VOICE_SAMPLES } from "./locale.mjs";
+import { SpeechPlayer } from "./speech.mjs?v=languages-1";
 import { lipDemoPose } from "./lips.mjs";
 import { Hologram } from "./hologram.mjs?v=lip-sync-1";
 
@@ -6,6 +8,9 @@ import { Hologram } from "./hologram.mjs?v=lip-sync-1";
    API calls stay on this origin; kira_ui.py proxies them to the local backend. */
 const $ = (id) => document.getElementById(id);
 const startedAt = performance.now();
+const i18n = new I18n(preference("kira.uiLanguage", UI_LANGUAGES, interfaceLanguage(navigator.language)));
+const t = (message, values) => i18n.t(message, values);
+i18n.apply(document);
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const pendingRequests = new Set();
 const intervals = [];
@@ -14,6 +19,9 @@ let commandPending = false;
 let commandCount = 0;
 let messageSequence = 0;
 let speechState = "READY";
+let activityState = "STANDBY";
+let currentPanel = null;
+let languageRevision = 0;
 let motionDemoStarted = -Infinity;
 let lipDemoStarted = -Infinity;
 let lipsEnabled = preference("kira.lips", ["on", "off"], "on") === "on";
@@ -25,8 +33,12 @@ let recognition = null;
 let listening = false;
 let motionPreference = preference("kira.motion", ["auto", "on", "off"], "auto");
 let speechEnabled = preference("kira.voice", ["on", "off"], "on") === "on";
-let voiceLanguage = preference("kira.language", ["en-US", "fr-FR", "ar-SA"],
-  navigator.language?.startsWith("fr") ? "fr-FR" : navigator.language?.startsWith("ar") ? "ar-SA" : "en-US");
+let voiceLanguage = readLanguagePreference("kira.language", "auto");
+let replyPreference = baseLanguage(readLanguagePreference("kira.replyLanguage", "auto"));
+let lastReplyLanguage = baseLanguage(readLanguagePreference("kira.lastReplyLanguage", i18n.language));
+let hasReplyLanguage = Boolean(readLanguagePreference("kira.lastReplyLanguage", ""));
+let languageCatalog = [...FALLBACK_LANGUAGES];
+
 
 function preference(key, choices, fallback) {
   try {
@@ -36,6 +48,55 @@ function preference(key, choices, fallback) {
 }
 function savePreference(key, value) {
   try { localStorage.setItem(key, value); } catch { /* Optional in embedded/private browsers. */ }
+}
+function readLanguagePreference(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return value === "auto" || /^[a-z]{2,3}(?:-[a-z]{2})?$/i.test(value || "") ? value : fallback;
+  } catch { return fallback; }
+}
+function effectiveReplyLanguage() { return replyPreference === "auto" ? lastReplyLanguage : replyPreference; }
+function languageInfo(code) {
+  return languageCatalog.find(item => item.code === baseLanguage(code)) || { code: baseLanguage(code), locale: speechLocale(code), native_name: code };
+}
+function activeLocale() { return languageInfo(effectiveReplyLanguage()).locale; }
+function listeningLocale() { return voiceLanguage === "auto" ? activeLocale() : speechLocale(voiceLanguage); }
+function updateLanguageControls() {
+  $("interface-language").value = i18n.language;
+  for (const [id, selected, label, useLocale] of [
+    ["reply-language", replyPreference, t("Automatic — follow my question"), false],
+    ["voice-language", voiceLanguage, t("Automatic — conversation language"), true],
+  ]) {
+    const select = $(id);
+    select.replaceChildren();
+    const auto = document.createElement("option");
+    auto.value = "auto"; auto.textContent = label; select.appendChild(auto);
+    const choices = [...languageCatalog];
+    if (selected !== "auto" && !choices.some(item => (useLocale ? item.locale : item.code) === selected)) {
+      choices.push({ code: baseLanguage(selected), locale: speechLocale(selected), native_name: selected });
+    }
+    for (const item of choices) {
+      const option = document.createElement("option");
+      option.value = useLocale ? item.locale : item.code;
+      option.textContent = item.native_name;
+      select.appendChild(option);
+    }
+    select.value = selected;
+  }
+  writeText("active-language", t("Current reply language: {language}", { language: languageInfo(effectiveReplyLanguage()).native_name }));
+  if (recognition && !listening) recognition.lang = listeningLocale();
+}
+async function loadLanguageCatalog() {
+  try {
+    const data = await requestJSON("/languages");
+    if (destroyed) return;
+    if (Array.isArray(data.languages) && data.languages.length) {
+      languageCatalog = data.languages.filter(item => /^[a-z]{2,3}$/.test(item.code) && typeof item.native_name === "string")
+        .map(item => ({ ...item, locale: speechLocale(item.locale) }));
+    }
+    $("language-detector-warning").hidden = data.detector_available !== false;
+    updateLanguageControls();
+  } catch { /* Offline settings retain the bundled language choices. */ }
 }
 function writeText(id, value) {
   const element = $(id);
@@ -58,6 +119,7 @@ async function requestJSON(path, { method = "GET", body, signal, timeout = 7000 
     if (!response.ok || data.error) {
       const error = new Error(data.error || `API error ${response.status}`);
       error.status = response.status;
+      error.code = data.error_code;
       throw error;
     }
     return data;
@@ -69,11 +131,12 @@ async function requestJSON(path, { method = "GET", body, signal, timeout = 7000 
 }
 
 function friendlyError(error) {
-  if (error.name === "AbortError") return "The request timed out. The action may still be running; check KIRA before trying it again.";
+  if (error.code === "reply_language_unavailable") return t("The model could not use the requested language. Try a multilingual model.");
+  if (error.name === "AbortError") return t("The request timed out. The action may still be running; check KIRA before trying it again.");
   if (error.status === 503 || /fetch|network|backend not available/i.test(error.message)) {
-    return "KIRA’s backend is unavailable. Start the desktop app or run python launch_web.py on your computer, then try again.";
+    return t("KIRA’s backend is unavailable. Start the desktop app or run python launch_web.py on your computer, then try again.");
   }
-  return error.message || "Unable to complete this request.";
+  return error.message || t("Unable to complete this request.");
 }
 function notify(message) {
   writeText("toast", message);
@@ -95,13 +158,15 @@ function addMessage(sender, text, isUser = false, historic = false) {
   const meta = document.createElement("div");
   meta.className = "message-meta";
   const name = document.createElement("span");
-  name.textContent = sender;
+  name.textContent = t(sender);
+  name.dataset.sender = sender;
   const time = document.createElement("time");
-  time.textContent = historic ? "HISTORY" : new Date().toTimeString().slice(0, 8);
+  time.textContent = historic ? t("HISTORY") : new Date().toTimeString().slice(0, 8);
   if (!historic) time.dateTime = new Date().toISOString();
   const message = document.createElement("p");
   message.className = "message";
   message.textContent = String(text);
+  message.setAttribute("dir", "auto");
   meta.append(name, time);
   content.append(meta, message);
   block.append(avatar, content);
@@ -115,35 +180,39 @@ function addMessage(sender, text, isUser = false, historic = false) {
 
 function setActivity(state) {
   if (state === "READY") state = commandPending ? "THINKING" : speechState !== "READY" ? speechState : "READY";
-  writeText("activity", state);
+  activityState = state;
+  writeText("activity", t(state));
   $("activity-dot").className = `activity-dot ${state === "THINKING" ? "thinking" : state === "SPEAKING" ? "speaking" : state === "READY" ? "active" : ""}`;
   $("hologram").dataset.activity = state.toLowerCase();
-  const labels = { THINKING: "PROCESSING YOUR REQUEST", SPEAKING: "VOICE CHANNEL ACTIVE", LISTENING: "LISTENING TO OPERATOR", ERROR: "CHECK SYSTEM CONNECTION" };
-  document.querySelector(".stage-status-detail").textContent = labels[state] || "AWAITING YOUR COMMAND";
+  const labels = { THINKING: t("PROCESSING YOUR REQUEST"), SPEAKING: t("VOICE CHANNEL ACTIVE"), LISTENING: t("LISTENING TO OPERATOR"), ERROR: t("CHECK SYSTEM CONNECTION") };
+  document.querySelector(".stage-status-detail").textContent = labels[state] || t("AWAITING YOUR COMMAND");
 }
 
 const speech = new SpeechPlayer({
-  fetchAudio: (text, { signal }) => requestJSON("/tts", { method: "POST", body: { text, voice: "jenny" }, signal, timeout: 15000 }),
+  fetchAudio: (text, { signal, language }) => requestJSON("/tts", { method: "POST", body: { text, language }, signal, timeout: 15000 }),
   onState: (state) => { speechState = state; setActivity(state); },
+  onNotice: (code, details) => {
+    if (code === "voice-unavailable") notify(t("No voice is available for {language}. The written reply is kept. Check Edge TTS or install a matching system voice.", { language: languageInfo(details.language).native_name }));
+  },
 });
 speech.setEnabled(speechEnabled);
 const hologram = new Hologram(document);
-function speak(text) { return speech.speak(text); }
+function speak(text, language = activeLocale()) { return speech.speak(text, { language: speechLocale(language) }); }
 function stopSpeaking() { speech.stop(); hologram.mouth.reset(); lipDemoStarted = -Infinity; }
 
 function updateVoiceControls() {
   const name = speechEnabled ? "i-volume" : "i-muted";
   $("mute").innerHTML = `<svg class="icon" aria-hidden="true"><use href="#${name}" /></svg>`;
   $("mute").setAttribute("aria-pressed", String(!speechEnabled));
-  $("mute").setAttribute("aria-label", speechEnabled ? "Mute voice output" : "Enable voice output");
-  $("mute").title = speechEnabled ? "Mute voice output" : "Enable voice output";
-  writeText("deck-voice-state", speechEnabled ? "ENABLED" : "MUTED");
-  writeText("voice-output", speechEnabled ? "ENABLED" : "MUTED");
-  writeText("settings-voice", speechEnabled ? "VOICE: ON" : "VOICE: OFF");
+  $("mute").setAttribute("aria-label", speechEnabled ? t("Mute voice output") : t("Enable voice output"));
+  $("mute").title = speechEnabled ? t("Mute voice output") : t("Enable voice output");
+  writeText("deck-voice-state", speechEnabled ? t("ENABLED") : t("MUTED"));
+  writeText("voice-output", speechEnabled ? t("ENABLED") : t("MUTED"));
+  writeText("settings-voice", speechEnabled ? t("VOICE: ON") : t("VOICE: OFF"));
   $("deck-voice").setAttribute("aria-pressed", String(speechEnabled));
   $("deck-voice").querySelector(".button-light").classList.toggle("off", !speechEnabled);
   $("voice-test").disabled = !speechEnabled;
-  $("voice-test").title = speechEnabled ? "Test KIRA’s voice" : "Enable voice output in Settings first";
+  $("voice-test").title = speechEnabled ? t("Test KIRA’s voice") : t("Enable voice output in Settings first");
 }
 function toggleVoice() {
   speechEnabled = !speechEnabled;
@@ -161,9 +230,9 @@ function motionDisabled() {
 }
 function updateMotionButton() {
   document.documentElement.dataset.motion = motionPreference;
-  writeText("motion-toggle", `MOTION: ${motionPreference.toUpperCase()}`);
-  writeText("deck-motion-state", `MOTION: ${motionPreference.toUpperCase()}`);
-  $("motion-toggle").title = "Auto follows system reduced motion. On explicitly enables movement. Off keeps the projection still.";
+  writeText("motion-toggle", t("MOTION: {mode}", { mode: t(motionPreference.toUpperCase()) }));
+  writeText("deck-motion-state", t("MOTION: {mode}", { mode: t(motionPreference.toUpperCase()) }));
+  $("motion-toggle").title = t("Auto follows system reduced motion. On explicitly enables movement. Off keeps the projection still.");
   $("deck-motion").querySelector(".button-light").classList.toggle("off", motionDisabled());
   if (motionDisabled()) { hologram.mouth.reset(); lipDemoStarted = -Infinity; }
 }
@@ -178,15 +247,15 @@ $("deck-motion").addEventListener("click", cycleMotion);
 reducedMotion.addEventListener?.("change", updateMotionButton);
 $("motion-test").addEventListener("click", () => {
   if (motionDisabled()) {
-    writeText("diagnostic-status", "Motion is disabled. Select Motion: On in Settings to test it.");
+    writeText("diagnostic-status", t("Motion is disabled. Select Motion: On in Settings to test it."));
     return;
   }
   motionDemoStarted = performance.now();
   $("system-dialog").close();
-  notify("Testing the holographic field · 3 seconds · no audio");
+  notify(t("Testing the holographic field · 3 seconds · no audio"));
 });
 function updateLipsButton() {
-  writeText("lips-toggle", lipsEnabled ? "LIPS: ON" : "LIPS: OFF");
+  writeText("lips-toggle", lipsEnabled ? t("LIPS: ON") : t("LIPS: OFF"));
   $("lips-toggle").setAttribute("aria-pressed", String(lipsEnabled));
 }
 $("lips-toggle").addEventListener("click", () => {
@@ -197,13 +266,13 @@ $("lips-toggle").addEventListener("click", () => {
 });
 $("lip-test").addEventListener("click", () => {
   if (motionDisabled() || !lipsEnabled) {
-    notify("Enable Motion: On and Lips: On in Settings to test the mouth.");
+    notify(t("Enable Motion: On and Lips: On in Settings to test the mouth."));
     return;
   }
   stopSpeaking();
   lipDemoStarted = performance.now();
   $("system-dialog").close();
-  notify("Testing lip shapes · 4 seconds · no audio or desktop command");
+  notify(t("Testing lip shapes · 4 seconds · no audio or desktop command"));
 });
 updateLipsButton();
 $("voice-test").addEventListener("click", () => {
@@ -211,7 +280,8 @@ $("voice-test").addEventListener("click", () => {
   speech.unlock();
   $("system-dialog").close();
   lipDemoStarted = -Infinity;
-  speak("Hello. Bonjour. I am Kira. My lips now follow my voice. A little pause. Welcome back, Operator.");
+  const info = languageInfo(effectiveReplyLanguage());
+  speak(VOICE_SAMPLES[info.code] || info.native_name, info.locale);
 });
 updateMotionButton();
 
@@ -229,28 +299,28 @@ function animate(now = performance.now()) {
   const lipDemo = lipDemoPose((now - lipDemoStarted) / 1000);
   const projection = hologram.update(voice, { disabled, demoEnergy, time: now / 1000, lipsEnabled, lipDemo });
   const rendererState = hologram.mouth.renderer.state;
-  const lipLabel = disabled ? "LIP SYNC · MOTION DISABLED"
-    : !lipsEnabled ? "LIP SYNC · OFF"
-    : ["unsupported", "unavailable"].includes(rendererState) ? "LIP SYNC · RENDERER UNAVAILABLE"
-    : rendererState === "loading" ? "LIP SYNC · LOADING PORTRAIT"
-    : lipDemo ? "LIP SYNC · VISUAL TEST / NO AUDIO"
-    : !voice.active ? "LIP SYNC · IDLE"
-    : projection.mouth.source === "word-timings" ? "LIP SYNC · TTS WORD TIMING / ESTIMATED SHAPES"
-    : projection.mouth.source === "word-events" ? "LIP SYNC · BROWSER WORD TIMING / ESTIMATED SHAPES"
-    : "LIP SYNC · ESTIMATED TIMING";
+  const lipLabel = disabled ? t("LIP SYNC · MOTION DISABLED")
+    : !lipsEnabled ? t("LIP SYNC · OFF")
+    : ["unsupported", "unavailable"].includes(rendererState) ? t("LIP SYNC · RENDERER UNAVAILABLE")
+    : rendererState === "loading" ? t("LIP SYNC · LOADING PORTRAIT")
+    : lipDemo ? t("LIP SYNC · VISUAL TEST / NO AUDIO")
+    : !voice.active ? t("LIP SYNC · IDLE")
+    : projection.mouth.source === "word-timings" ? t("LIP SYNC · TTS WORD TIMING / ESTIMATED SHAPES")
+    : projection.mouth.source === "word-events" ? t("LIP SYNC · BROWSER WORD TIMING / ESTIMATED SHAPES")
+    : t("LIP SYNC · ESTIMATED TIMING");
   writeText("lip-status", lipLabel);
   $("voice-level").style.transform = `scaleX(${voice.energy.toFixed(3)})`;
-  const label = disabled ? (motionPreference === "auto" ? "MOTION OFF · SYSTEM SETTING" : "MOTION OFF")
-    : demo ? "TEST MOTION · NO AUDIO"
-    : !speech.enabled ? "VOICE MUTED"
-    : !voice.active ? (speechState === "THINKING" ? "WAITING FOR VOICE" : "VOICE IDLE")
-    : voice.source === "audio" ? (voice.energy > 0.015 ? "VOICE SYNC · AUDIO" : "VOICE SYNC · QUIET / NO SIGNAL")
-    : voice.source === "words" ? "VOICE SYNC · WORD TIMING" : "VOICE SYNC · ESTIMATED";
+  const label = disabled ? (motionPreference === "auto" ? t("MOTION OFF · SYSTEM SETTING") : t("MOTION OFF"))
+    : demo ? t("TEST MOTION · NO AUDIO")
+    : !speech.enabled ? t("VOICE MUTED")
+    : !voice.active ? (speechState === "THINKING" ? t("WAITING FOR VOICE") : t("VOICE IDLE"))
+    : voice.source === "audio" ? (voice.energy > 0.015 ? t("VOICE SYNC · AUDIO") : t("VOICE SYNC · QUIET / NO SIGNAL"))
+    : voice.source === "words" ? t("VOICE SYNC · WORD TIMING") : t("VOICE SYNC · ESTIMATED");
   writeText("motion-status", label);
   writeText("diagnostic-status", label);
 }
 
-async function sendCommand(text) {
+async function sendCommand(text, { shortcut = false } = {}) {
   text = String(text).trim();
   if (!text || commandPending || destroyed) return;
   commandPending = true;
@@ -263,19 +333,36 @@ async function sendCommand(text) {
   $("command-form").setAttribute("aria-busy", "true");
   commandCount++;
   writeText("command-count", String(commandCount).padStart(3, "0"));
-  const thinking = addMessage("KIRA", "Processing your request…");
+  const thinking = addMessage("KIRA", t("Processing your request…"));
   thinking.classList.add("thinking");
   const started = performance.now();
   try {
-    const data = await requestJSON("/command", { method: "POST", body: { text }, timeout: 120000 });
+    const revision = languageRevision;
+    const requestLanguage = shortcut && replyPreference === "auto" ? effectiveReplyLanguage() : replyPreference;
+    const data = await requestJSON("/command", { method: "POST", body: {
+      text, reply_language: requestLanguage, previous_language: lastReplyLanguage, interface_language: i18n.language,
+    }, timeout: 120000 });
     if (destroyed) return;
     thinking.remove();
+    if (data.language && /^[a-z]{2,3}$/.test(data.language)) {
+      lastReplyLanguage = data.language;
+      hasReplyLanguage = true;
+      savePreference("kira.lastReplyLanguage", lastReplyLanguage);
+    }
+    if (data.reply_language_preference && revision === languageRevision
+      && (data.reply_language_preference === "auto" || /^[a-z]{2,3}$/.test(data.reply_language_preference))) {
+      replyPreference = data.reply_language_preference;
+      savePreference("kira.replyLanguage", replyPreference);
+      languageRevision++;
+    }
+    updateLanguageControls();
     writeText("response-time", `${((performance.now() - started) / 1000).toFixed(2)} s`);
     // Failed actions must never be labelled as successfully executed.
-    const response = data.success === false ? `KIRA could not complete: ${data.action || "this action"}.${data.response ? `\nBackend response: ${data.response}` : ""}`
-      : data.response || data.details || (data.action && data.action !== "none" ? `Done: ${data.action.replace(/_/g, " ")}` : "Command received.");
+    const response = data.success === false ? t("KIRA could not complete: {action}.", { action: data.action || t("this action") }) + (data.response ? `\n${t("Backend response: {response}", { response: data.response })}` : "")
+      : data.response || data.details || (data.action && data.action !== "none" ? t("Done: {action}", { action: data.action.replace(/_/g, " ") }) : t("Command received."));
     addMessage(data.success === false ? "SYSTEM" : "KIRA", response);
-    if (data.success !== false) speak(response);
+    if (data.success !== false && !data.language_warning) speak(response, data.locale || languageInfo(data.language || effectiveReplyLanguage()).locale);
+    if (data.language_warning) notify(t("The model could not use the requested language. Try a multilingual model."));
   } catch (error) {
     if (destroyed) return;
     thinking.remove();
@@ -287,7 +374,7 @@ async function sendCommand(text) {
     $("send").disabled = false;
     $("command-form").setAttribute("aria-busy", "false");
     if (!destroyed) {
-      if ($("activity").textContent !== "ERROR") setActivity("READY");
+      if (activityState !== "ERROR") setActivity("READY");
       updateTasks();
     }
   }
@@ -300,10 +387,10 @@ $("command-form").addEventListener("submit", (event) => {
   $("command").value = "";
   sendCommand(text);
 });
-window.quickCmd = (command) => sendCommand(command); // Retain compatibility with desktop integrations.
+window.quickCmd = (command) => sendCommand(command, { shortcut: true }); // Retain compatibility with desktop integrations.
 document.querySelectorAll("[data-command]").forEach((button) => button.addEventListener("click", () => {
-  if (commandPending) return notify("KIRA is still processing your previous command.");
-  sendCommand(button.dataset.command);
+  if (commandPending) return notify(t("KIRA is still processing your previous command."));
+  sendCommand(button.dataset.command, { shortcut: true });
 }));
 document.querySelectorAll("[data-prompt]").forEach((button) => button.addEventListener("click", () => {
   $("command").value = button.dataset.prompt;
@@ -318,11 +405,11 @@ document.addEventListener("keydown", (event) => {
   }
 });
 $("clear-chat").addEventListener("click", () => {
-  if (commandPending) return notify("Wait for the current command to finish before clearing the view.");
+  if (commandPending) return notify(t("Wait for the current command to finish before clearing the view."));
   $("conversation").replaceChildren();
-  addMessage("KIRA", "Channel cleared.\nReady for your next command, Operator.");
+  addMessage("KIRA", t("Channel cleared.\nReady for your next command, Operator."));
   $("conversation-empty").hidden = false;
-  notify("Conversation view cleared. Saved history is unchanged.");
+  notify(t("Conversation view cleared. Saved history is unchanged."));
 });
 
 /* Browser voice input; the projection reacts to OUTPUT, not microphone audio. */
@@ -332,7 +419,7 @@ $("voice-language").addEventListener("change", () => {
   savePreference("kira.language", voiceLanguage);
   if (recognition) {
     if (listening) recognition.stop();
-    recognition.lang = voiceLanguage;
+    recognition.lang = listeningLocale();
   }
 });
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -340,12 +427,12 @@ if (Recognition) {
   recognition = new Recognition();
   recognition.continuous = false;
   recognition.interimResults = false;
-  recognition.lang = voiceLanguage;
+  recognition.lang = listeningLocale();
   recognition.onstart = () => {
     listening = true;
     stopSpeaking();
     $("mic").classList.add("listening");
-    $("mic").setAttribute("aria-label", "Stop voice input");
+    $("mic").setAttribute("aria-label", t("Stop voice input"));
     setActivity("LISTENING");
   };
   recognition.onresult = (event) => {
@@ -356,29 +443,29 @@ if (Recognition) {
   recognition.onend = () => {
     listening = false;
     $("mic").classList.remove("listening");
-    $("mic").setAttribute("aria-label", "Start voice input");
+    $("mic").setAttribute("aria-label", t("Start voice input"));
     setActivity("READY");
   };
   recognition.onerror = (event) => {
     if (event.error === "aborted") return;
-    notify(event.error === "not-allowed" ? "Microphone access was denied. Allow it in your browser settings, or type a command."
-      : event.error === "no-speech" ? "No speech detected. Try again, or type a command."
-      : "Voice input is unavailable. You can still type a command.");
+    notify(event.error === "not-allowed" ? t("Microphone access was denied. Allow it in your browser settings, or type a command.")
+      : event.error === "no-speech" ? t("No speech detected. Try again, or type a command.")
+      : t("Voice input is unavailable. You can still type a command."));
   };
   $("mic").addEventListener("click", () => {
-    if (commandPending) return notify("Wait for KIRA to finish processing before using voice input.");
-    try { speech.unlock(); listening ? recognition.stop() : recognition.start(); }
-    catch { notify("Voice input is already starting. Please wait a moment."); }
+    if (commandPending) return notify(t("Wait for KIRA to finish processing before using voice input."));
+    try { speech.unlock(); recognition.lang = listeningLocale(); listening ? recognition.stop() : recognition.start(); }
+    catch { notify(t("Voice input is already starting. Please wait a moment.")); }
   });
 } else {
   $("mic").disabled = true;
-  $("mic").title = "Speech recognition is unavailable in this browser. Type a command instead.";
+  $("mic").title = t("Speech recognition is unavailable in this browser. Type a command instead.");
 }
 
 function updateClock() {
   const now = new Date();
-  writeText("clock-time", now.toLocaleTimeString("en-GB", { hour12: false }));
-  writeText("clock-date", now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" }).toUpperCase());
+  writeText("clock-time", now.toLocaleTimeString(i18n.language, { hour12: false }));
+  writeText("clock-date", now.toLocaleDateString(i18n.language, { day: "2-digit", month: "short", year: "2-digit" }).toUpperCase());
   const seconds = Math.floor((performance.now() - startedAt) / 1000);
   writeText("uptime", [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map((n) => String(n).padStart(2, "0")).join(":"));
 }
@@ -395,21 +482,21 @@ async function updateStatus() {
     const data = await requestJSON("/status");
     const available = data.backend_available ?? Boolean(data.model && data.model !== "unknown");
     writeText("latency", `${Math.round(performance.now() - started)} ms`);
-    writeText("model-name", data.model && data.model !== "unknown" ? data.model : "NOT LOADED");
-    $("model-name").title = data.model || "No neural engine loaded";
-    writeText("neural-status", available ? "ACTIVE" : "STANDBY");
-    writeText("backend-state", available ? "CONNECTED" : "NOT LOADED");
-    writeText("status-text", available ? "NEURAL LINK ACTIVE" : "INTERFACE PREVIEW");
+    writeText("model-name", data.model && data.model !== "unknown" ? data.model : t("NOT LOADED"));
+    $("model-name").title = data.model || t("No neural engine loaded");
+    writeText("neural-status", available ? t("ACTIVE") : t("STANDBY"));
+    writeText("backend-state", available ? t("CONNECTED") : t("NOT LOADED"));
+    writeText("status-text", available ? t("NEURAL LINK ACTIVE") : t("INTERFACE PREVIEW"));
     $("connection-pill").classList.toggle("connected", available);
-    writeText("diagnostic-connection", available ? "Connected to local KIRA" : "API online · command engine not loaded");
+    writeText("diagnostic-connection", available ? t("Connected to local KIRA") : t("API online · command engine not loaded"));
   } catch {
     writeText("latency", "—");
-    writeText("model-name", "UNAVAILABLE");
-    writeText("neural-status", "OFFLINE");
-    writeText("backend-state", "OFFLINE");
-    writeText("status-text", "BACKEND OFFLINE");
+    writeText("model-name", t("UNAVAILABLE"));
+    writeText("neural-status", t("OFFLINE"));
+    writeText("backend-state", t("OFFLINE"));
+    writeText("status-text", t("BACKEND OFFLINE"));
     $("connection-pill").classList.remove("connected");
-    writeText("diagnostic-connection", "Offline · start the KIRA launcher");
+    writeText("diagnostic-connection", t("Offline · start the KIRA launcher"));
   } finally { statusPending = false; }
 }
 
@@ -428,14 +515,14 @@ async function updateTelemetry() {
     paint("cpu", data.cpu_percent);
     paint("memory", data.memory_percent);
     paint("disk", data.disk_percent);
-    writeText("gpu", data.gpu || "UNAVAILABLE");
-    $("gpu").title = data.gpu || "Graphics telemetry is unavailable";
-    writeText("telemetry-live", "LIVE");
+    writeText("gpu", data.gpu || t("UNAVAILABLE"));
+    $("gpu").title = data.gpu || t("Graphics telemetry is unavailable");
+    writeText("telemetry-live", t("LIVE"));
     $("telemetry-live").classList.add("live");
   } catch {
     ["cpu", "memory", "disk"].forEach((key) => paint(key, null));
-    writeText("gpu", "UNAVAILABLE");
-    writeText("telemetry-live", "OFFLINE");
+    writeText("gpu", t("UNAVAILABLE"));
+    writeText("telemetry-live", t("OFFLINE"));
     $("telemetry-live").classList.remove("live");
   } finally { telemetryPending = false; }
 }
@@ -452,7 +539,7 @@ async function updateTasks() {
     if (!tasks.length) {
       const empty = document.createElement("p");
       empty.className = "task-empty";
-      empty.textContent = "All clear. No pending tasks.\nAdd a task below, or ask KIRA to remember it.";
+      empty.textContent = t("All clear. No pending tasks.\nAdd a task below, or ask KIRA to remember it.");
       $("tasks-list").appendChild(empty);
     }
     tasks.forEach((task) => {
@@ -460,15 +547,15 @@ async function updateTasks() {
       row.className = "task-item";
       const complete = document.createElement("button");
       complete.type = "button";
-      complete.title = "Mark complete";
-      complete.setAttribute("aria-label", `Complete task: ${task.title}`);
+      complete.title = t("Mark complete");
+      complete.setAttribute("aria-label", t("Complete task: {title}", { title: task.title }));
       complete.textContent = "✓";
       complete.addEventListener("click", async () => {
         complete.disabled = true;
         try {
           const result = await requestJSON("/task/complete", { method: "POST", body: { id: task.id } });
-          if (!result.success) throw new Error("The task could not be completed.");
-          writeText("task-feedback", "Task completed.");
+          if (!result.success) throw new Error(t("The task could not be completed."));
+          writeText("task-feedback", t("Task completed."));
           await updateTasks();
         } catch (error) { complete.disabled = false; writeText("task-feedback", friendlyError(error)); }
       });
@@ -482,7 +569,7 @@ async function updateTasks() {
     $("tasks-list").replaceChildren();
     const empty = document.createElement("p");
     empty.className = "task-empty";
-    empty.textContent = "Task manager unavailable. Start KIRA’s backend to access your tasks.";
+    empty.textContent = t("Task manager unavailable. Start KIRA’s backend to access your tasks.");
     $("tasks-list").appendChild(empty);
   } finally { tasksPending = false; }
 }
@@ -492,11 +579,11 @@ $("task-form").addEventListener("submit", async (event) => {
   const button = $("task-form").querySelector("button");
   if (!title || button.disabled) return;
   button.disabled = true;
-  writeText("task-feedback", "Saving…");
+  writeText("task-feedback", t("Saving…"));
   try {
     await requestJSON("/task", { method: "POST", body: { title, type: "todo" } });
     $("task-title").value = "";
-    writeText("task-feedback", "Task saved to local memory.");
+    writeText("task-feedback", t("Task saved to local memory."));
     await updateTasks();
   } catch (error) { writeText("task-feedback", friendlyError(error)); }
   finally { button.disabled = false; }
@@ -517,8 +604,9 @@ async function loadHistory() {
 
 /* Dialog is native: focus is trapped, Escape works, and focus is restored. */
 function openPanel(name) {
-  const titles = { settings: "INTERFACE SETTINGS", diagnostics: "SYSTEM DIAGNOSTICS", tasks: "YOUR WORKSPACE" };
+  const titles = { settings: t("INTERFACE SETTINGS"), diagnostics: t("SYSTEM DIAGNOSTICS"), tasks: t("YOUR WORKSPACE") };
   if (!titles[name]) return;
+  currentPanel = name;
   ["settings", "diagnostics", "tasks"].forEach((panel) => { $(`${panel}-panel`).hidden = panel !== name; });
   writeText("dialog-title", titles[name]);
   if (!$("system-dialog").open) $("system-dialog").showModal();
@@ -536,12 +624,34 @@ $("fullscreen").addEventListener("click", async () => {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
     else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
-    else notify("Use your window’s maximize button for a full-screen cockpit.");
-  } catch { notify("Fullscreen is unavailable here. Open KIRA in its own window to use it."); }
+    else notify(t("Use your window’s maximize button for a full-screen cockpit."));
+  } catch { notify(t("Fullscreen is unavailable here. Open KIRA in its own window to use it.")); }
 });
 document.addEventListener("fullscreenchange", () => {
-  $("fullscreen").title = document.fullscreenElement ? "Exit fullscreen" : "Enter fullscreen";
+  $("fullscreen").title = document.fullscreenElement ? t("Exit fullscreen") : t("Enter fullscreen");
 });
+
+$("interface-language").addEventListener("change", () => {
+  i18n.setLanguage($("interface-language").value);
+  savePreference("kira.uiLanguage", i18n.language);
+  if (!hasReplyLanguage && replyPreference === "auto") lastReplyLanguage = i18n.language;
+  i18n.apply(document);
+  for (const node of document.querySelectorAll("[data-sender]")) node.textContent = t(node.dataset.sender);
+  updateLanguageControls(); updateVoiceControls(); updateMotionButton(); updateLipsButton();
+  setActivity(activityState); updateClock();
+  $("mic").setAttribute("aria-label", t(listening ? "Stop voice input" : "Start voice input"));
+  if (!recognition) $("mic").title = t("Speech recognition is unavailable in this browser. Type a command instead.");
+  if (currentPanel && $("system-dialog").open) openPanel(currentPanel);
+  updateStatus(); updateTelemetry(); updateTasks();
+});
+$("reply-language").addEventListener("change", () => {
+  replyPreference = $("reply-language").value || "auto";
+  languageRevision++;
+  savePreference("kira.replyLanguage", replyPreference);
+  updateLanguageControls();
+});
+updateLanguageControls();
+loadLanguageCatalog();
 
 window.addEventListener("pagehide", () => {
   destroyed = true;

@@ -1,4 +1,4 @@
-KIRA — HOLOGRAPHIC COCKPIT 02 / LIP SYNC 01
+KIRA — HOLOGRAPHIC COCKPIT 03 / LANGUAGES 01
 
 IMPORTANT : mettre a jour le projet complet, pas seulement main_window.py.
 La nouvelle interface est dans ui/ (HTML, CSS, JavaScript, images et polices),
@@ -7,7 +7,7 @@ et son serveur commun est kira_ui.py.
 Pour lancer la copie source depuis votre dossier KIRA (PowerShell) :
     .\.venv\Scripts\python.exe main_window.py
 
-Le titre de la nouvelle fenetre est KIRA — HOLOGRAPHIC COCKPIT 02 / LIP SYNC 01.
+Le titre de la nouvelle fenetre est KIRA — HOLOGRAPHIC COCKPIT 03 / LANGUAGES 01.
 La console affiche aussi [KIRA UI], le Python utilise et le chemin du dossier ui/.
 Si ces indications sont absentes, vous lancez encore une autre/ancienne copie.
 Fermez l'ancienne fenetre avant de relancer.
@@ -32,3 +32,15 @@ Animation de la bouche :
 - DIAGNOSTICS > TEST LIPS : demonstration visuelle sans audio.
 - DIAGNOSTICS > TEST VOICE : exemple Hello / Bonjour avec la vraie synthese vocale.
 La synchronisation est une animation 2D approximative, pas une video humaine.
+
+Langues (LANGUAGES 01) :
+- Installez le detecteur dans le meme environnement :
+    .\.venv\Scripts\python.exe -m pip install langid
+- SETTINGS > Interface language > Francais : traduit les menus.
+- Parametres > Langue des reponses et de la voix > Automatique : suit la question.
+- « Reponds-moi en francais » fixe aussi le francais pour les reponses suivantes.
+- Le microphone du navigateur ecoute une seule langue a la fois : choisissez sa
+  langue d'ecoute si vous changez de langue a l'oral. Auto suit la conversation.
+- La qualite multilingue depend du modele Ollama et des voix disponibles ; aucune
+  promesse de prise en charge universelle. Pas de repli vocal anglais silencieux.
+- Les reglages natifs persistent dans %LOCALAPPDATA%/KIRA/WebViewProfile.

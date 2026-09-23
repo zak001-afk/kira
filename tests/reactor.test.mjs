@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
+import { I18n, UI_LANGUAGES, interfaceLanguage } from "../ui/i18n.mjs";
+import { speechLocale, baseLanguage, FALLBACK_LANGUAGES, VOICE_SAMPLES } from "../ui/locale.mjs";
 import { SpeechPlayer } from "../ui/speech.mjs";
 import { Hologram, projectionFrame, waveformPath } from "../ui/hologram.mjs";
 import { lipDemoPose } from "../ui/lips.mjs";
@@ -12,7 +14,7 @@ import { playerRig } from "./support/speech-fakes.mjs";
 function appRig(options = {}) {
   const rig = playerRig(options);
   const elements = new Map(), listeners = new Map(), requests = [];
-  const storage = new Map(options.motionPreference ? [["kira.motion", options.motionPreference]] : []);
+  const storage = new Map([["kira.uiLanguage", options.uiLanguage || "en"], ...(options.motionPreference ? [["kira.motion", options.motionPreference]] : [])]);
   class Element {
     constructor(id) {
       this.id = id;
@@ -65,7 +67,7 @@ function appRig(options = {}) {
     addEventListener(name, callback) { listeners.set(`document:${name}`, callback); },
   };
   const context = vm.createContext({
-    ...rig.env, Hologram, lipDemoPose,
+    ...rig.env, Hologram, lipDemoPose, I18n, UI_LANGUAGES, interfaceLanguage, speechLocale, baseLanguage, FALLBACK_LANGUAGES, VOICE_SAMPLES,
     SpeechPlayer: class extends SpeechPlayer {
       constructor(options) { super({ ...options, env: rig.env }); }
     },

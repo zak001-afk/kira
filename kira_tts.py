@@ -12,6 +12,7 @@ import hashlib
 import html
 import json
 import math
+import kira_language
 from pathlib import Path
 
 try:
@@ -144,13 +145,33 @@ def get_word_timings(audio_path):
         return []
 
 
-def generate_speech(text: str, voice: str = None) -> str | None:
+def select_neural_voice(text, voice=None, language=None):
+    """A requested language wins over an incompatible legacy 'jenny' default."""
+    named = FEMALE_VOICES.get(str(voice or "").lower(), voice)
+    if language is None and named:
+        return named  # Preserve the explicit-voice Python API.
+    code = kira_language.speech_language(text, language or "auto")
+    if named and kira_language.normalize_language("-".join(str(named).split("-")[:2])) == code:
+        return named
+    known = kira_language.LANGUAGES.get(code, {}).get("voice")
+    if known:
+        return known
+    # Rare languages can be provided by a newer Edge catalog. Never substitute
+    # English when no matching voice exists; the browser can try an installed one.
+    candidates = [item for item in list_voices()
+                  if kira_language.normalize_language(item.get("Locale")) == code]
+    candidates.sort(key=lambda item: item.get("Gender") != "Female")
+    return candidates[0].get("ShortName") if candidates else None
+
+
+def generate_speech(text: str, voice: str = None, language: str = None) -> str | None:
     """
     Generate speech audio from text.
     
     Args:
         text: Text to speak
-        voice: Voice name (default: Jenny)
+        voice: Optional explicit voice name
+        language: Reply language; when supplied, overrides an incompatible voice
     
     Returns:
         Path to generated audio file, or None if failed
@@ -162,12 +183,11 @@ def generate_speech(text: str, voice: str = None) -> str | None:
     if not text or not text.strip():
         return None
     
-    # Use default voice if not specified
-    if voice is None:
-        voice = DEFAULT_VOICE
-    elif voice.lower() in FEMALE_VOICES:
-        voice = FEMALE_VOICES[voice.lower()]
-    
+    voice = select_neural_voice(text, voice, language)
+    if not voice:
+        print("[KIRA TTS] No matching voice for the requested language")
+        return None
+
     # Generate cache key based on text and voice
     cache_key = hashlib.md5(f"word-timings-v1:{voice}:{text}".encode()).hexdigest()
     audio_path = CACHE_DIR / f"{cache_key}.mp3"

@@ -20,10 +20,13 @@ import sys
 from threading import Thread
 import unittest
 from urllib.parse import urlsplit
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from kira_ui import KiraUIHandler
+import kira_language
+import kira_commands
 from playwright.sync_api import sync_playwright, expect
 
 
@@ -71,13 +74,15 @@ class CockpitBrowserTests(unittest.TestCase):
         cls.worker.join()
 
     def setUp(self):
-        self.context = self.browser.new_context(viewport={"width": 1440, "height": 900}, locale="fr-FR")
+        self.context = self.browser.new_context(viewport={"width": 1440, "height": 900}, locale="en-US")
         self.page = self.context.new_page()
         self.errors = []
         self.requests = []
         self.tasks = []
         self.offline = False
         self.speech_payload = None
+        self.real_language_policy = False
+        self.language_backend = SimpleNamespace(normalize_command=lambda text: text, parse_simple_command=lambda text: None, ask_chat=lambda text, language=None: kira_commands.message("greeting", language))
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
         self.page.on("request", lambda request: self.requests.append(request))
         self.page.route("**/api/**", self.api)
@@ -91,7 +96,9 @@ class CockpitBrowserTests(unittest.TestCase):
         if self.offline:
             route.fulfill(status=503, content_type="application/json", body=json.dumps({"error": "Backend not available"}))
             return
-        if path == "/api/status":
+        if path == "/api/languages":
+            data = kira_language.available_languages()
+        elif path == "/api/status":
             data = {"online": True, "backend_available": True, "model": "qwen3:0.6b"}
         elif path == "/api/system":
             data = {"cpu_percent": 21.2, "memory_percent": 42.4, "disk_percent": 61.7, "gpu": "Test graphics device"}
@@ -109,6 +116,8 @@ class CockpitBrowserTests(unittest.TestCase):
             data = {"success": True}
         elif path == "/api/command":
             data = {"response": 'Here is literal text: <img id="injected" src=x onerror="window.injected=true">'}
+            if self.real_language_policy:
+                data = kira_commands.process_command(self.language_backend, **route.request.post_data_json)
         elif path == "/api/tts":
             data = self.speech_payload or {"error": "No synthesized voice in the browser test fixture"}
         else:
@@ -148,7 +157,7 @@ class CockpitBrowserTests(unittest.TestCase):
         expect(self.page.locator("#injected")).to_have_count(0)
         expect(self.page.locator("#command-count")).to_have_text("001")
         command = next(request for request in self.requests if request.url.endswith("/api/command"))
-        self.assertEqual(command.post_data_json, {"text": "Bonjour KIRA"})
+        self.assertEqual(command.post_data_json, {"text": "Bonjour KIRA", "reply_language": "auto", "previous_language": "en", "interface_language": "en"})
         self.page.locator("#clear-chat").click()
         expect(self.page.locator(".message-block")).to_have_count(1)
         expect(self.page.locator(".message")).to_contain_text("Channel cleared")
@@ -174,7 +183,7 @@ class CockpitBrowserTests(unittest.TestCase):
         expect(self.page.locator("#motion-status")).to_contain_text("SYSTEM SETTING")
         self.assertEqual(self.page.locator(".reticle").evaluate("el => getComputedStyle(el).animationName"), "none")
         self.page.locator('[data-dialog="settings"]').click()
-        expect(self.page.locator("#voice-language")).to_have_value("fr-FR")
+        expect(self.page.locator("#voice-language")).to_have_value("auto")
         self.page.locator("#voice-language").select_option("ar-SA")
         self.page.locator("#motion-toggle").click()
         expect(self.page.locator("html")).to_have_attribute("data-motion", "on")
@@ -256,6 +265,66 @@ class CockpitBrowserTests(unittest.TestCase):
         self.page.locator("#lip-test").click()
         expect(self.page.locator("#mouth-canvas")).to_be_hidden()
         expect(self.page.locator("#toast")).to_contain_text("Enable Motion: On")
+
+    def test_interface_language_switches_labels_without_translating_history(self):
+        self.load()
+        self.page.locator("#mute").click()
+        self.page.locator("#command").fill("An original message")
+        self.page.locator("#send").click()
+        expect(self.page.locator(".message").last).to_contain_text("Here is literal text")
+        self.page.locator('[data-dialog="settings"]').click()
+        self.page.locator("#interface-language").select_option("fr")
+        expect(self.page.locator("html")).to_have_attribute("lang", "fr")
+        expect(self.page.locator("#dialog-title")).to_have_text("PARAMÈTRES DE L’INTERFACE")
+        expect(self.page.locator("#command")).to_have_attribute("placeholder", "Écrivez votre demande…")
+        expect(self.page.locator(".message").last).to_contain_text("Here is literal text")
+        self.page.reload(wait_until="networkidle")
+        expect(self.page.locator("html")).to_have_attribute("lang", "fr")
+        expect(self.page.locator("#status-text")).to_have_text("LIAISON NEURONALE ACTIVE")
+        self.page.locator('[data-dialog="settings"]').click()
+        self.page.locator("#interface-language").select_option("ar")
+        self.page.evaluate("document.fonts.ready")
+        expect(self.page.locator("html")).to_have_attribute("dir", "rtl")
+        expect(self.page.locator("#dialog-title")).to_have_text("إعدادات الواجهة")
+        expect(self.page.locator("#command")).to_have_attribute("placeholder", "اكتب طلبك…")
+        for width, height in [(1440, 900), (390, 844), (320, 568)]:
+            self.page.set_viewport_size({"width": width, "height": height})
+            self.assertFalse(self.page.evaluate("document.documentElement.scrollWidth > innerWidth"))
+            self.page.locator("#reply-language").scroll_into_view_if_needed()
+            expect(self.page.locator("#reply-language")).to_be_in_viewport()
+
+    def test_detected_reply_language_reaches_actual_tts_request_and_lip_player(self):
+        self.real_language_policy = True
+        self.speech_payload = voiced_fixture()
+        self.load()
+        for text, language, locale, fragment in [("bonjour", "fr", "fr-FR", "Bonjour"), ("مرحبا", "ar", "ar-SA", "مرحباً")]:
+            before = len([request for request in self.requests if request.url.endswith("/api/tts")])
+            self.page.locator("#command").fill(text)
+            self.page.locator("#send").click()
+            expect(self.page.locator(".message").last).to_contain_text(fragment)
+            self.page.wait_for_function("Number(document.getElementById('mouth-canvas').dataset.open) > .15")
+            spoken = [request for request in self.requests if request.url.endswith("/api/tts")]
+            self.assertGreater(len(spoken), before)
+            self.assertEqual(spoken[-1].post_data_json["language"], locale)
+            self.assertNotIn("voice", spoken[-1].post_data_json, "UI must not force Jenny for every language")
+            self.assertEqual(self.page.evaluate("localStorage.getItem('kira.lastReplyLanguage')"), language)
+            expect(self.page.locator(".message").last).to_have_attribute("dir", "auto")
+
+    def test_explicit_french_request_persists_and_english_question_still_gets_french(self):
+        self.real_language_policy = True
+        self.load()
+        self.page.locator("#mute").click()
+        self.page.locator("#command").fill("Réponds-moi en français")
+        self.page.locator("#send").click()
+        expect(self.page.locator(".message").last).to_contain_text("répondrai en français")
+        expect(self.page.locator("#reply-language")).to_have_value("fr")
+        self.page.reload(wait_until="networkidle")
+        expect(self.page.locator("#reply-language")).to_have_value("fr")
+        self.page.locator("#command").fill("Hello")
+        self.page.locator("#send").click()
+        expect(self.page.locator(".message").last).to_contain_text("Bonjour")
+        posted = [request for request in self.requests if request.url.endswith("/api/command")][-1]
+        self.assertEqual(posted.post_data_json["reply_language"], "fr")
 
     def test_offline_state_is_explicit_and_does_not_show_fake_telemetry(self):
         self.offline = True

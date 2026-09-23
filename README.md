@@ -180,11 +180,71 @@ not download an unmerged feature branch: fetch and switch to the branch containi
 the redesign, or merge its pull request before updating `main`.
 
 After updating, close the previous KIRA window and relaunch. The new title and UI
-read **HOLOGRAPHIC COCKPIT 02 / LIP SYNC 01**. The console prints `[KIRA UI]`, the Python interpreter
+read **HOLOGRAPHIC COCKPIT 03 / LANGUAGES 01**. The console prints `[KIRA UI]`, the Python interpreter
 and the absolute `ui/` path so you can identify the actual checkout being served.
 The launcher rejects a missing or older UI bundle instead of quietly mixing versions.
 Keep your `.venv`, configuration and local database; do not use a destructive reset
 to get past a Git warning about local edits.
+
+### Interface language, automatic replies and multilingual voices
+Open **SETTINGS** (or **PARAMÈTRES** after switching to French):
+- **Interface language** changes menus, buttons, statuses, task messages and help
+  immediately. The bundled UI translations are English, French and Arabic; Arabic
+  has RTL layout/text support and a local Noto Sans Arabic font. Past conversation
+  text is deliberately not rewritten or translated by changing this setting.
+- **Replies and voice → Automatic** follows the language of each question or its
+  recognized transcript. Short/ambiguous follow-ups keep the preceding language.
+  Choose a fixed language to always receive replies in it instead.
+- An isolated instruction such as **“Réponds-moi en français”**, **“Reply in
+  Spanish”** or **“أجب بالعربية”** selects that reply language and remembers it.
+  An instruction attached to a question takes precedence for that question,
+  without swallowing the question as a settings command. Translation requests
+  keep their requested target language. Select **Automatic** again to switch
+  freely between languages.
+- **Voice input language** controls the browser recognizer separately. Its Auto
+  option follows the current conversation language. **Web Speech listens in one
+  locale at a time; this is not universal automatic detection of raw microphone
+  audio.** Choose the listening language before switching to a different spoken
+  language if transcription is wrong. Typed questions do not have this limitation.
+
+The same language now travels from `/api/command` or `/api/chat` through the model,
+written response and `/api/tts`. French requests no longer get an English canned
+“sir” greeting. The model prompt no longer forces English, and confidently wrong-
+language replies receive one translation attempt before being saved/displayed.
+Actions are never re-executed for a translation. Conversational replies are not
+cached across language choices or conversation turns.
+
+Edge TTS selects an appropriate voice (for example `fr-FR-DeniseNeural` for French),
+rather than always using Jenny. Browser fallback sets both the utterance locale
+and a matching installed voice, including late-loading voice catalogs. If neither
+engine has a matching voice, KIRA keeps the written reply and displays a notice
+instead of silently reading it with an English voice. Word timing and lip sync
+continue to follow the selected voice. Windows SAPI/pyttsx3 fallback also selects
+by language instead of penalizing French voices.
+
+Detection is local, using `langid` plus explicit-language, short-message and script
+rules. There is no new model download or extra translation cloud service. Install
+the new dependency in the **same environment used to launch KIRA**:
+```powershell
+.\.venv\Scripts\python.exe -m pip install langid
+.\.venv\Scripts\python.exe main_window.py
+```
+`requirements.txt` includes it for fresh installs. Without it, explicit settings
+and common-language/script heuristics still work, but automatic coverage is
+reduced and Settings reports it. A language appearing in the catalog does **not**
+guarantee that the chosen Ollama model or a speech provider supports it. The
+configured small model may need to be replaced with a stronger multilingual model
+for reliable answers. Detection can be ambiguous, especially on short or mixed-
+language inputs; select a fixed reply language when needed. Existing desktop
+command parsers/integrations retain their own language coverage.
+
+Preferences are saved locally, independently for interface, replies and microphone.
+The native window now uses a persistent pywebview profile instead of private mode:
+`%LOCALAPPDATA%/KIRA/WebViewProfile` on Windows (XDG data directory elsewhere).
+This profile is outside the checkout/build and does not modify your configuration
+or conversation database. Native Windows listening tests and real model-language
+quality still need checking on the target PC; automated tests use model/audio
+fixtures and never execute desktop actions.
 
 ### Speech-reactive holographic field
 KIRA's spoken replies drive the red field, portrait drift and voice waveform.
@@ -253,6 +313,8 @@ node --check ui/speech.mjs
 node --check ui/hologram.mjs
 node --check ui/lips.mjs
 node --check ui/mouth.mjs
+node --check ui/i18n.mjs
+node --check ui/locale.mjs
 node --test tests/*.test.mjs
 python -m unittest discover -s tests -p "test_*.py"
 ```
@@ -286,6 +348,8 @@ Windows/WebView2 listening and desktop-control test.
 - **kira_tasks.py** — Task, reminder, and timer management
 - **kira_plugins.py** — Plugin discovery and registration system
 - **kira_api.py** — REST API bridge for web UI
+- **kira_language.py** — Offline detection, explicit-language policy and voice matching
+- **kira_commands.py** — Shared native/web command path with language metadata
 
 ### Data Flow
 

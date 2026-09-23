@@ -1,3 +1,4 @@
+import { speechLocale, matchingVoice } from "./locale.mjs";
 import { VisemeTimeline, wordTimeline, REST_MOUTH } from "./lips.mjs";
 
 // Audio-driven field and mouth timing. Only playback, never the microphone.
@@ -169,10 +170,11 @@ export class SpeechMotion {
 }
 
 export class SpeechPlayer {
-  constructor({ fetchAudio, onState = () => {}, env = globalThis, motion } = {}) {
+  constructor({ fetchAudio, onState = () => {}, onNotice = () => {}, env = globalThis, motion } = {}) {
     this.env = env;
     this.fetchAudio = fetchAudio;
     this.onState = onState;
+    this.onNotice = onNotice;
     this.motion = motion || new SpeechMotion(() => env.performance.now());
     this.enabled = true;
     this.session = null;
@@ -218,6 +220,7 @@ export class SpeechPlayer {
     this.clearTimer(session);
     session.abort.abort();
     this.releaseMedia(session);
+    if (session.voicesChanged) this.env.speechSynthesis?.removeEventListener?.("voiceschanged", session.voicesChanged);
     if (session.utterance) this.env.speechSynthesis?.cancel();
     this.motion.stop();
     this.onState("READY");
@@ -233,18 +236,18 @@ export class SpeechPlayer {
     if (!enabled) this.stop();
   }
 
-  async speak(text) {
+  async speak(text, { language = "en-US" } = {}) {
     this.stop();
     const cleanText = cleanForSpeech(text);
     if (!this.enabled || !cleanText) return;
-    const session = { abort: new this.env.AbortController(), fallback: false };
+    const session = { abort: new this.env.AbortController(), fallback: false, language: speechLocale(language) };
     this.session = session;
     this.unlock();
     this.onState("THINKING");
     // Also handles a fetch implementation that never resolves after abort.
     session.timer = this.env.setTimeout(() => this.fallback(session, cleanText), 15000);
     try {
-      const data = await this.fetchAudio(cleanText, { signal: session.abort.signal });
+      const data = await this.fetchAudio(cleanText, { signal: session.abort.signal, language: session.language });
       if (!this.isCurrent(session) || session.fallback) return;
       this.clearTimer(session);
       if (data.error || !data.audio) throw new Error(data.error || "No speech audio");
@@ -303,41 +306,70 @@ export class SpeechPlayer {
     this.motion.stop();
     const synth = this.env.speechSynthesis;
     if (!synth || !this.env.SpeechSynthesisUtterance) {
+      this.onNotice("voice-unavailable", { language: session.language });
       this.finish(session);
       return;
     }
+    const start = voice => {
+      if (!this.isCurrent(session)) return;
+      this.clearTimer(session);
+      if (session.voicesChanged) synth.removeEventListener?.("voiceschanged", session.voicesChanged);
+      session.voicesChanged = null;
+      try {
+        const utterance = session.utterance = new this.env.SpeechSynthesisUtterance(text);
+        utterance.lang = session.language;
+        utterance.voice = voice;
+        utterance.rate = 0.95;
+        utterance.pitch = 1.1;
+        utterance.volume = 1;
+        utterance.onstart = () => {
+          if (!this.isCurrent(session)) return;
+          this.clearTimer(session);
+          this.motion.startBrowser(text, utterance.rate);
+          this.onState("SPEAKING");
+        };
+        utterance.onboundary = event => {
+          if (this.isCurrent(session) && (!event.name || event.name === "word")) this.motion.boundary(event.charIndex);
+        };
+        utterance.onpause = () => {
+          if (!this.isCurrent(session)) return;
+          this.motion.pause(); this.onState("READY");
+        };
+        utterance.onresume = () => {
+          if (!this.isCurrent(session)) return;
+          this.motion.resume(); this.onState("SPEAKING");
+        };
+        utterance.onend = () => this.finish(session);
+        utterance.onerror = () => {
+          if (this.isCurrent(session)) this.onNotice("voice-unavailable", { language: session.language });
+          this.finish(session);
+        };
+        session.timer = this.env.setTimeout(() => this.finish(session), 10000);
+        synth.speak(utterance);
+      } catch {
+        this.onNotice("voice-unavailable", { language: session.language });
+        this.finish(session);
+      }
+    };
+    const unavailable = () => {
+      if (!this.isCurrent(session)) return;
+      this.onNotice("voice-unavailable", { language: session.language });
+      this.finish(session);
+    };
     try {
-      const utterance = session.utterance = new this.env.SpeechSynthesisUtterance(text);
-      utterance.rate = 0.95;
-      utterance.pitch = 1.1;
-      utterance.volume = 1;
-      const voices = synth.getVoices();
-      const voice = voices.find((v) => v.lang.startsWith("en") && /Female|Samantha|Zira/.test(v.name))
-        || voices.find((v) => v.lang.startsWith("en"));
-      if (voice) utterance.voice = voice;
-      utterance.onstart = () => {
+      const voice = matchingVoice(synth.getVoices(), session.language);
+      if (voice) { start(voice); return; }
+      // Browser voice catalogs can load late. Wait once, with cancellation and a
+      // deadline; never silently read French through an English default voice.
+      if (!synth.addEventListener) { unavailable(); return; }
+      session.voicesChanged = () => {
         if (!this.isCurrent(session)) return;
-        this.clearTimer(session);
-        this.motion.startBrowser(text, utterance.rate);
-        this.onState("SPEAKING");
+        const found = matchingVoice(synth.getVoices(), session.language);
+        if (found) start(found);
       };
-      utterance.onboundary = (event) => {
-        if (this.isCurrent(session) && (!event.name || event.name === "word")) this.motion.boundary(event.charIndex);
-      };
-      utterance.onpause = () => {
-        if (!this.isCurrent(session)) return;
-        this.motion.pause();
-        this.onState("READY");
-      };
-      utterance.onresume = () => {
-        if (!this.isCurrent(session)) return;
-        this.motion.resume();
-        this.onState("SPEAKING");
-      };
-      utterance.onend = utterance.onerror = () => this.finish(session);
-      session.timer = this.env.setTimeout(() => this.finish(session), 10000);
-      synth.speak(utterance);
-    } catch { this.finish(session); }
+      synth.addEventListener("voiceschanged", session.voicesChanged);
+      session.timer = this.env.setTimeout(unavailable, 1200);
+    } catch { unavailable(); }
   }
 
   destroy() {

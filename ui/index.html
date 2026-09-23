@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="kira-ui-build" content="holographic-cockpit-02-lip-sync-01" />
+    <meta name="kira-ui-build" content="holographic-cockpit-03-languages-01" />
     <meta name="theme-color" content="#060708" />
     <meta name="description" content="KIRA — your local neural computer agent." />
-    <title>KIRA // HOLOGRAPHIC COCKPIT 02 / LIP SYNC 01</title>
+    <title>KIRA // HOLOGRAPHIC COCKPIT 03 / LANGUAGES 01</title>
     <link rel="icon" href="./assets/kira-mark.svg" type="image/svg+xml" />
     <link rel="preload" href="./assets/fonts/rajdhani-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="./assets/kira-hologram.webp" as="image" />
     <link rel="preload" href="./assets/kira-mouth-interior.webp" as="image" />
-    <link rel="stylesheet" href="./style.css?v=lip-sync-1" />
+    <link rel="stylesheet" href="./style.css?v=languages-1" />
   </head>
   <body>
     <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -44,49 +44,49 @@
       <div class="screen-vignette"></div>
     </div>
 
-    <main id="hud" aria-label="KIRA neural control interface">
+    <main id="hud" aria-label="KIRA neural control interface" data-i18n-aria-label="KIRA neural control interface" >
       <section class="instrument-panel conversation-panel" aria-labelledby="conversation-heading">
         <div class="panel-surface">
           <header class="brand-header">
-            <div class="brand"><h1>KIRA<span class="brand-dot">.</span></h1><span>NEURAL INTERFACE</span></div>
-            <div class="session-info"><span>ACTIVE SESSION</span><time id="clock-time">00:00:00</time><span id="clock-date">LOCAL INSTANCE</span></div>
+            <div class="brand"><h1>KIRA<span class="brand-dot">.</span></h1><span data-i18n="NEURAL INTERFACE" >NEURAL INTERFACE</span></div>
+            <div class="session-info"><span data-i18n="ACTIVE SESSION" >ACTIVE SESSION</span><time id="clock-time">00:00:00</time><span id="clock-date" data-i18n="LOCAL INSTANCE" >LOCAL INSTANCE</span></div>
           </header>
           <div class="panel-heading">
-            <h2 id="conversation-heading"><svg class="icon"><use href="#i-terminal" /></svg>CONVERSATION</h2>
-            <button class="icon-button small" id="clear-chat" type="button" aria-label="Clear displayed conversation" title="Clear displayed messages (saved history is kept)"><svg class="icon"><use href="#i-plus" /></svg></button>
+            <h2 id="conversation-heading"><svg class="icon"><use href="#i-terminal" /></svg><span data-i18n="CONVERSATION">CONVERSATION</span></h2>
+            <button class="icon-button small" id="clear-chat" type="button" aria-label="Clear displayed conversation" title="Clear displayed messages (saved history is kept)" data-i18n-aria-label="Clear displayed conversation" data-i18n-title="Clear displayed messages (saved history is kept)" ><svg class="icon"><use href="#i-plus" /></svg></button>
           </div>
-          <div class="channel-heading"><span><i class="tiny-light"></i> OPERATOR CHANNEL</span><span>CH — 01</span></div>
+          <div class="channel-heading"><span><i class="tiny-light"></i> <span data-i18n="OPERATOR CHANNEL">OPERATOR CHANNEL</span></span><span>CH — 01</span></div>
 
-          <div class="conversation" id="conversation" role="log" aria-label="Conversation with KIRA" aria-live="polite" aria-relevant="additions">
+          <div class="conversation" id="conversation" role="log" aria-label="Conversation with KIRA" aria-live="polite" aria-relevant="additions" data-i18n-aria-label="Conversation with KIRA" >
             <article class="message-block">
               <span class="message-avatar"><svg class="icon"><use href="#i-kira" /></svg></span>
-              <div class="message-content"><div class="message-meta"><span>KIRA</span><time id="boot-time"></time></div><p class="message">Hello, Operator.<br />Neural interface initialized.<br />How can I assist you today?</p></div>
+              <div class="message-content"><div class="message-meta"><span>KIRA</span><time id="boot-time"></time></div><p class="message"><span data-i18n="Hello, Operator.">Hello, Operator.</span><br /><span data-i18n="Neural interface initialized.">Neural interface initialized.</span><br /><span data-i18n="How can I assist you today?">How can I assist you today?</span></p></div>
             </article>
           </div>
-          <div class="conversation-empty" id="conversation-empty" aria-hidden="true"><svg class="icon"><use href="#i-kira" /></svg><span>YOUR NEXT COMMAND.<br />A WORLD OF POSSIBILITIES.</span><div class="empty-rule"></div></div>
+          <div class="conversation-empty" id="conversation-empty" aria-hidden="true"><svg class="icon"><use href="#i-kira" /></svg><span><span data-i18n="YOUR NEXT COMMAND.">YOUR NEXT COMMAND.</span><br /><span data-i18n="A WORLD OF POSSIBILITIES.">A WORLD OF POSSIBILITIES.</span></span><div class="empty-rule"></div></div>
 
           <div class="command-area">
             <div class="voice-channel">
-              <div class="voice-channel-label"><span><i class="tiny-light"></i> VOICE SYNC</span><button id="mute" class="icon-button" type="button" aria-label="Mute voice output" aria-pressed="false" title="Mute voice output"><svg class="icon"><use href="#i-volume" /></svg></button></div>
+              <div class="voice-channel-label"><span><i class="tiny-light"></i> <span data-i18n="VOICE SYNC">VOICE SYNC</span></span><button id="mute" class="icon-button" type="button" aria-label="Mute voice output" aria-pressed="false" title="Mute voice output" data-i18n-aria-label="Mute voice output" data-i18n-title="Mute voice output" ><svg class="icon"><use href="#i-volume" /></svg></button></div>
               <svg class="voice-wave" viewBox="0 0 250 34" preserveAspectRatio="none" aria-hidden="true"><path class="wave-axis" d="M0 17h250" /><path id="voice-wave" d="M0 17h250" /></svg>
               <div class="voice-meter" aria-hidden="true"><span id="voice-level"></span></div>
-              <span id="motion-status" class="motion-status" role="status">VOICE IDLE</span>
+              <span id="motion-status" class="motion-status" role="status" data-i18n="VOICE IDLE" >VOICE IDLE</span>
             </div>
             <form id="command-form" class="command-box">
-              <button id="mic" class="icon-button mic-button" type="button" aria-label="Start voice input" title="Voice input"><svg class="icon"><use href="#i-mic" /></svg></button>
-              <label for="command" class="sr-only">Your command to KIRA</label>
-              <input id="command" type="text" placeholder="Type a command…" autocomplete="off" maxlength="8000" />
-              <button id="send" type="submit" aria-label="Send command" title="Send command"><svg class="icon"><use href="#i-send" /></svg></button>
+              <button id="mic" class="icon-button mic-button" type="button" aria-label="Start voice input" title="Voice input" data-i18n-aria-label="Start voice input" data-i18n-title="Voice input" ><svg class="icon"><use href="#i-mic" /></svg></button>
+              <label for="command" class="sr-only" data-i18n="Your command to KIRA" >Your command to KIRA</label>
+              <input id="command" dir="auto" type="text" placeholder="Type a command…" autocomplete="off" maxlength="8000"  data-i18n-placeholder="Type a command…" />
+              <button id="send" type="submit" aria-label="Send command" title="Send command" data-i18n-aria-label="Send command" data-i18n-title="Send command" ><svg class="icon"><use href="#i-send" /></svg></button>
             </form>
-            <div class="command-hint"><span><kbd>↵</kbd> TO SEND</span><span><kbd>CTRL K</kbd> COMMAND</span></div>
+            <div class="command-hint"><span><kbd>↵</kbd> <span data-i18n="TO SEND">TO SEND</span></span><span><kbd>CTRL K</kbd> <span data-i18n="COMMAND">COMMAND</span></span></div>
           </div>
           <div class="panel-bottom-code"><span>KIRA_OS / CONVERSATION</span><span>01</span></div>
         </div>
         <span class="panel-bolt bolt-tl" aria-hidden="true"></span><span class="panel-bolt bolt-br" aria-hidden="true"></span>
       </section>
 
-      <section class="neural-stage" aria-label="KIRA holographic neural projection">
-        <div class="stage-topline"><span><i class="tiny-light"></i> NEURAL COMPUTER AGENT</span><span id="ui-build">COCKPIT 02 / LIP SYNC 01</span></div>
+      <section class="neural-stage" aria-label="KIRA holographic neural projection" data-i18n-aria-label="KIRA holographic neural projection" >
+        <div class="stage-topline"><span><i class="tiny-light"></i> <span data-i18n="NEURAL COMPUTER AGENT">NEURAL COMPUTER AGENT</span></span><span id="ui-build">COCKPIT 03 / LANGUAGES 01</span></div>
         <div class="stage-coordinate coordinate-left" aria-hidden="true">SYS.01<br /><span>NEURAL<br />PROJECTION</span><b>+ 00.000</b></div>
         <div class="stage-coordinate coordinate-right" aria-hidden="true">KIRA.AI<br /><span>COGNITIVE<br />INTERFACE</span><b>00.000 +</b></div>
 
@@ -98,12 +98,12 @@
           </div>
           <div class="portrait-float"><div class="portrait" id="portrait">
             <div class="portrait-surface">
-              <img id="portrait-image" src="./assets/kira-hologram.webp" width="896" height="1200" alt="KIRA, a blue-eyed android whose lips animate with spoken replies" fetchpriority="high" />
+              <img id="portrait-image" src="./assets/kira-hologram.webp" width="896" height="1200" alt="KIRA, a blue-eyed android whose lips animate with spoken replies" fetchpriority="high"  data-i18n-alt="KIRA, a blue-eyed android whose lips animate with spoken replies" />
               <canvas id="mouth-canvas" class="mouth-canvas" width="304" height="224" aria-hidden="true" hidden></canvas>
               <img id="mouth-texture" src="./assets/kira-mouth-interior.webp" width="180" height="62" alt="" hidden />
             </div>
             <div class="portrait-scanlines" aria-hidden="true"></div>
-            <span class="forehead-id" aria-hidden="true">KIRA<small>NEURAL INTERFACE</small></span>
+            <span class="forehead-id" aria-hidden="true">KIRA<small data-i18n="NEURAL INTERFACE" >NEURAL INTERFACE</small></span>
           </div></div>
           <svg class="neural-orbits" viewBox="0 0 600 600" fill="none" aria-hidden="true">
             <g class="orbit orbit-one"><ellipse cx="300" cy="300" rx="284" ry="74" /><ellipse cx="300" cy="300" rx="278" ry="69" /><circle cx="584" cy="300" r="3" /></g>
@@ -113,112 +113,117 @@
           <div class="projection-beam" aria-hidden="true"></div>
           <div class="hologram-platform" aria-hidden="true"><img src="./assets/projector.svg" alt="" /><div class="projector-light"></div></div>
         </div>
-        <div class="core-caption"><span class="caption-line"></span><span>KIRA <b>//</b> NEURAL PROCESSOR</span><span class="caption-line"></span></div>
-        <div class="stage-status"><span class="status-pill" id="connection-pill"><i class="status-dot"></i><span id="status-text">CONNECTING</span></span><span class="stage-status-detail">AWAITING YOUR COMMAND</span></div>
+        <div class="core-caption"><span class="caption-line"></span><span>KIRA <b>//</b> <span data-i18n="NEURAL PROCESSOR">NEURAL PROCESSOR</span></span><span class="caption-line"></span></div>
+        <div class="stage-status"><span class="status-pill" id="connection-pill"><i class="status-dot"></i><span id="status-text" data-i18n="CONNECTING" >CONNECTING</span></span><span class="stage-status-detail" data-i18n="AWAITING YOUR COMMAND" >AWAITING YOUR COMMAND</span></div>
       </section>
 
       <aside class="instrument-panel telemetry-panel" aria-labelledby="telemetry-heading">
         <div class="panel-surface">
           <div class="telemetry-topline"><span><svg class="icon"><use href="#i-activity" /></svg> SYS–MON–7A</span><span class="hardware-revision">REV. 08</span></div>
-          <div class="panel-heading"><h2 id="telemetry-heading">SYSTEM TELEMETRY</h2><span class="live-indicator" id="telemetry-live">WAIT</span></div>
+          <div class="panel-heading"><h2 id="telemetry-heading" data-i18n="SYSTEM TELEMETRY" >SYSTEM TELEMETRY</h2><span class="live-indicator" id="telemetry-live" data-i18n="WAIT" >WAIT</span></div>
           <div class="telemetry-body">
             <section class="telemetry-section neural-overview" aria-labelledby="neural-heading">
-              <h3 id="neural-heading">NEURAL INTERFACE STATUS</h3>
+              <h3 id="neural-heading" data-i18n="NEURAL INTERFACE STATUS" >NEURAL INTERFACE STATUS</h3>
               <div class="neural-overview-grid"><img class="neural-map" src="./assets/neural-map.svg" alt="" /><dl class="data-rows">
-                <div><dt>CORE LINK</dt><dd id="neural-status">CONNECTING</dd></div>
-                <div><dt>API LATENCY</dt><dd id="latency">—</dd></div>
-                <div><dt>SESSION UPTIME</dt><dd id="uptime">00:00:00</dd></div>
-                <div><dt>INSTANCE</dt><dd>LOCAL</dd></div>
+                <div><dt data-i18n="CORE LINK" >CORE LINK</dt><dd id="neural-status" data-i18n="CONNECTING" >CONNECTING</dd></div>
+                <div><dt data-i18n="API LATENCY" >API LATENCY</dt><dd id="latency">—</dd></div>
+                <div><dt data-i18n="SESSION UPTIME" >SESSION UPTIME</dt><dd id="uptime">00:00:00</dd></div>
+                <div><dt data-i18n="INSTANCE" >INSTANCE</dt><dd data-i18n="LOCAL" >LOCAL</dd></div>
               </dl></div>
             </section>
             <section class="telemetry-section" aria-labelledby="cognitive-heading">
-              <h3 id="cognitive-heading">COGNITIVE CORE METRICS</h3>
+              <h3 id="cognitive-heading" data-i18n="COGNITIVE CORE METRICS" >COGNITIVE CORE METRICS</h3>
               <dl class="data-rows">
-                <div><dt>NEURAL ENGINE</dt><dd id="model-name" class="model-name">—</dd></div>
-                <div><dt>PROCESSING STATE</dt><dd class="activity"><i id="activity-dot" class="activity-dot"></i><span id="activity">STANDBY</span></dd></div>
-                <div><dt>LAST RESPONSE</dt><dd id="response-time">—</dd></div>
-                <div><dt>SESSION COMMANDS</dt><dd id="command-count">000</dd></div>
+                <div><dt data-i18n="NEURAL ENGINE" >NEURAL ENGINE</dt><dd id="model-name" class="model-name">—</dd></div>
+                <div><dt data-i18n="PROCESSING STATE" >PROCESSING STATE</dt><dd class="activity"><i id="activity-dot" class="activity-dot"></i><span id="activity" data-i18n="STANDBY" >STANDBY</span></dd></div>
+                <div><dt data-i18n="LAST RESPONSE" >LAST RESPONSE</dt><dd id="response-time">—</dd></div>
+                <div><dt data-i18n="SESSION COMMANDS" >SESSION COMMANDS</dt><dd id="command-count">000</dd></div>
               </dl>
-              <div class="neural-load"><span>NEURAL ACTIVITY</span><div class="activity-segments" id="activity-segments" aria-hidden="true"></div></div>
+              <div class="neural-load"><span data-i18n="NEURAL ACTIVITY" >NEURAL ACTIVITY</span><div class="activity-segments" id="activity-segments" aria-hidden="true"></div></div>
             </section>
             <section class="telemetry-section resources-section" aria-labelledby="resources-heading">
-              <h3 id="resources-heading">SYSTEM RESOURCES</h3>
-              <div class="resource-row"><span>CPU LOAD</span><div class="stat-bar"><span id="cpu-bar"></span></div><strong id="cpu">—</strong></div>
-              <div class="resource-row"><span>MEMORY</span><div class="stat-bar"><span id="memory-bar"></span></div><strong id="memory">—</strong></div>
-              <div class="resource-row"><span>DISK USAGE</span><div class="stat-bar"><span id="disk-bar"></span></div><strong id="disk">—</strong></div>
-              <dl class="data-rows gpu-row"><div><dt>GRAPHICS</dt><dd id="gpu">—</dd></div></dl>
+              <h3 id="resources-heading" data-i18n="SYSTEM RESOURCES" >SYSTEM RESOURCES</h3>
+              <div class="resource-row"><span data-i18n="CPU LOAD" >CPU LOAD</span><div class="stat-bar"><span id="cpu-bar"></span></div><strong id="cpu">—</strong></div>
+              <div class="resource-row"><span data-i18n="MEMORY" >MEMORY</span><div class="stat-bar"><span id="memory-bar"></span></div><strong id="memory">—</strong></div>
+              <div class="resource-row"><span data-i18n="DISK USAGE" >DISK USAGE</span><div class="stat-bar"><span id="disk-bar"></span></div><strong id="disk">—</strong></div>
+              <dl class="data-rows gpu-row"><div><dt data-i18n="GRAPHICS" >GRAPHICS</dt><dd id="gpu">—</dd></div></dl>
             </section>
             <section class="telemetry-section connection-section" aria-labelledby="connection-heading">
-              <h3 id="connection-heading">CONNECTION STATUS</h3>
+              <h3 id="connection-heading" data-i18n="CONNECTION STATUS" >CONNECTION STATUS</h3>
               <div class="connection-grid"><span class="shield-emblem"><svg class="icon"><use href="#i-shield" /></svg></span><dl class="data-rows">
-                <div><dt>BACKEND</dt><dd id="backend-state">WAITING</dd></div>
-                <div><dt>TRANSPORT</dt><dd id="transport">—</dd></div>
-                <div><dt>VOICE OUTPUT</dt><dd id="voice-output">ENABLED</dd></div>
+                <div><dt data-i18n="BACKEND" >BACKEND</dt><dd id="backend-state" data-i18n="WAITING" >WAITING</dd></div>
+                <div><dt data-i18n="TRANSPORT" >TRANSPORT</dt><dd id="transport">—</dd></div>
+                <div><dt data-i18n="VOICE OUTPUT" >VOICE OUTPUT</dt><dd id="voice-output" data-i18n="ENABLED" >ENABLED</dd></div>
               </dl></div>
             </section>
           </div>
-          <nav class="system-toolbar" aria-label="System tools">
-            <button type="button" data-dialog="diagnostics"><svg class="icon"><use href="#i-activity" /></svg><span>DIAGNOSTICS</span></button>
-            <button type="button" data-dialog="tasks"><span class="tool-icon"><svg class="icon"><use href="#i-tasks" /></svg><b id="task-count">0</b></span><span>TASKS</span></button>
-            <button type="button" id="fullscreen"><svg class="icon"><use href="#i-expand" /></svg><span>FULLSCREEN</span></button>
-            <button type="button" data-dialog="settings"><svg class="icon"><use href="#i-settings" /></svg><span>SETTINGS</span></button>
+          <nav class="system-toolbar" aria-label="System tools" data-i18n-aria-label="System tools" >
+            <button type="button" data-dialog="diagnostics"><svg class="icon"><use href="#i-activity" /></svg><span data-i18n="DIAGNOSTICS" >DIAGNOSTICS</span></button>
+            <button type="button" data-dialog="tasks"><span class="tool-icon"><svg class="icon"><use href="#i-tasks" /></svg><b id="task-count">0</b></span><span data-i18n="TASKS" >TASKS</span></button>
+            <button type="button" id="fullscreen"><svg class="icon"><use href="#i-expand" /></svg><span data-i18n="FULLSCREEN" >FULLSCREEN</span></button>
+            <button type="button" data-dialog="settings"><svg class="icon"><use href="#i-settings" /></svg><span data-i18n="SETTINGS" >SETTINGS</span></button>
           </nav>
           <div class="panel-bottom-code"><span>KIRA_OS / SYSTEM MONITOR</span><span>02</span></div>
         </div>
         <span class="panel-bolt bolt-tr" aria-hidden="true"></span><span class="panel-bolt bolt-bl" aria-hidden="true"></span>
       </aside>
 
-      <footer class="control-deck" aria-label="Command console">
+      <footer class="control-deck" aria-label="Command console" data-i18n-aria-label="Command console" >
         <div class="deck-wing deck-wing-left">
-          <div class="deck-section-label"><i class="tiny-light"></i> QUICK ACCESS <span>01—04</span></div>
+          <div class="deck-section-label"><i class="tiny-light"></i> <span data-i18n="QUICK ACCESS">QUICK ACCESS</span> <span>01—04</span></div>
           <div class="quick-actions">
-            <button type="button" data-command="open chrome"><svg class="icon"><use href="#i-globe" /></svg><span>OPEN BROWSER<small>APPLICATION CONTROL</small></span><b>01</b></button>
-            <button type="button" data-prompt="search for "><svg class="icon"><use href="#i-search" /></svg><span>SEARCH WEB<small>INFORMATION RETRIEVAL</small></span><b>02</b></button>
-            <button type="button" data-command="analyze screen"><svg class="icon"><use href="#i-screen" /></svg><span>ANALYZE SCREEN<small>VISUAL RECOGNITION</small></span><b>03</b></button>
-            <button type="button" data-prompt="learn about "><svg class="icon"><use href="#i-learn" /></svg><span>LEARN<small>KNOWLEDGE ACQUISITION</small></span><b>04</b></button>
+            <button type="button" data-command="open chrome"><svg class="icon"><use href="#i-globe" /></svg><span><span data-i18n="OPEN BROWSER">OPEN BROWSER</span><small data-i18n="APPLICATION CONTROL" >APPLICATION CONTROL</small></span><b>01</b></button>
+            <button type="button" data-prompt="search for "><svg class="icon"><use href="#i-search" /></svg><span><span data-i18n="SEARCH WEB">SEARCH WEB</span><small data-i18n="INFORMATION RETRIEVAL" >INFORMATION RETRIEVAL</small></span><b>02</b></button>
+            <button type="button" data-command="analyze screen"><svg class="icon"><use href="#i-screen" /></svg><span><span data-i18n="ANALYZE SCREEN">ANALYZE SCREEN</span><small data-i18n="VISUAL RECOGNITION" >VISUAL RECOGNITION</small></span><b>03</b></button>
+            <button type="button" data-prompt="learn about "><svg class="icon"><use href="#i-learn" /></svg><span><span data-i18n="LEARN">LEARN</span><small data-i18n="KNOWLEDGE ACQUISITION" >KNOWLEDGE ACQUISITION</small></span><b>04</b></button>
           </div>
         </div>
-        <div class="deck-center"><div class="console-screws" aria-hidden="true"></div><span class="deck-model">KIRA / COGNITIVE SYSTEM V.08</span><div class="console-brand">KIRA</div><span class="console-subtitle">NEURAL INTERFACE</span><div class="console-status"><span class="console-line"></span><span>LOCAL INTELLIGENCE. LIMITLESS POTENTIAL.</span><span class="console-line"></span></div></div>
+        <div class="deck-center"><div class="console-screws" aria-hidden="true"></div><span class="deck-model">KIRA / COGNITIVE SYSTEM V.08</span><div class="console-brand">KIRA</div><span class="console-subtitle" data-i18n="NEURAL INTERFACE" >NEURAL INTERFACE</span><div class="console-status"><span class="console-line"></span><span data-i18n="LOCAL INTELLIGENCE. LIMITLESS POTENTIAL." >LOCAL INTELLIGENCE. LIMITLESS POTENTIAL.</span><span class="console-line"></span></div></div>
         <div class="deck-wing deck-wing-right">
-          <div class="deck-section-label">NEURAL CONTROLS <span>05—08</span></div>
+          <div class="deck-section-label"><span data-i18n="NEURAL CONTROLS">NEURAL CONTROLS</span> <span>05—08</span></div>
           <div class="quick-actions">
-            <button type="button" id="deck-voice"><svg class="icon"><use href="#i-volume" /></svg><span>VOICE OUTPUT<small id="deck-voice-state">ENABLED</small></span><i class="button-light"></i></button>
-            <button type="button" id="deck-motion"><svg class="icon"><use href="#i-activity" /></svg><span>HOLOGRAM<small id="deck-motion-state">MOTION: AUTO</small></span><i class="button-light"></i></button>
-            <button type="button" data-dialog="tasks"><svg class="icon"><use href="#i-tasks" /></svg><span>MY TASKS<small>PERSONAL WORKSPACE</small></span><b>07</b></button>
-            <button type="button" data-command="system info"><svg class="icon"><use href="#i-terminal" /></svg><span>SYSTEM STATUS<small>LOCAL DIAGNOSTICS</small></span><b>08</b></button>
+            <button type="button" id="deck-voice"><svg class="icon"><use href="#i-volume" /></svg><span><span data-i18n="VOICE OUTPUT">VOICE OUTPUT</span><small id="deck-voice-state" data-i18n="ENABLED" >ENABLED</small></span><i class="button-light"></i></button>
+            <button type="button" id="deck-motion"><svg class="icon"><use href="#i-activity" /></svg><span><span data-i18n="HOLOGRAM">HOLOGRAM</span><small id="deck-motion-state">MOTION: AUTO</small></span><i class="button-light"></i></button>
+            <button type="button" data-dialog="tasks"><svg class="icon"><use href="#i-tasks" /></svg><span><span data-i18n="MY TASKS">MY TASKS</span><small data-i18n="PERSONAL WORKSPACE" >PERSONAL WORKSPACE</small></span><b>07</b></button>
+            <button type="button" data-command="system info"><svg class="icon"><use href="#i-terminal" /></svg><span><span data-i18n="SYSTEM STATUS">SYSTEM STATUS</span><small data-i18n="LOCAL DIAGNOSTICS" >LOCAL DIAGNOSTICS</small></span><b>08</b></button>
           </div>
         </div>
       </footer>
     </main>
 
     <dialog id="system-dialog" class="system-dialog" aria-labelledby="dialog-title">
-      <div class="dialog-heading"><div><span class="eyebrow">KIRA // CONTROL PANEL</span><h2 id="dialog-title">SYSTEM SETTINGS</h2></div><button type="button" id="close-dialog" class="icon-button" aria-label="Close panel"><svg class="icon"><use href="#i-close" /></svg></button></div>
+      <div class="dialog-heading"><div><span class="eyebrow" data-i18n="KIRA // CONTROL PANEL" >KIRA // CONTROL PANEL</span><h2 id="dialog-title" data-i18n="SYSTEM SETTINGS" >SYSTEM SETTINGS</h2></div><button type="button" id="close-dialog" class="icon-button" aria-label="Close panel" data-i18n-aria-label="Close panel" ><svg class="icon"><use href="#i-close" /></svg></button></div>
       <section id="settings-panel" class="dialog-panel" hidden>
-        <p class="dialog-description">Configure your neural interface. Preferences are saved on this device.</p>
-        <div class="setting-row"><div><h3>Holographic motion</h3><p>Auto follows your system’s reduced-motion preference.</p></div><button id="motion-toggle" class="control-button" type="button">MOTION: AUTO</button></div>
-        <div class="setting-row"><div><h3>Voice input language</h3><p>Language used by browser speech recognition.</p></div><label class="sr-only" for="voice-language">Voice input language</label><select id="voice-language"><option value="en-US">English</option><option value="fr-FR">Français</option><option value="ar-SA">العربية</option></select></div>
-        <div class="setting-row"><div><h3>Voice response</h3><p>Read KIRA’s replies aloud.</p></div><button id="settings-voice" class="control-button" type="button">VOICE: ON</button></div>
-        <div class="setting-row"><div><h3>Lip synchronization</h3><p>Animate the lips and jaw during spoken replies. Respects the motion preference above.</p></div><button id="lips-toggle" class="control-button" type="button" aria-pressed="true">LIPS: ON</button></div>
-        <p class="settings-note">2D lip animation uses playback volume and word timing when available. Individual speech shapes are estimated from the text, not exact phoneme recognition or a generated talking video.</p>
+        <p class="dialog-description" data-i18n="Configure your neural interface. Preferences are saved on this device." >Configure your neural interface. Preferences are saved on this device.</p>
+        <div class="setting-row language-row"><div><h3 data-i18n="Interface language" >Interface language</h3><p data-i18n="Menus, buttons and system messages. This does not change the language of past conversations." >Menus, buttons and system messages. This does not change the language of past conversations.</p></div><label class="sr-only" for="interface-language" data-i18n="Interface language" >Interface language</label><select id="interface-language" dir="auto"><option value="en">English</option><option value="fr">Français</option><option value="ar">العربية</option></select></div>
+        <div class="setting-row language-row"><div><h3 data-i18n="Replies and voice" >Replies and voice</h3><p data-i18n="Automatic follows your questions. A fixed language overrides detection. “Reply in French” also works." >Automatic follows your questions. A fixed language overrides detection. “Reply in French” also works.</p></div><label class="sr-only" for="reply-language" data-i18n="Replies and voice" >Replies and voice</label><select id="reply-language" dir="auto"><option value="auto">Automatic — follow my question</option></select></div>
+        <p id="active-language" class="language-status" role="status"></p>
+        <p class="settings-note" data-i18n="Language support depends on the local AI model and available voices. Short or ambiguous questions keep the previous language." >Language support depends on the local AI model and available voices. Short or ambiguous questions keep the previous language.</p>
+        <p id="language-detector-warning" class="settings-note" hidden data-i18n="Extended detection unavailable. Install langid in KIRA’s Python environment for more languages." >Extended detection unavailable. Install langid in KIRA’s Python environment for more languages.</p>
+        <div class="setting-row"><div><h3 data-i18n="Holographic motion" >Holographic motion</h3><p data-i18n="Auto follows your system’s reduced-motion preference." >Auto follows your system’s reduced-motion preference.</p></div><button id="motion-toggle" class="control-button" type="button">MOTION: AUTO</button></div>
+        <div class="setting-row"><div><h3 data-i18n="Voice input language" >Voice input language</h3><p data-i18n="The browser listens in one language at a time. Auto follows the conversation; choose a listening language before speaking a different one." >The browser listens in one language at a time. Auto follows the conversation; choose a listening language before speaking a different one.</p></div><label class="sr-only" for="voice-language" data-i18n="Voice input language" >Voice input language</label><select id="voice-language" dir="auto"><option value="auto">Automatic — conversation language</option></select></div>
+        <div class="setting-row"><div><h3 data-i18n="Voice response" >Voice response</h3><p data-i18n="Read KIRA’s replies aloud." >Read KIRA’s replies aloud.</p></div><button id="settings-voice" class="control-button" type="button" data-i18n="VOICE: ON" >VOICE: ON</button></div>
+        <div class="setting-row"><div><h3 data-i18n="Lip synchronization" >Lip synchronization</h3><p data-i18n="Animate the lips and jaw during spoken replies. Respects the motion preference above." >Animate the lips and jaw during spoken replies. Respects the motion preference above.</p></div><button id="lips-toggle" class="control-button" type="button" aria-pressed="true" data-i18n="LIPS: ON" >LIPS: ON</button></div>
+        <p class="settings-note" data-i18n="2D lip animation uses playback volume and word timing when available. Individual speech shapes are estimated from the text, not exact phoneme recognition or a generated talking video." >2D lip animation uses playback volume and word timing when available. Individual speech shapes are estimated from the text, not exact phoneme recognition or a generated talking video.</p>
       </section>
       <section id="diagnostics-panel" class="dialog-panel speech-diagnostics" hidden>
-        <div class="diagnostic-version"><span>HOLOGRAPHIC CORE 02</span><span>LIP SYNC 01</span></div>
-        <p class="dialog-description">Test the neural field without sending a command to your computer.</p>
-        <div class="diagnostic-actions"><button id="motion-test" class="control-button" type="button"><svg class="icon"><use href="#i-activity" /></svg>TEST MOTION</button><button id="lip-test" class="control-button" type="button"><svg class="icon"><use href="#i-user" /></svg>TEST LIPS</button><button id="voice-test" class="control-button" type="button"><svg class="icon"><use href="#i-volume" /></svg>TEST VOICE</button></div>
-        <p id="diagnostic-status" role="status">Ready to test.</p>
-        <p id="lip-status" class="lip-status" role="status">LIP SYNC · IDLE</p>
-        <dl class="diagnostic-data"><div><dt>API connection</dt><dd id="diagnostic-connection">Connecting…</dd></div><div><dt>Rendering</dt><dd>Local SVG / 2D facial mesh</dd></div><div><dt>Voice synchronization</dt><dd>Audio analysis / word timing fallback</dd></div></dl>
-        <p class="settings-note">If the backend is offline, start KIRA with <code>python main_window.py</code> or <code>python launch_web.py</code>. Motion testing works offline.</p>
+        <div class="diagnostic-version"><span>HOLOGRAPHIC CORE 03</span><span>LIP SYNC 01</span></div>
+        <p class="dialog-description" data-i18n="Test the neural field without sending a command to your computer." >Test the neural field without sending a command to your computer.</p>
+        <div class="diagnostic-actions"><button id="motion-test" class="control-button" type="button"><svg class="icon"><use href="#i-activity" /></svg><span data-i18n="TEST MOTION">TEST MOTION</span></button><button id="lip-test" class="control-button" type="button"><svg class="icon"><use href="#i-user" /></svg><span data-i18n="TEST LIPS">TEST LIPS</span></button><button id="voice-test" class="control-button" type="button"><svg class="icon"><use href="#i-volume" /></svg><span data-i18n="TEST VOICE">TEST VOICE</span></button></div>
+        <p id="diagnostic-status" role="status" data-i18n="Ready to test." >Ready to test.</p>
+        <p id="lip-status" class="lip-status" role="status" data-i18n="LIP SYNC · IDLE" >LIP SYNC · IDLE</p>
+        <dl class="diagnostic-data"><div><dt data-i18n="API connection" >API connection</dt><dd id="diagnostic-connection">Connecting…</dd></div><div><dt data-i18n="Rendering" >Rendering</dt><dd data-i18n="Local SVG / 2D facial mesh" >Local SVG / 2D facial mesh</dd></div><div><dt data-i18n="Voice synchronization" >Voice synchronization</dt><dd data-i18n="Audio analysis / word timing fallback" >Audio analysis / word timing fallback</dd></div></dl>
+        <p class="settings-note"><span data-i18n="If the backend is offline, start KIRA with">If the backend is offline, start KIRA with</span> <code>python main_window.py</code> <span data-i18n="or">or</span> <code>python launch_web.py</code><span data-i18n=". Motion testing works offline.">. Motion testing works offline.</span></p>
       </section>
       <section id="tasks-panel" class="dialog-panel" hidden>
-        <p class="dialog-description">Your pending tasks, synchronized with KIRA’s local memory.</p>
-        <div id="tasks-list" class="tasks-list"><p class="task-empty">Connecting to the task manager…</p></div>
-        <form id="task-form" class="task-form"><label class="sr-only" for="task-title">New task</label><input id="task-title" placeholder="Add a task…" required maxlength="240" /><button class="control-button" type="submit">ADD TASK</button></form>
+        <p class="dialog-description" data-i18n="Your pending tasks, synchronized with KIRA’s local memory." >Your pending tasks, synchronized with KIRA’s local memory.</p>
+        <div id="tasks-list" class="tasks-list"><p class="task-empty" data-i18n="Connecting to the task manager…" >Connecting to the task manager…</p></div>
+        <form id="task-form" class="task-form"><label class="sr-only" for="task-title" data-i18n="New task" >New task</label><input id="task-title" dir="auto" placeholder="Add a task…" required maxlength="240"  data-i18n-placeholder="Add a task…" /><button class="control-button" type="submit" data-i18n="ADD TASK" >ADD TASK</button></form>
         <p id="task-feedback" role="status"></p>
       </section>
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
-    <noscript><div class="noscript-notice">Enable JavaScript to connect to KIRA and use the command interface.</div></noscript>
-    <script type="module" src="./app.js?v=lip-sync-1"></script>
+    <noscript><div class="noscript-notice" data-i18n="Enable JavaScript to connect to KIRA and use the command interface." >Enable JavaScript to connect to KIRA and use the command interface.</div></noscript>
+    <script type="module" src="./app.js?v=languages-1"></script>
   </body>
 </html>

@@ -22,12 +22,16 @@ jobs:
           node --check ui/hologram.mjs
           node --check ui/lips.mjs
           node --check ui/mouth.mjs
+          node --check ui/i18n.mjs
+          node --check ui/locale.mjs
       - name: Test speech, mouth articulation and holographic field integration
         run: node --test tests/*.test.mjs
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Test local assets and same-origin API proxy
+      - name: Install offline language detector
+        run: pip install langid
+      - name: Test languages, local assets and same-origin API proxy
         run: python -m unittest discover -s tests -p 'test_*.py'
 
   browser:
@@ -39,7 +43,7 @@ jobs:
           python-version: '3.11'
       - name: Install browser test tools
         run: |
-          pip install playwright
+          pip install playwright langid
           python -m playwright install --with-deps chromium
       - name: Test cockpit layouts and controls (no desktop actions)
         run: python tests/cockpit_browser.py

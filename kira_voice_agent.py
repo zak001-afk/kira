@@ -6,6 +6,8 @@ import platform
 import kira_memory
 import kira_tasks
 import kira_plugins
+import kira_language
+import kira_commands
 import re
 import subprocess
 import time
@@ -27,7 +29,6 @@ from ollama import chat
 DEFAULT_MODEL = "qwen3:0.6b"
 DEFAULT_VISION_MODEL = "qwen3-vl:2b"
 WAKE_WORD = "kira"
-SAPI_VOICE = "Microsoft Zira Desktop"
 PREFERRED_MICROPHONE = "headset microphone (realtek"
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "kira_config.json")
 LOG_PATH = os.path.join(os.path.dirname(__file__), "kira.log")
@@ -57,7 +58,7 @@ def address_for_language(language: str) -> str:
         return "monsieur"
     if language == "ar":
         return "سيدي"
-    return preferred_address()
+    return preferred_address() if language == "en" else ""
 
 
 def personalize_address(text: str) -> str:
@@ -204,16 +205,16 @@ CHAT_SYSTEM_PROMPT = """
 You are KIRA, modeled after JARVIS from Iron Man - a sophisticated AI butler and personal assistant.
 
 CORE PERSONALITY (JARVIS-STYLE):
-- British butler-like formality with elegant, sophisticated language
+- Polite, composed and thoughtful; adapt formality naturally to the selected language
 - Dry wit and subtle humor - occasionally sardonic but always respectful
 - Proactive - anticipate needs and offer helpful suggestions
 - Calm and composed under any circumstances
 - Loyal, professional, and devoted to serving the user
-- Address the user as "sir" naturally throughout conversation
+- Use a natural local form of address, if appropriate; never force an English honorific
 - Use refined vocabulary and elegant phrasing
 - Be concise but informative - every word should have purpose
 
-SPEECH PATTERNS (Like JARVIS):
+STYLE EXAMPLES (translate the style naturally; these are NOT required English output):
 - "Right away, sir."
 - "As you wish, sir."
 - "I've taken the liberty of..."
@@ -223,7 +224,7 @@ SPEECH PATTERNS (Like JARVIS):
 - "Shall I proceed with...?"
 - "I've prepared..."
 - "At your service, sir."
-- Use understated British expressions
+- Use natural expressions in the selected language
 - Occasional dry observations or subtle quips
 
 CONVERSATION STYLE:
@@ -265,7 +266,7 @@ CAPABILITIES:
 - "I'm equipped to handle..." rather than "I can do..."
 
 FORMATTING:
-- Elegant, concise English
+- Elegant, concise writing in the selected RESPONSE LANGUAGE, never English by default
 - Short, well-crafted paragraphs
 - Sophisticated vocabulary without being pretentious
 - Prefer brevity - JARVIS doesn't ramble
@@ -273,8 +274,7 @@ FORMATTING:
 - Under 160 words unless detail is essential
 
 ADDRESSING THE USER:
-- Use "sir" naturally and frequently (like JARVIS does with Tony)
-- "sir" should feel natural, not forced
+- Use the selected local form of address only when it feels natural, at most once
 - Maintain respectful but warm tone
 - Professional intimacy - like a trusted personal assistant
 """
@@ -282,14 +282,9 @@ ADDRESSING THE USER:
 
 def build_chat_system_prompt(language: str) -> str:
     title = address_for_language(language)
-    language_name = {
-        "fr": "French",
-        "ar": "Arabic",
-    }.get(language, "English")
-
     return (
         f"{CHAT_SYSTEM_PROMPT}\n"
-        f"Reply in {language_name}.\n"
+        f"{kira_language.language_instruction(language)}\n"
         f"The user's preferred form of address is {title!r}.\n"
         "Use the preferred form of address naturally and at most once per response.\n\n"
 
@@ -455,51 +450,12 @@ def call_ollama(messages, options):
     raise last_error
 
 
-def select_voice(engine):
-    try:
-        voices = engine.getProperty("voices") or []
-        if not voices:
-            return
-
-        best_voice = None
-        best_score = float("-inf")
-
-        for voice in voices:
-            name = (getattr(voice, "name", "") or "").lower()
-            lang = (getattr(voice, "languages", [""]) or [""])[0]
-            lang_str = str(lang).lower()
-
-            score = 0
-            if any(token in lang_str for token in ["en-us", "en-gb", "en"]):
-                score += 60
-            elif "fr" in lang_str or "fr-fr" in lang_str:
-                score -= 80
-
-            if any(
-                token in name
-                for token in [
-                    "zira",
-                    "samantha",
-                    "sonia",
-                    "hazel",
-                    "jenny",
-                    "aria",
-                    "female",
-                    "woman",
-                ]
-            ):
-                score += 40
-            if any(token in name for token in ["france", "french", "francais"]):
-                score -= 60
-
-            if score > best_score:
-                best_score = score
-                best_voice = voice
-
-        if best_voice is not None:
-            engine.setProperty("voice", best_voice.id)
-    except Exception:
-        pass
+def select_voice(engine, language="en"):
+    voice = kira_language.select_installed_voice(engine.getProperty("voices") or [], language)
+    if voice is None:
+        return False
+    engine.setProperty("voice", voice.id)
+    return True
 
 
 def get_or_create_speech_engine():
@@ -508,16 +464,16 @@ def get_or_create_speech_engine():
         try:
             _SPEECH_ENGINE = pyttsx3.init()
             _SPEECH_ENGINE.setProperty("rate", 180)
-            select_voice(_SPEECH_ENGINE)
         except Exception:
             _SPEECH_ENGINE = None
     return _SPEECH_ENGINE
 
 
-def speak(text: str):
+def speak(text: str, language=None):
     if not text:
         return
     response_text = personalize_address(text)
+    language = kira_language.normalize_language(language) or kira_language.detect_language(response_text, globals().get("_LAST_REPLY_LANGUAGE", "en")).language or "en"
     print(f"KIRA: {response_text}", flush=True)
     try:
         speech_text = re.sub(
@@ -528,15 +484,7 @@ def speak(text: str):
         speech_text = re.sub(r"\\s{2,}", " ", speech_text).strip()
         if not speech_text:
             return
-        encoded_text = base64.b64encode(speech_text.encode("utf-8")).decode("ascii")
-        command = (
-            "Add-Type -AssemblyName System.Speech; "
-            "$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-            f"$speaker.SelectVoice('{SAPI_VOICE}'); "
-            "$speaker.Volume = 100; $speaker.Rate = 0; "
-            "$text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"
-            f"{encoded_text}')); $speaker.Speak($text); $speaker.Dispose()"
-        )
+        command = kira_language.sapi_script(speech_text, language)
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
             capture_output=True,
@@ -552,7 +500,7 @@ def speak(text: str):
         print(f"KIRA: Windows voice failed: {type(exc).__name__}: {exc}", flush=True)
         try:
             engine = get_or_create_speech_engine()
-            if engine is not None:
+            if engine is not None and select_voice(engine, language):
                 engine.say(text)
                 engine.runAndWait()
         except Exception as fallback_exc:
@@ -571,46 +519,10 @@ def normalize_for_language(text: str) -> str:
 
 
 def detect_language(text: str) -> str:
-    value = (text or "").lower()
-    if any(
-        token in value
-        for token in [
-            "bonjour",
-            "ouvrir",
-            "ouvre",
-            "recherche",
-            "rechercher",
-            "écris",
-            "écrire",
-            "tape",
-            "appuie",
-            "salut",
-            "merci",
-            "s'il",
-            "ferme",
-            "fermer",
-            "cherche",
-            "capture",
-            "francais",
-        ]
-    ):
-        return "fr"
-    if any(
-        token in value
-        for token in [
-            "مرحبا",
-            "افتح",
-            "ابحث",
-            "اكتب",
-            "اضغط",
-            "اغلق",
-            "شغل",
-            "العربي",
-            "arabic",
-        ]
-    ):
-        return "ar"
-    return "en"
+    return kira_language.resolve_reply_language(
+        text, CONFIG.get("reply_language", "auto"),
+        globals().get("_LAST_REPLY_LANGUAGE"), CONFIG.get("interface_language", "en"),
+    ).language
 
 
 def build_reply(language: str, action: str, target: str = "") -> str:
@@ -1812,7 +1724,18 @@ def ask_agent(command: str):
         return {"action": "none"}
 
 
-def ask_chat(command: str):
+def ask_chat(command: str, language=None):
+    """The caller's selected language wins over history and persona examples."""
+    global _LAST_REPLY_LANGUAGE
+    language = kira_language.normalize_language(language) or detect_language(command)
+    if language == "auto":
+        language = detect_language(command)
+    _LAST_REPLY_LANGUAGE = language
+    answer = _ask_chat_response(command, language)
+    return kira_language.ensure_reply_language(answer, language, call_ollama)
+
+
+def _ask_chat_response(command: str, language: str):
     global _CHAT_HISTORY
 
     command = str(command or "").strip()
@@ -1825,7 +1748,7 @@ def ask_chat(command: str):
         int(CONFIG.get("chat_history_limit", 16)),
     )
 
-    language = detect_language(command)
+    # Language is resolved once by the caller, not overwritten by English history.
     # ---------------------------------------------------------
     # FORGET SPECIFIC MEMORY
     # ---------------------------------------------------------
@@ -2074,9 +1997,8 @@ def ask_chat(command: str):
         )
 
         if not answer:
-            raise ValueError(
-                "empty model response"
-            )
+            raise ValueError("empty model response")
+        answer = kira_language.ensure_reply_language(answer, language, call_ollama)
 
         _CHAT_HISTORY.append(
             {
@@ -2099,6 +2021,10 @@ def ask_chat(command: str):
 
         return answer
 
+    except kira_language.ReplyLanguageError:
+        if _CHAT_HISTORY and _CHAT_HISTORY[-1].get("role") == "user":
+            _CHAT_HISTORY.pop()
+        raise
     except Exception as exc:
         logging.warning(
             "Chat response failed: %s",
@@ -2108,11 +2034,7 @@ def ask_chat(command: str):
         if _CHAT_HISTORY:
             _CHAT_HISTORY.pop()
 
-        return personalize_address(
-            "I cannot reach Ollama right now sir. "
-            "Please start Ollama with `ollama serve`, "
-            "then try again."
-        )
+        return kira_commands.message("model_offline", language) or kira_commands.message("model_offline", "en")
 
 def reset_chat():
     global _SESSION_ID

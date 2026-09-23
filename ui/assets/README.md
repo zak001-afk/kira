@@ -14,6 +14,7 @@ font, or rendering-library requests.
   `kira-mark.svg` — original interface artwork. The neural map and binary field
   are decorative, not telemetry. Measured readings are rendered separately.
 - `fonts/` — Latin WOFF2 subsets of Rajdhani, Orbitron and Share Tech Mono,
+  plus Noto Sans Arabic (Arabic subset for RTL interface and messages),
   distributed by Fontsource. Each family's SIL Open Font License is included
   alongside its font files. System fallbacks remain available for other scripts.
 

@@ -12,8 +12,9 @@ import threading
 import time
 from pathlib import Path
 from http.server import ThreadingHTTPServer
-from kira_ui import KiraUIHandler, UI_BUILD_LABEL, validate_ui_bundle, print_ui_info
+from kira_ui import KiraUIHandler, UI_BUILD_LABEL, validate_ui_bundle, print_ui_info, webview_profile_directory
 from functools import partial
+import kira_commands
 
 # Add project root to path
 HERE = Path(__file__).resolve().parent
@@ -100,193 +101,19 @@ def start_ui_server():
 # Command Processing (shared by HTTP API and pywebview bridge)
 # ─────────────────────────────────────────────
 
-def _try_builtin_response(text):
-    """Handle common greetings and questions without needing Ollama."""
-    lower = text.strip().lower()
-    
-    greetings = {
-        "hello", "hi", "hey", "good morning", "good afternoon",
-        "good evening", "salut", "bonjour", "مرحبا", "hey kira",
-        "hello kira", "hi kira",
-    }
-    
-    if lower in greetings:
-        # JARVIS-style greetings
-        import random
-        greetings_list = [
-            "Good day, sir.",
-            "Welcome back, sir.",
-            "At your service, sir.",
-            "Good to see you, sir.",
-            "Hello, sir. All systems are operational."
-        ]
-        return random.choice(greetings_list)
-    
-    if lower in {"who are you", "what are you", "what is kira"}:
-        return "I'm KIRA, sir - your personal AI assistant, modeled after JARVIS. I manage your systems, search the web, learn continuously, and anticipate your needs. Think of me as your digital butler and strategic advisor."
-    
-    if lower in {"what can you do", "help", "commands"}:
-        return (
-            "I'm equipped to handle quite a lot, sir. I control your computer systems - applications, files, media. "
-            "I search the web and learn from it, building knowledge over time. I manage tasks and reminders, "
-            "analyze your screen, and I'm always ready to assist with whatever you need. Shall I demonstrate something specific?"
-        )
-    
-    if lower in {"what time is it", "time", "current time"}:
-        from datetime import datetime
-        current_time = datetime.now().strftime('%H:%M')
-        return f"The time is {current_time}, sir."
-    
-    if lower in {"what is the date", "today's date", "date", "what day is it"}:
-        from datetime import datetime
-        current_date = datetime.now().strftime('%A, %B %d, %Y')
-        return f"Today is {current_date}, sir."
-    
-    if lower in {"thank you", "thanks", "merci"}:
-        # JARVIS-style acknowledgments
-        import random
-        thanks_list = [
-            "You're quite welcome, sir.",
-            "My pleasure, sir.",
-            "Always at your service.",
-            "Happy to be of assistance.",
-            "Of course, sir."
-        ]
-        return random.choice(thanks_list)
-    
-    if lower in {"goodbye", "bye", "see you", "exit", "quit"}:
-        # JARVIS-style farewells
-        import random
-        farewell_list = [
-            "Goodbye, sir. I'll be here when you return.",
-            "Until next time, sir.",
-            "Take care, sir. I'll keep things running.",
-            "Farewell, sir.",
-            "Good day, sir."
-        ]
-        return random.choice(farewell_list)
-        
-        # Check if it's a web search request
-        search_keywords = ["search for", "search", "look up", "find", "google", "what is", "who is", "where is", "when did", "how to", "latest", "news about", "current", "recent"]
-        if any(keyword in lower for keyword in search_keywords):
-            # Extract the search query
-            query = text
-            for prefix in ["search for", "search", "look up", "find", "google"]:
-                if lower.startswith(prefix):
-                    query = text[len(prefix):].strip()
-                    break
-            
-            print(f"[KIRA] Web search requested: {query}")
-            try:
-                import kira_web
-                return kira_web.search_and_summarize(query)
-            except Exception as e:
-                return f"I tried to search the web but encountered an error: {str(e)}"
-        
-        # Check if it's a learn/research request (search and store in memory)
-        learn_keywords = ["learn about", "research", "study", "memorize", "remember this", "teach yourself"]
-        if any(keyword in lower for keyword in learn_keywords):
-            # Extract the topic
-            query = text
-            for prefix in ["learn about", "research", "study", "memorize", "teach yourself about"]:
-                if lower.startswith(prefix):
-                    query = text[len(prefix):].strip()
-                    break
-            
-            print(f"[KIRA] Learn and memorize requested: {query}")
-            try:
-                import kira_web
-                return kira_web.search_and_learn(query)
-            except Exception as e:
-                return f"I tried to learn about that but encountered an error: {str(e)}"
-        
-        # Check if it's a URL to learn from
-        if lower.startswith("http://") or lower.startswith("https://") or "www." in lower:
-            # It's a URL - learn from it
-            url = text
-            if not url.startswith("http"):
-                url = "https://" + url
-            
-            print(f"[KIRA] Learning from URL: {url}")
-            try:
-                import kira_web
-                return kira_web.learn_from_url(url)
-            except Exception as e:
-                return f"I tried to learn from that URL but encountered an error: {str(e)}"
-        
-        return None
+def _try_builtin_response(text, language=None):
+    """Compatibility helper; canned replies must respect the requested language."""
+    if language is None:
+        language = kira_commands.languages.resolve_reply_language(text).language
+    return kira_commands.builtin_reply(text, language)
 
 
-def process_command(text):
-    """Process a command — used by both HTTP API and pywebview bridge."""
-    if backend is None:
-        return {"error": f"Backend not available: {BACKEND_ERROR}"}
-    
-    # Check cache first (skip for commands that should always execute)
-    if CACHE_ENABLED:
-        cache_key = f"cmd:{hash(text)}"
-        cached_result = command_cache.get(cache_key)
-        if cached_result is not None:
-            print(f"[KIRA] Cache hit for command: {text[:50]}", flush=True)
-            return cached_result
-    
-    try:
-        print(f"[KIRA] Processing: {text}", flush=True)
-        cleaned = backend.normalize_command(text)
-        if not cleaned:
-            return {"action": "none", "response": ""}
-        
-        # Try built-in responses first (no Ollama needed)
-        builtin = _try_builtin_response(cleaned)
-        if builtin:
-            print(f"[KIRA] Built-in: {builtin[:60]}", flush=True)
-            result = {"action": "chat", "response": builtin}
-            # Cache built-in responses
-            if CACHE_ENABLED:
-                command_cache.set(cache_key, result, ttl=300)  # 5 min TTL
-            return result
-        
-        # Try command parsing
-        result = backend.parse_simple_command(cleaned)
-        if result is not None:
-            action = result.get("action", "none")
-            if action != "none":
-                success = backend.execute_action(result)
-                try:
-                    reply = backend.build_reply(
-                        backend.detect_language(cleaned),
-                        action,
-                        str(result.get("target", result.get("query", "")))
-                    )
-                except Exception:
-                    reply = f"Done: {action}"
-                print(f"[KIRA] Action: {action} -> {success}", flush=True)
-                result = {"action": action, "success": success, "response": reply}
-                # Don't cache action executions (they change state)
-                return result
-        
-        # Fall back to Ollama chat
-        print("[KIRA] Asking Ollama...", flush=True)
-        try:
-            answer = backend.ask_chat(cleaned)
-            if answer:
-                print(f"[KIRA] Ollama: {answer[:80]}...", flush=True)
-                result = {"action": "chat", "response": answer}
-                # Cache Ollama responses
-                if CACHE_ENABLED:
-                    command_cache.set(cache_key, result, ttl=300)  # 5 min TTL
-                return result
-            else:
-                return {"action": "chat", "response": "I received your message but could not generate a response. Is Ollama running?"}
-        except Exception as chat_error:
-            print(f"[KIRA] Ollama error: {chat_error}", flush=True)
-            return {
-                "action": "chat",
-                "response": f"I couldn't reach the AI engine. Make sure Ollama is running with: ollama serve\n\nError: {chat_error}"
-            }
-    except Exception as e:
-        print(f"[KIRA] Error: {e}", flush=True)
-        return {"error": str(e)}
+def process_command(text, reply_language="auto", previous_language=None, interface_language="en", chat_only=False):
+    """Native and HTTP use the same language-aware, non-retrying command path."""
+    return kira_commands.process_command(
+        backend, text, reply_language=reply_language, previous_language=previous_language,
+        interface_language=interface_language, chat_only=chat_only,
+    )
 
 
 # ─────────────────────────────────────────────
@@ -296,8 +123,8 @@ def process_command(text):
 class KiraAPI:
     """Python API exposed to JavaScript via pywebview."""
     
-    def send_command(self, text):
-        return process_command(text)
+    def send_command(self, text, reply_language="auto", previous_language=None, interface_language="en"):
+        return process_command(text, reply_language, previous_language, interface_language)
     
     def get_system_info(self):
         """Get system telemetry."""
@@ -421,7 +248,11 @@ def main():
     print()
     
     # Start the webview event loop
-    webview.start(debug=False)
+    # pywebview defaults to private mode; localStorage would otherwise disappear
+    # on exit, including language, voice and lip-sync preferences.
+    profile = webview_profile_directory()
+    profile.mkdir(parents=True, exist_ok=True)
+    webview.start(debug=False, private_mode=False, storage_path=str(profile))
     
     # Cleanup when window is closed
     print("\n[KIRA] Shutting down...")
