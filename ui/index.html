@@ -1,174 +1,217 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-motion="auto">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>KIRA // Neural Interface</title>
-    <link rel="stylesheet" href="./style.css" />
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
-        }
-      }
-    </script>
+    <meta name="kira-ui-build" content="holographic-cockpit-01" />
+    <meta name="theme-color" content="#060708" />
+    <meta name="description" content="KIRA — your local neural computer agent." />
+    <title>KIRA // HOLOGRAPHIC COCKPIT 01</title>
+    <link rel="icon" href="./assets/kira-mark.svg" type="image/svg+xml" />
+    <link rel="preload" href="./assets/fonts/rajdhani-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="./assets/kira-hologram.webp" as="image" />
+    <link rel="stylesheet" href="./style.css?v=cockpit-1" />
   </head>
   <body>
-    <!-- 3D BACKGROUND -->
-    <div id="scene-container"></div>
+    <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <symbol id="i-kira" viewBox="0 0 24 24"><path d="m12 2 10 18H2L12 2Z M12 8l-5 9h10l-5-9Z M12 12v5" /></symbol>
+        <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3" /><path d="M5 21v-4a7 7 0 0 1 14 0v4M9 16v5m6-5v5" /></symbol>
+        <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 7 5 5-5 5m8 0h8M2 3h20v18H2z" /></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+        <symbol id="i-send" viewBox="0 0 24 24"><path d="m8 5 8 7-8 7M4 12h12" /></symbol>
+        <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v2a7 7 0 0 0 14 0v-2m-7 9v3m-4 0h8" /></symbol>
+        <symbol id="i-volume" viewBox="0 0 24 24"><path d="m11 4-6 5H2v6h3l6 5V4Zm4 4a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" /></symbol>
+        <symbol id="i-muted" viewBox="0 0 24 24"><path d="m11 4-6 5H2v6h3l6 5V4Zm5 5 6 6m0-6-6 6" /></symbol>
+        <symbol id="i-activity" viewBox="0 0 24 24"><path d="M2 12h4l3-8 6 16 3-8h4" /></symbol>
+        <symbol id="i-tasks" viewBox="0 0 24 24"><path d="m3 5 2 2 3-4m3 3h10M3 12h4m4 0h10M3 18h4m4 0h10" /></symbol>
+        <symbol id="i-screen" viewBox="0 0 24 24"><path d="M2 3h20v14H2zM8 22h8m-4-5v5M6 7h3m-3 0v3m12 3h-3m3 0v-3" /></symbol>
+        <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><ellipse cx="12" cy="12" rx="4" ry="10" /><path d="M2 12h20" /></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="7" /><path d="m15 15 7 7" /></symbol>
+        <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></symbol>
+        <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6" /></symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24"><path d="m10 2-.6 3-2 .9-2.8-1-2 3.4 2.2 2v3.4l-2.2 2 2 3.4 2.8-1 2 .9.6 3h4l.6-3 2-.9 2.8 1 2-3.4-2.2-2v-3.4l2.2-2-2-3.4-2.8 1-2-.9L14 2h-4Z" /><circle cx="12" cy="12" r="3" /></symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6l9-4Z" /><path d="M9 11h6v6H9zm1 0V9a2 2 0 0 1 4 0v2" /></symbol>
+        <symbol id="i-learn" viewBox="0 0 24 24"><path d="M12 6c-3-3-7-3-10-2v15c4-1 7 0 10 2 3-2 6-3 10-2V4c-3-1-7-1-10 2Zm0 0v15" /></symbol>
+      </defs>
+    </svg>
 
-    <!-- MATRIX OVERLAY -->
-    <canvas id="matrix"></canvas>
+    <div class="cockpit-shell" aria-hidden="true">
+      <div class="ceiling-strut left"></div><div class="ceiling-strut right"></div>
+      <div class="binary-field"></div><div class="ambient-grid"></div>
+      <div class="edge-rail left"></div><div class="edge-rail right"></div>
+      <div class="screen-vignette"></div>
+    </div>
 
-    <!-- HUD -->
-    <main id="hud">
-      <!-- HEADER -->
-      <header class="top-bar">
-        <div class="brand">
-          <span class="brand-name">K I R A</span>
-          <span class="brand-sub">NEURAL COMPUTER AGENT // LOCAL INSTANCE</span>
-        </div>
-        <div class="header-right">
-          <div class="clock">
-            <div class="clock-time" id="clock-time">00:00:00</div>
-            <div class="clock-date" id="clock-date">LOADING...</div>
+    <main id="hud" aria-label="KIRA neural control interface">
+      <section class="instrument-panel conversation-panel" aria-labelledby="conversation-heading">
+        <div class="panel-surface">
+          <header class="brand-header">
+            <div class="brand"><h1>KIRA<span class="brand-dot">.</span></h1><span>NEURAL INTERFACE</span></div>
+            <div class="session-info"><span>ACTIVE SESSION</span><time id="clock-time">00:00:00</time><span id="clock-date">LOCAL INSTANCE</span></div>
+          </header>
+          <div class="panel-heading">
+            <h2 id="conversation-heading"><svg class="icon"><use href="#i-terminal" /></svg>CONVERSATION</h2>
+            <button class="icon-button small" id="clear-chat" type="button" aria-label="Clear displayed conversation" title="Clear displayed messages (saved history is kept)"><svg class="icon"><use href="#i-plus" /></svg></button>
           </div>
-          <div class="online">
-            <span class="online-dot"></span>
-            <span id="status-text">ONLINE</span>
-          </div>
-        </div>
-      </header>
+          <div class="channel-heading"><span><i class="tiny-light"></i> OPERATOR CHANNEL</span><span>CH — 01</span></div>
 
-      <!-- LEFT PANEL — CONVERSATION -->
-      <section class="hud-panel conversation-panel">
-        <div class="corner tl"></div>
-        <div class="corner tr"></div>
-        <div class="corner bl"></div>
-        <div class="corner br"></div>
-        
-        <div class="panel-title">CONVERSATION</div>
-        <div class="panel-line"></div>
-        <div class="conversation" id="conversation">
-          <div class="message-block">
-            <div class="message-meta">KIRA &nbsp;//&nbsp; <span id="boot-time"></span></div>
-            <div class="message">Hello sir.<br />I am ready for your orders.</div>
+          <div class="conversation" id="conversation" role="log" aria-label="Conversation with KIRA" aria-live="polite" aria-relevant="additions">
+            <article class="message-block">
+              <span class="message-avatar"><svg class="icon"><use href="#i-kira" /></svg></span>
+              <div class="message-content"><div class="message-meta"><span>KIRA</span><time id="boot-time"></time></div><p class="message">Hello, Operator.<br />Neural interface initialized.<br />How can I assist you today?</p></div>
+            </article>
           </div>
+          <div class="conversation-empty" id="conversation-empty" aria-hidden="true"><svg class="icon"><use href="#i-kira" /></svg><span>YOUR NEXT COMMAND.<br />A WORLD OF POSSIBILITIES.</span><div class="empty-rule"></div></div>
+
+          <div class="command-area">
+            <div class="voice-channel">
+              <div class="voice-channel-label"><span><i class="tiny-light"></i> VOICE SYNC</span><button id="mute" class="icon-button" type="button" aria-label="Mute voice output" aria-pressed="false" title="Mute voice output"><svg class="icon"><use href="#i-volume" /></svg></button></div>
+              <svg class="voice-wave" viewBox="0 0 250 34" preserveAspectRatio="none" aria-hidden="true"><path class="wave-axis" d="M0 17h250" /><path id="voice-wave" d="M0 17h250" /></svg>
+              <div class="voice-meter" aria-hidden="true"><span id="voice-level"></span></div>
+              <span id="motion-status" class="motion-status" role="status">VOICE IDLE</span>
+            </div>
+            <form id="command-form" class="command-box">
+              <button id="mic" class="icon-button mic-button" type="button" aria-label="Start voice input" title="Voice input"><svg class="icon"><use href="#i-mic" /></svg></button>
+              <label for="command" class="sr-only">Your command to KIRA</label>
+              <input id="command" type="text" placeholder="Type a command…" autocomplete="off" maxlength="8000" />
+              <button id="send" type="submit" aria-label="Send command" title="Send command"><svg class="icon"><use href="#i-send" /></svg></button>
+            </form>
+            <div class="command-hint"><span><kbd>↵</kbd> TO SEND</span><span><kbd>CTRL K</kbd> COMMAND</span></div>
+          </div>
+          <div class="panel-bottom-code"><span>KIRA_OS / CONVERSATION</span><span>01</span></div>
         </div>
+        <span class="panel-bolt bolt-tl" aria-hidden="true"></span><span class="panel-bolt bolt-br" aria-hidden="true"></span>
       </section>
 
-      <!-- RIGHT PANEL — TELEMETRY -->
-      <section class="hud-panel telemetry-panel">
-        <div class="corner tl"></div>
-        <div class="corner tr"></div>
-        <div class="corner bl"></div>
-        <div class="corner br"></div>
+      <section class="neural-stage" aria-label="KIRA holographic neural projection">
+        <div class="stage-topline"><span><i class="tiny-light"></i> NEURAL COMPUTER AGENT</span><span id="ui-build">HOLOGRAPHIC COCKPIT 01</span></div>
+        <div class="stage-coordinate coordinate-left" aria-hidden="true">SYS.01<br /><span>NEURAL<br />PROJECTION</span><b>+ 00.000</b></div>
+        <div class="stage-coordinate coordinate-right" aria-hidden="true">KIRA.AI<br /><span>COGNITIVE<br />INTERFACE</span><b>00.000 +</b></div>
 
-        <div class="panel-title">SYSTEM TELEMETRY</div>
-        <div class="panel-line"></div>
-
-        <div class="telemetry-row">
-          <div class="telemetry-label-row">
-            <span>CPU</span>
-            <strong id="cpu">--%</strong>
+        <div class="hologram" id="hologram">
+          <div class="halo-glow"></div>
+          <div class="halo" id="halo">
+            <img class="reticle reticle-outer" src="./assets/reticle.svg" alt="" />
+            <div class="reticle-track track-one"></div><div class="reticle-track track-two"></div>
           </div>
-          <div class="stat-bar">
-            <div class="stat-fill" id="cpu-bar"></div>
-          </div>
+          <div class="portrait-float"><div class="portrait" id="portrait">
+            <img src="./assets/kira-hologram.webp" width="896" height="1200" alt="KIRA, a blue-eyed android surrounded by a red holographic neural field" fetchpriority="high" />
+            <div class="portrait-scanlines" aria-hidden="true"></div>
+            <span class="forehead-id" aria-hidden="true">KIRA<small>NEURAL INTERFACE</small></span>
+          </div></div>
+          <svg class="neural-orbits" viewBox="0 0 600 600" fill="none" aria-hidden="true">
+            <g class="orbit orbit-one"><ellipse cx="300" cy="300" rx="284" ry="74" /><ellipse cx="300" cy="300" rx="278" ry="69" /><circle cx="584" cy="300" r="3" /></g>
+            <g class="orbit orbit-two"><ellipse cx="300" cy="300" rx="290" ry="94" /><circle cx="10" cy="300" r="2.5" /></g>
+            <g class="neural-links"><path d="m128 185 82 52-23 136 98 80 117-57 63-162-93-96-162 99 192 159M128 185l59 188 185-235 30 258-274-211Z" /><circle cx="128" cy="185" r="2" /><circle cx="210" cy="237" r="2" /><circle cx="187" cy="373" r="2" /><circle cx="402" cy="396" r="2" /><circle cx="465" cy="234" r="2" /></g>
+          </svg>
+          <div class="projection-beam" aria-hidden="true"></div>
+          <div class="hologram-platform" aria-hidden="true"><img src="./assets/projector.svg" alt="" /><div class="projector-light"></div></div>
         </div>
-
-        <div class="telemetry-row">
-          <div class="telemetry-label-row">
-            <span>MEMORY</span>
-            <strong id="memory">--%</strong>
-          </div>
-          <div class="stat-bar">
-            <div class="stat-fill" id="memory-bar"></div>
-          </div>
-        </div>
-
-        <div class="telemetry-row">
-          <div class="telemetry-label-row">
-            <span>GPU</span>
-            <strong id="gpu">--</strong>
-          </div>
-        </div>
-
-        <div class="telemetry-divider"></div>
-        <div class="panel-label">CORE</div>
-        <div class="core-name">LOCAL NEURAL ENGINE</div>
-
-        <div class="panel-label activity-label">ACTIVITY</div>
-        <div class="activity">
-          <span class="activity-dot" id="activity-dot"></span>
-          <span id="activity">STANDBY</span>
-        </div>
-
-        <div class="speech-diagnostics">
-          <div class="speech-build">SPEECH SYNC 02</div>
-          <div id="motion-status" role="status">VOICE IDLE</div>
-          <div class="voice-meter" aria-hidden="true"><span id="voice-level"></span></div>
-          <div class="motion-controls">
-            <button id="motion-toggle" type="button">MOTION: AUTO</button>
-            <button id="motion-test" type="button">TEST MOTION</button>
-            <button id="voice-test" type="button">TEST VOICE</button>
-          </div>
-        </div>
-
-        <div class="telemetry-divider"></div>
-        <div class="panel-label">TASKS</div>
-        <div class="tasks-list" id="tasks-list">
-          <div class="task-empty">No pending tasks</div>
-        </div>
+        <div class="core-caption"><span class="caption-line"></span><span>KIRA <b>//</b> NEURAL PROCESSOR</span><span class="caption-line"></span></div>
+        <div class="stage-status"><span class="status-pill" id="connection-pill"><i class="status-dot"></i><span id="status-text">CONNECTING</span></span><span class="stage-status-detail">AWAITING YOUR COMMAND</span></div>
       </section>
 
-      <!-- CORE LABEL -->
-      <div class="core-caption">KIRA // NEURAL PROCESSOR</div>
-
-      <!-- COMMAND -->
-      <section class="command-area">
-        <div class="command-box">
-          <button id="mic" class="icon-btn mic-btn" title="Voice input">
-            <svg viewBox="0 0 24 24">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-              <line x1="12" y1="19" x2="12" y2="23"></line>
-              <line x1="8" y1="23" x2="16" y2="23"></line>
-            </svg>
-          </button>
-          <input
-            id="command"
-            type="text"
-            placeholder="ASK KIRA..."
-            autocomplete="off"
-          />
-          <button id="mute" class="icon-btn mute-btn" title="Toggle voice output">
-            <svg viewBox="0 0 24 24">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-            </svg>
-          </button>
-          <button id="send">
-            <svg viewBox="0 0 24 24">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </svg>
-          </button>
+      <aside class="instrument-panel telemetry-panel" aria-labelledby="telemetry-heading">
+        <div class="panel-surface">
+          <div class="telemetry-topline"><span><svg class="icon"><use href="#i-activity" /></svg> SYS–MON–7A</span><span class="hardware-revision">REV. 08</span></div>
+          <div class="panel-heading"><h2 id="telemetry-heading">SYSTEM TELEMETRY</h2><span class="live-indicator" id="telemetry-live">WAIT</span></div>
+          <div class="telemetry-body">
+            <section class="telemetry-section neural-overview" aria-labelledby="neural-heading">
+              <h3 id="neural-heading">NEURAL INTERFACE STATUS</h3>
+              <div class="neural-overview-grid"><img class="neural-map" src="./assets/neural-map.svg" alt="" /><dl class="data-rows">
+                <div><dt>CORE LINK</dt><dd id="neural-status">CONNECTING</dd></div>
+                <div><dt>API LATENCY</dt><dd id="latency">—</dd></div>
+                <div><dt>SESSION UPTIME</dt><dd id="uptime">00:00:00</dd></div>
+                <div><dt>INSTANCE</dt><dd>LOCAL</dd></div>
+              </dl></div>
+            </section>
+            <section class="telemetry-section" aria-labelledby="cognitive-heading">
+              <h3 id="cognitive-heading">COGNITIVE CORE METRICS</h3>
+              <dl class="data-rows">
+                <div><dt>NEURAL ENGINE</dt><dd id="model-name" class="model-name">—</dd></div>
+                <div><dt>PROCESSING STATE</dt><dd class="activity"><i id="activity-dot" class="activity-dot"></i><span id="activity">STANDBY</span></dd></div>
+                <div><dt>LAST RESPONSE</dt><dd id="response-time">—</dd></div>
+                <div><dt>SESSION COMMANDS</dt><dd id="command-count">000</dd></div>
+              </dl>
+              <div class="neural-load"><span>NEURAL ACTIVITY</span><div class="activity-segments" id="activity-segments" aria-hidden="true"></div></div>
+            </section>
+            <section class="telemetry-section resources-section" aria-labelledby="resources-heading">
+              <h3 id="resources-heading">SYSTEM RESOURCES</h3>
+              <div class="resource-row"><span>CPU LOAD</span><div class="stat-bar"><span id="cpu-bar"></span></div><strong id="cpu">—</strong></div>
+              <div class="resource-row"><span>MEMORY</span><div class="stat-bar"><span id="memory-bar"></span></div><strong id="memory">—</strong></div>
+              <div class="resource-row"><span>DISK USAGE</span><div class="stat-bar"><span id="disk-bar"></span></div><strong id="disk">—</strong></div>
+              <dl class="data-rows gpu-row"><div><dt>GRAPHICS</dt><dd id="gpu">—</dd></div></dl>
+            </section>
+            <section class="telemetry-section connection-section" aria-labelledby="connection-heading">
+              <h3 id="connection-heading">CONNECTION STATUS</h3>
+              <div class="connection-grid"><span class="shield-emblem"><svg class="icon"><use href="#i-shield" /></svg></span><dl class="data-rows">
+                <div><dt>BACKEND</dt><dd id="backend-state">WAITING</dd></div>
+                <div><dt>TRANSPORT</dt><dd id="transport">—</dd></div>
+                <div><dt>VOICE OUTPUT</dt><dd id="voice-output">ENABLED</dd></div>
+              </dl></div>
+            </section>
+          </div>
+          <nav class="system-toolbar" aria-label="System tools">
+            <button type="button" data-dialog="diagnostics"><svg class="icon"><use href="#i-activity" /></svg><span>DIAGNOSTICS</span></button>
+            <button type="button" data-dialog="tasks"><span class="tool-icon"><svg class="icon"><use href="#i-tasks" /></svg><b id="task-count">0</b></span><span>TASKS</span></button>
+            <button type="button" id="fullscreen"><svg class="icon"><use href="#i-expand" /></svg><span>FULLSCREEN</span></button>
+            <button type="button" data-dialog="settings"><svg class="icon"><use href="#i-settings" /></svg><span>SETTINGS</span></button>
+          </nav>
+          <div class="panel-bottom-code"><span>KIRA_OS / SYSTEM MONITOR</span><span>02</span></div>
         </div>
+        <span class="panel-bolt bolt-tr" aria-hidden="true"></span><span class="panel-bolt bolt-bl" aria-hidden="true"></span>
+      </aside>
 
-        <div class="quick-actions">
-          <button onclick="quickCmd('open chrome')">OPEN CHROME</button>
-          <button onclick="quickCmd('search for')">SEARCH WEB</button>
-          <button onclick="quickCmd('learn about')">LEARN</button>
-          <button onclick="quickCmd('analyze screen')">ANALYZE SCREEN</button>
-          <button onclick="quickCmd('system info')">SYSTEM STATUS</button>
-          <button onclick="quickCmd('list tasks')">MY TASKS</button>
-          <button onclick="quickCmd('what time is it')">TIME</button>
+      <footer class="control-deck" aria-label="Command console">
+        <div class="deck-wing deck-wing-left">
+          <div class="deck-section-label"><i class="tiny-light"></i> QUICK ACCESS <span>01—04</span></div>
+          <div class="quick-actions">
+            <button type="button" data-command="open chrome"><svg class="icon"><use href="#i-globe" /></svg><span>OPEN BROWSER<small>APPLICATION CONTROL</small></span><b>01</b></button>
+            <button type="button" data-prompt="search for "><svg class="icon"><use href="#i-search" /></svg><span>SEARCH WEB<small>INFORMATION RETRIEVAL</small></span><b>02</b></button>
+            <button type="button" data-command="analyze screen"><svg class="icon"><use href="#i-screen" /></svg><span>ANALYZE SCREEN<small>VISUAL RECOGNITION</small></span><b>03</b></button>
+            <button type="button" data-prompt="learn about "><svg class="icon"><use href="#i-learn" /></svg><span>LEARN<small>KNOWLEDGE ACQUISITION</small></span><b>04</b></button>
+          </div>
         </div>
-      </section>
+        <div class="deck-center"><div class="console-screws" aria-hidden="true"></div><span class="deck-model">KIRA / COGNITIVE SYSTEM V.08</span><div class="console-brand">KIRA</div><span class="console-subtitle">NEURAL INTERFACE</span><div class="console-status"><span class="console-line"></span><span>LOCAL INTELLIGENCE. LIMITLESS POTENTIAL.</span><span class="console-line"></span></div></div>
+        <div class="deck-wing deck-wing-right">
+          <div class="deck-section-label">NEURAL CONTROLS <span>05—08</span></div>
+          <div class="quick-actions">
+            <button type="button" id="deck-voice"><svg class="icon"><use href="#i-volume" /></svg><span>VOICE OUTPUT<small id="deck-voice-state">ENABLED</small></span><i class="button-light"></i></button>
+            <button type="button" id="deck-motion"><svg class="icon"><use href="#i-activity" /></svg><span>HOLOGRAM<small id="deck-motion-state">MOTION: AUTO</small></span><i class="button-light"></i></button>
+            <button type="button" data-dialog="tasks"><svg class="icon"><use href="#i-tasks" /></svg><span>MY TASKS<small>PERSONAL WORKSPACE</small></span><b>07</b></button>
+            <button type="button" data-command="system info"><svg class="icon"><use href="#i-terminal" /></svg><span>SYSTEM STATUS<small>LOCAL DIAGNOSTICS</small></span><b>08</b></button>
+          </div>
+        </div>
+      </footer>
     </main>
 
-    <script type="module" src="./app.js?v=speech-sync-2"></script>
+    <dialog id="system-dialog" class="system-dialog" aria-labelledby="dialog-title">
+      <div class="dialog-heading"><div><span class="eyebrow">KIRA // CONTROL PANEL</span><h2 id="dialog-title">SYSTEM SETTINGS</h2></div><button type="button" id="close-dialog" class="icon-button" aria-label="Close panel"><svg class="icon"><use href="#i-close" /></svg></button></div>
+      <section id="settings-panel" class="dialog-panel" hidden>
+        <p class="dialog-description">Configure your neural interface. Preferences are saved on this device.</p>
+        <div class="setting-row"><div><h3>Holographic motion</h3><p>Auto follows your system’s reduced-motion preference.</p></div><button id="motion-toggle" class="control-button" type="button">MOTION: AUTO</button></div>
+        <div class="setting-row"><div><h3>Voice input language</h3><p>Language used by browser speech recognition.</p></div><label class="sr-only" for="voice-language">Voice input language</label><select id="voice-language"><option value="en-US">English</option><option value="fr-FR">Français</option><option value="ar-SA">العربية</option></select></div>
+        <div class="setting-row"><div><h3>Voice response</h3><p>Read KIRA’s replies aloud.</p></div><button id="settings-voice" class="control-button" type="button">VOICE: ON</button></div>
+        <p class="settings-note">The portrait is a holographic illustration. Its field reacts to speech volume and timing, not facial lip synchronization.</p>
+      </section>
+      <section id="diagnostics-panel" class="dialog-panel speech-diagnostics" hidden>
+        <div class="diagnostic-version"><span>HOLOGRAPHIC CORE 01</span><span>SPEECH SYNC 02</span></div>
+        <p class="dialog-description">Test the neural field without sending a command to your computer.</p>
+        <div class="diagnostic-actions"><button id="motion-test" class="control-button" type="button"><svg class="icon"><use href="#i-activity" /></svg>TEST MOTION</button><button id="voice-test" class="control-button" type="button"><svg class="icon"><use href="#i-volume" /></svg>TEST VOICE</button></div>
+        <p id="diagnostic-status" role="status">Ready to test.</p>
+        <dl class="diagnostic-data"><div><dt>API connection</dt><dd id="diagnostic-connection">Connecting…</dd></div><div><dt>Rendering</dt><dd>Local assets / SVG compositor</dd></div><div><dt>Voice synchronization</dt><dd>Audio analysis / word timing fallback</dd></div></dl>
+        <p class="settings-note">If the backend is offline, start KIRA with <code>python main_window.py</code> or <code>python launch_web.py</code>. Motion testing works offline.</p>
+      </section>
+      <section id="tasks-panel" class="dialog-panel" hidden>
+        <p class="dialog-description">Your pending tasks, synchronized with KIRA’s local memory.</p>
+        <div id="tasks-list" class="tasks-list"><p class="task-empty">Connecting to the task manager…</p></div>
+        <form id="task-form" class="task-form"><label class="sr-only" for="task-title">New task</label><input id="task-title" placeholder="Add a task…" required maxlength="240" /><button class="control-button" type="submit">ADD TASK</button></form>
+        <p id="task-feedback" role="status"></p>
+      </section>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <noscript><div class="noscript-notice">Enable JavaScript to connect to KIRA and use the command interface.</div></noscript>
+    <script type="module" src="./app.js?v=cockpit-1"></script>
   </body>
 </html>

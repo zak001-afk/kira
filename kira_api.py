@@ -150,6 +150,7 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         """Return current system status."""
         status = {
             "online": True,
+            "backend_available": _backend is not None or _command_handler is not None,
             "model": getattr(_backend, "MODEL", "unknown") if _backend else "unknown",
             "conversation_mode": getattr(_backend, "_CONVERSATION_MODE", False) if _backend else False,
             "version": "V8",

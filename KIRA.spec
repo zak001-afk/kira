@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('kira_config.json', '.'), ('assets', 'assets')]
+datas = [('kira_config.json', '.'), ('assets', 'assets'), ('ui', 'ui')]
 binaries = []
 hiddenimports = ['PIL', 'PIL.Image']
 tmp_ret = collect_all('customtkinter')

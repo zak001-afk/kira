@@ -11,7 +11,8 @@ import sys
 import threading
 import time
 from pathlib import Path
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer
+from kira_ui import KiraUIHandler, UI_BUILD_LABEL, validate_ui_bundle, print_ui_info
 from functools import partial
 
 # Add project root to path
@@ -69,7 +70,7 @@ except ImportError:
 API_PORT = 8765
 UI_PORT = 8766
 HOST = "127.0.0.1"
-WINDOW_TITLE = "KIRA — Neural Interface"
+WINDOW_TITLE = f"KIRA — {UI_BUILD_LABEL}"
 WINDOW_WIDTH = 1400
 WINDOW_HEIGHT = 900
 
@@ -78,25 +79,18 @@ WINDOW_HEIGHT = 900
 # HTTP Server for UI files
 # ─────────────────────────────────────────────
 
-class QuietHandler(SimpleHTTPRequestHandler):
-    """HTTP handler that serves UI files with minimal logging."""
-    
-    # WebView2 must pick up new UI modules after a git pull, not a cached build.
-    extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".mjs": "text/javascript"}
+class QuietHandler(KiraUIHandler):
+    """Serve the cockpit and its same-origin API from the native window."""
 
-    def end_headers(self):
-        self.send_header("Cache-Control", "no-store")
-        super().end_headers()
-
-    def log_message(self, format, *args):
-        pass  # Suppress access logs
+    api_port = API_PORT
 
 
 def start_ui_server():
     """Start HTTP server for UI files on UI_PORT."""
-    ui_dir = HERE / "ui"
+    ui_dir = validate_ui_bundle(HERE / "ui")
+    print_ui_info(ui_dir)
     handler = partial(QuietHandler, directory=str(ui_dir))
-    server = HTTPServer((HOST, UI_PORT), handler)
+    server = ThreadingHTTPServer((HOST, UI_PORT), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server
@@ -395,7 +389,7 @@ def main():
         print("       UI server started")
     except Exception as e:
         print(f"       [ERROR] Failed to start UI server: {e}")
-        print(f"       Port {UI_PORT} may be in use. Try closing other apps.")
+        print(f"       Close any older KIRA instance using port {UI_PORT} and check the complete ui/ folder.")
         input("\nPress Enter to exit...")
         sys.exit(1)
     

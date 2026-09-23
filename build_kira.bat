@@ -33,6 +33,7 @@ python -m PyInstaller --noconfirm --clean --windowed ^
  --icon "assets\kira_app.ico" ^
  --add-data "kira_config.json;." ^
  --add-data "assets;assets" ^
+ --add-data "ui;ui" ^
  --collect-all customtkinter ^
  --collect-all PIL ^
  main_window.py

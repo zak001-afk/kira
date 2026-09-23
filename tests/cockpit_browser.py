@@ -1,0 +1,184 @@
+"""Optional real-browser regressions, with API fixtures (never desktop actions).
+
+    pip install playwright
+    playwright install chromium
+    python tests/cockpit_browser.py
+
+KIRA_TEST_BROWSER may point to an existing Chromium executable.
+"""
+from functools import partial
+from http.server import ThreadingHTTPServer
+import json
+import os
+from pathlib import Path
+import sys
+from threading import Thread
+import unittest
+from urllib.parse import urlsplit
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from kira_ui import KiraUIHandler
+from playwright.sync_api import sync_playwright, expect
+
+
+class CockpitBrowserTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), partial(KiraUIHandler, directory=str(ROOT / "ui")))
+        cls.worker = Thread(target=cls.server.serve_forever, daemon=True)
+        cls.worker.start()
+        cls.base = f"http://127.0.0.1:{cls.server.server_port}"
+        cls.playwright = sync_playwright().start()
+        cls.browser = cls.playwright.chromium.launch(
+            executable_path=os.environ.get("KIRA_TEST_BROWSER"),
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls.playwright.stop()
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.worker.join()
+
+    def setUp(self):
+        self.context = self.browser.new_context(viewport={"width": 1440, "height": 900}, locale="fr-FR")
+        self.page = self.context.new_page()
+        self.errors = []
+        self.requests = []
+        self.tasks = []
+        self.offline = False
+        self.page.on("pageerror", lambda error: self.errors.append(str(error)))
+        self.page.on("request", lambda request: self.requests.append(request))
+        self.page.route("**/api/**", self.api)
+
+    def tearDown(self):
+        self.assertEqual(self.errors, [])
+        self.context.close()
+
+    def api(self, route):
+        path = urlsplit(route.request.url).path
+        if self.offline:
+            route.fulfill(status=503, content_type="application/json", body=json.dumps({"error": "Backend not available"}))
+            return
+        if path == "/api/status":
+            data = {"online": True, "backend_available": True, "model": "qwen3:0.6b"}
+        elif path == "/api/system":
+            data = {"cpu_percent": 21.2, "memory_percent": 42.4, "disk_percent": 61.7, "gpu": "Test graphics device"}
+        elif path == "/api/history":
+            data = {"messages": []}
+        elif path == "/api/tasks":
+            data = {"tasks": self.tasks}
+        elif path == "/api/task":
+            task = {"id": str(len(self.tasks) + 1), "title": route.request.post_data_json["title"]}
+            self.tasks.append(task)
+            data = {"success": True, "id": task["id"]}
+        elif path == "/api/task/complete":
+            task_id = route.request.post_data_json["id"]
+            self.tasks = [task for task in self.tasks if task["id"] != task_id]
+            data = {"success": True}
+        elif path == "/api/command":
+            data = {"response": 'Here is literal text: <img id="injected" src=x onerror="window.injected=true">'}
+        elif path == "/api/tts":
+            data = {"error": "No synthesized voice in the browser test fixture"}
+        else:
+            self.fail(f"Unexpected API request: {path}")
+        route.fulfill(content_type="application/json", body=json.dumps(data))
+
+    def load(self):
+        self.page.goto(self.base, wait_until="networkidle")
+        self.page.evaluate("document.fonts.ready")
+
+    def test_local_assets_and_responsive_command_controls(self):
+        self.load()
+        self.assertTrue(self.page.locator("img").evaluate_all("els => els.every(el => el.complete && el.naturalWidth > 0)"))
+        expect(self.page.locator("#cpu")).to_have_text("21.2%")
+        expect(self.page.locator("#status-text")).to_have_text("NEURAL LINK ACTIVE")
+        for width, height in [(1920, 1080), (1440, 900), (1366, 768), (1000, 700), (852, 480), (768, 1024), (600, 900), (390, 844), (320, 568)]:
+            with self.subTest(width=width, height=height):
+                self.page.set_viewport_size({"width": width, "height": height})
+                self.assertFalse(self.page.evaluate("document.documentElement.scrollWidth > innerWidth"))
+                self.page.locator("#command").scroll_into_view_if_needed()
+                expect(self.page.locator("#command")).to_be_in_viewport()
+                expect(self.page.locator("#send")).to_be_in_viewport()
+                rect = self.page.locator("#send").bounding_box()
+                self.assertGreater(rect["width"], 25)
+                self.assertGreater(rect["height"], 25)
+        self.assertTrue(all(request.url.startswith(self.base) for request in self.requests), "UI must not request CDN assets or a browser-local backend")
+
+    def test_commands_safe_text_and_quick_prompt(self):
+        self.load()
+        self.page.locator("#mute").click()
+        self.page.locator('[data-prompt="search for "]').click()
+        expect(self.page.locator("#command")).to_have_value("search for ")
+        self.assertFalse(any("/api/command" in request.url for request in self.requests), "Incomplete search must not execute")
+        self.page.locator("#command").fill("Bonjour KIRA")
+        self.page.locator("#command").press("Enter")
+        expect(self.page.locator(".message").last).to_contain_text("<img")
+        expect(self.page.locator("#injected")).to_have_count(0)
+        expect(self.page.locator("#command-count")).to_have_text("001")
+        command = next(request for request in self.requests if request.url.endswith("/api/command"))
+        self.assertEqual(command.post_data_json, {"text": "Bonjour KIRA"})
+        self.page.locator("#clear-chat").click()
+        expect(self.page.locator(".message-block")).to_have_count(1)
+        expect(self.page.locator(".message")).to_contain_text("Channel cleared")
+
+    def test_tasks_are_saved_and_completed_through_the_api(self):
+        self.load()
+        self.page.locator('.system-toolbar [data-dialog="tasks"]').click()
+        expect(self.page.locator("#system-dialog")).to_be_visible()
+        self.page.locator("#task-title").fill("Préparer la prochaine version de KIRA")
+        self.page.locator("#task-form button").click()
+        expect(self.page.locator(".task-item")).to_have_count(1)
+        expect(self.page.locator("#task-count")).to_have_text("1")
+        expect(self.page.locator("#task-title")).to_have_value("")
+        self.page.locator(".task-item button").click()
+        expect(self.page.locator(".task-item")).to_have_count(0)
+        expect(self.page.locator("#task-count")).to_have_text("0")
+        self.page.keyboard.press("Escape")
+        expect(self.page.locator("#system-dialog")).not_to_be_visible()
+
+    def test_settings_persist_and_reduced_motion_can_be_overridden(self):
+        self.page.emulate_media(reduced_motion="reduce")
+        self.load()
+        expect(self.page.locator("#motion-status")).to_contain_text("SYSTEM SETTING")
+        self.assertEqual(self.page.locator(".reticle").evaluate("el => getComputedStyle(el).animationName"), "none")
+        self.page.locator('[data-dialog="settings"]').click()
+        expect(self.page.locator("#voice-language")).to_have_value("fr-FR")
+        self.page.locator("#voice-language").select_option("ar-SA")
+        self.page.locator("#motion-toggle").click()
+        expect(self.page.locator("html")).to_have_attribute("data-motion", "on")
+        self.page.locator("#settings-voice").click()
+        self.page.locator("#close-dialog").click()
+        self.page.reload(wait_until="networkidle")
+        expect(self.page.locator("#deck-motion-state")).to_have_text("MOTION: ON")
+        expect(self.page.locator("#deck-voice-state")).to_have_text("MUTED")
+        expect(self.page.locator("#voice-language")).to_have_value("ar-SA")
+        self.assertNotEqual(self.page.locator(".reticle").evaluate("el => getComputedStyle(el).animationName"), "none")
+        self.page.locator('[data-dialog="diagnostics"]').click()
+        self.page.locator("#motion-test").click()
+        expect(self.page.locator("#system-dialog")).not_to_be_visible()
+        expect(self.page.locator("#motion-status")).to_have_text("TEST MOTION · NO AUDIO")
+        self.page.wait_for_function("document.getElementById('halo').style.transform !== 'scale(1, 1)'")
+        self.assertFalse(any("/api/command" in request.url or "/api/tts" in request.url for request in self.requests))
+        self.page.locator("#deck-motion").click()  # on -> off
+        expect(self.page.locator("html")).to_have_attribute("data-motion", "off")
+        self.page.wait_for_function("getComputedStyle(document.getElementById('halo')).transform === 'matrix(1, 0, 0, 1, 0, 0)'")
+
+    def test_offline_state_is_explicit_and_does_not_show_fake_telemetry(self):
+        self.offline = True
+        self.load()
+        expect(self.page.locator("#cpu")).to_have_text("—")
+        expect(self.page.locator("#telemetry-live")).to_have_text("OFFLINE")
+        expect(self.page.locator("#status-text")).to_have_text("BACKEND OFFLINE")
+        self.page.locator("#command").fill("hello")
+        self.page.locator("#send").click()
+        expect(self.page.locator(".message").last).to_contain_text("backend is unavailable")
+        expect(self.page.locator("#send")).to_be_enabled()
+        self.assertEqual(len([request for request in self.requests if request.url.endswith("/api/command")]), 1)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

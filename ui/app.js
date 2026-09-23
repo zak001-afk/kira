@@ -1,909 +1,532 @@
-import * as THREE from "three";
 import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { Hologram } from "./hologram.mjs?v=cockpit-1";
 
-/* =========================================================
-   CONFIG
-   ========================================================= */
+/* KIRA / cockpit controller. The desktop and browser share the same local UI.
+   API calls stay on this origin; kira_ui.py proxies them to the local backend. */
+const $ = (id) => document.getElementById(id);
+const startedAt = performance.now();
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const pendingRequests = new Set();
+const intervals = [];
+let destroyed = false;
+let commandPending = false;
+let commandCount = 0;
+let messageSequence = 0;
+let speechState = "READY";
+let motionDemoStarted = -Infinity;
+let lastFrame = -Infinity;
+let animationId;
+let toastTimer;
+let errorTimer;
+let recognition = null;
+let listening = false;
+let motionPreference = preference("kira.motion", ["auto", "on", "off"], "auto");
+let speechEnabled = preference("kira.voice", ["on", "off"], "on") === "on";
+let voiceLanguage = preference("kira.language", ["en-US", "fr-FR", "ar-SA"],
+  navigator.language?.startsWith("fr") ? "fr-FR" : navigator.language?.startsWith("ar") ? "ar-SA" : "en-US");
 
-const RED = 0xff2020;
-const RED_BRIGHT = 0xff4545;
-const RED_DARK = 0x650808;
-const RED_DEEP = 0x260303;
-
-/* =========================================================
-   SCENE
-   ========================================================= */
-
-const container = document.getElementById("scene-container");
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x010101);
-
-/* =========================================================
-   CAMERA
-   ========================================================= */
-
-const camera = new THREE.PerspectiveCamera(
-  45,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  1000
-);
-camera.position.set(0, 0, 15);
-
-/* =========================================================
-   RENDERER
-   ========================================================= */
-
-const renderer = new THREE.WebGLRenderer({
-  antialias: true,
-  alpha: true,
-});
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-container.appendChild(renderer.domElement);
-
-/* =========================================================
-   LIGHTING
-   ========================================================= */
-
-const ambient = new THREE.AmbientLight(0x120000, 2);
-scene.add(ambient);
-
-const redLight = new THREE.PointLight(RED, 18, 12);
-redLight.position.set(0, 0, 2);
-scene.add(redLight);
-
-const composer = new EffectComposer(renderer);
-const renderPass = new RenderPass(scene, camera);
-composer.addPass(renderPass);
-
-const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  1.8,
-  0.75,
-  0.15
-);
-bloomPass.threshold = 0.12;
-bloomPass.strength = 1.45;
-bloomPass.radius = 0.65;
-composer.addPass(bloomPass);
-
-// ============================================================
-// KIRA CINEMATIC NEURAL REACTOR
-// ============================================================
-
-const reactor = new THREE.Group();
-scene.add(reactor);
-reactor.scale.setScalar(1.05);
-
-// --- OUTER SHELL ---
-const shellGeometry = new THREE.SphereGeometry(2.25, 64, 64);
-const shellMaterial = new THREE.MeshStandardMaterial({
-  color: 0x050505,
-  metalness: 0.95,
-  roughness: 0.25,
-  emissive: 0x180000,
-  emissiveIntensity: 0.18,
-  transparent: true,
-  opacity: 0.2,
-  depthWrite: false,
-});
-const shell = new THREE.Mesh(shellGeometry, shellMaterial);
-reactor.add(shell);
-
-// --- WIREFRAME SHELL ---
-const wireGeometry = new THREE.SphereGeometry(2.3, 32, 32);
-const wireMaterial = new THREE.MeshBasicMaterial({
-  color: 0xff1515,
-  wireframe: true,
-  transparent: true,
-  opacity: 0.035,
-});
-const wireShell = new THREE.Mesh(wireGeometry, wireMaterial);
-reactor.add(wireShell);
-
-// --- ARMOR RING (equator plates) ---
-const armorGroup = new THREE.Group();
-reactor.add(armorGroup);
-
-const armorMaterial = new THREE.MeshStandardMaterial({
-  color: 0x090909,
-  metalness: 1.0,
-  roughness: 0.18,
-  emissive: 0x250000,
-  emissiveIntensity: 0.45,
-});
-
-for (let i = 0; i < 12; i++) {
-  const angle = (i / 12) * Math.PI * 2;
-  const plateGeo = new THREE.BoxGeometry(0.95, 0.12, 0.38);
-  const plate = new THREE.Mesh(plateGeo, armorMaterial);
-  plate.position.set(Math.cos(angle) * 1.72, Math.sin(angle) * 1.72, 0);
-  plate.rotation.z = angle;
-  armorGroup.add(plate);
+function preference(key, choices, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return choices.includes(value) ? value : fallback;
+  } catch { return fallback; }
+}
+function savePreference(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* Optional in embedded/private browsers. */ }
+}
+function writeText(id, value) {
+  const element = $(id);
+  if (element.textContent !== String(value)) element.textContent = value;
 }
 
-// --- VERTICAL ARMOR ---
-const verticalArmor = new THREE.Group();
-reactor.add(verticalArmor);
-
-for (let i = 0; i < 8; i++) {
-  const angle = (i / 8) * Math.PI * 2;
-  const plateGeo = new THREE.BoxGeometry(0.32, 1.15, 0.1);
-  const plate = new THREE.Mesh(plateGeo, armorMaterial);
-  plate.position.set(Math.cos(angle) * 1.95, 0, Math.sin(angle) * 1.95);
-  plate.rotation.y = -angle;
-  verticalArmor.add(plate);
-}
-
-// --- INNER ENERGY SPHERE ---
-const energyGeometry = new THREE.SphereGeometry(1.55, 64, 64);
-const energyMaterial = new THREE.MeshBasicMaterial({
-  color: 0xff0808,
-  transparent: true,
-  opacity: 0.2,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-});
-// Deform on the GPU: the voice gives the energy shell a soft, living surface.
-// Reuse uniforms/buffers each frame; no per-frame geometry reconstruction.
-const voiceUniforms = {
-  voiceTime: { value: 0 },
-  voiceEnergy: { value: 0 },
-  voiceLow: { value: 0 },
-  voiceHigh: { value: 0 },
-};
-energyMaterial.onBeforeCompile = (shader) => {
-  Object.assign(shader.uniforms, voiceUniforms);
-  shader.vertexShader = `
-    uniform float voiceTime;
-    uniform float voiceEnergy;
-    uniform float voiceLow;
-    uniform float voiceHigh;
-  ` + shader.vertexShader;
-  shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", `
-    #include <begin_vertex>
-    float wave = sin(position.y * 5.0 + voiceTime * 3.0)
-               * cos(position.x * 4.0 - voiceTime * 2.0);
-    float detail = sin(position.z * 9.0 + voiceTime * 5.0);
-    transformed += normal * (wave * (voiceEnergy * 0.12 + voiceLow * 0.16)
-                           + detail * voiceHigh * 0.06);
-  `);
-};
-const energySphere = new THREE.Mesh(energyGeometry, energyMaterial);
-reactor.add(energySphere);
-
-// --- CORE ---
-const coreGeometry = new THREE.SphereGeometry(0.42, 64, 64);
-const coreMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffffff,
-  toneMapped: false,
-});
-const core = new THREE.Mesh(coreGeometry, coreMaterial);
-reactor.add(core);
-
-// --- CORE GLOW ---
-const glowGeometry = new THREE.SphereGeometry(0.78, 64, 64);
-const glowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xff1515,
-  transparent: true,
-  opacity: 0.42,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-  toneMapped: false,
-});
-const coreGlow = new THREE.Mesh(glowGeometry, glowMaterial);
-reactor.add(coreGlow);
-
-// --- WHITE HOT AURA ---
-const whiteGlowGeometry = new THREE.SphereGeometry(0.62, 64, 64);
-const whiteGlowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffdddd,
-  transparent: true,
-  opacity: 0.28,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-  toneMapped: false,
-});
-const whiteGlow = new THREE.Mesh(whiteGlowGeometry, whiteGlowMaterial);
-reactor.add(whiteGlow);
-
-// --- NEURAL CORE (central processor) ---
-const neuralCore = new THREE.Group();
-reactor.add(neuralCore);
-
-const innerRingGeo = new THREE.TorusGeometry(0.62, 0.035, 12, 96);
-const innerRingMat = new THREE.MeshBasicMaterial({
-  color: 0xff2020,
-  transparent: true,
-  opacity: 0.9,
-  blending: THREE.AdditiveBlending,
-});
-const innerRing = new THREE.Mesh(innerRingGeo, innerRingMat);
-innerRing.rotation.x = Math.PI / 2;
-neuralCore.add(innerRing);
-
-const secondRingGeo = new THREE.TorusGeometry(0.92, 0.018, 12, 128);
-const secondRingMat = new THREE.MeshBasicMaterial({
-  color: 0xff3030,
-  transparent: true,
-  opacity: 0.65,
-  blending: THREE.AdditiveBlending,
-});
-const secondRing = new THREE.Mesh(secondRingGeo, secondRingMat);
-secondRing.rotation.x = Math.PI / 2;
-neuralCore.add(secondRing);
-
-const frameGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.16, 32);
-const frameMat = new THREE.MeshStandardMaterial({
-  color: 0x090909,
-  metalness: 1,
-  roughness: 0.2,
-  emissive: 0x220000,
-  emissiveIntensity: 0.3,
-});
-const coreFrame = new THREE.Mesh(frameGeo, frameMat);
-coreFrame.rotation.x = Math.PI / 2;
-neuralCore.add(coreFrame);
-
-const discGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.18, 64);
-const discMat = new THREE.MeshBasicMaterial({
-  color: 0xff0808,
-  transparent: true,
-  opacity: 1.0,
-  blending: THREE.AdditiveBlending,
-});
-const energyDisc = new THREE.Mesh(discGeo, discMat);
-energyDisc.rotation.x = Math.PI / 2;
-energyDisc.position.z = 0.11;
-neuralCore.add(energyDisc);
-
-// --- NEURAL ORBITS ---
-const neuralOrbit1 = new THREE.Group();
-const neuralOrbit2 = new THREE.Group();
-neuralCore.add(neuralOrbit1);
-neuralCore.add(neuralOrbit2);
-
-const orbitGeo = new THREE.TorusGeometry(1.15, 0.012, 8, 128);
-const orbitMat = new THREE.MeshBasicMaterial({
-  color: 0xff1818,
-  transparent: true,
-  opacity: 0.55,
-  blending: THREE.AdditiveBlending,
-});
-
-const orbitRing1 = new THREE.Mesh(orbitGeo, orbitMat);
-neuralOrbit1.add(orbitRing1);
-
-const orbitRing2 = new THREE.Mesh(orbitGeo, orbitMat.clone());
-neuralOrbit2.add(orbitRing2);
-orbitRing2.rotation.x = Math.PI / 2;
-orbitRing2.rotation.z = Math.PI / 3;
-
-// --- ENERGY BEAMS ---
-const beamGroup = new THREE.Group();
-reactor.add(beamGroup);
-
-const beamMat = new THREE.MeshBasicMaterial({
-  color: 0xff2020,
-  transparent: true,
-  opacity: 0.45,
-  blending: THREE.AdditiveBlending,
-});
-
-for (let i = 0; i < 8; i++) {
-  const angle = (i / 8) * Math.PI * 2;
-  const beamGeo = new THREE.BoxGeometry(0.025, 1.7, 0.025);
-  const beam = new THREE.Mesh(beamGeo, beamMat);
-  beam.position.set(Math.cos(angle) * 0.95, Math.sin(angle) * 0.95, 0);
-  beam.rotation.z = angle;
-  beamGroup.add(beam);
-}
-
-// --- ENERGY HALO ---
-const haloGeo = new THREE.RingGeometry(0.62, 0.82, 96);
-const haloMat = new THREE.MeshBasicMaterial({
-  color: 0xff2020,
-  transparent: true,
-  opacity: 0.35,
-  side: THREE.DoubleSide,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-});
-const halo = new THREE.Mesh(haloGeo, haloMat);
-halo.rotation.x = Math.PI / 2;
-reactor.add(halo);
-
-// --- REACTOR LIGHT ---
-const reactorLight = new THREE.PointLight(0xff1010, 11, 8);
-reactorLight.position.set(0, 0, 0);
-reactor.add(reactorLight);
-
-// --- ORBITAL RINGS ---
-function createReactorRing(radius, tube, rotation, opacity) {
-  const geo = new THREE.TorusGeometry(radius, tube, 12, 180);
-  const mat = new THREE.MeshBasicMaterial({
-    color: 0xff1010,
-    transparent: true,
-    opacity: opacity,
-  });
-  const ring = new THREE.Mesh(geo, mat);
-  ring.rotation.set(rotation.x, rotation.y, rotation.z);
-  reactor.add(ring);
-  return ring;
-}
-
-const ring1 = createReactorRing(3.05, 0.012, new THREE.Euler(1.1, 0.15, 0.25), 0.28);
-const ring2 = createReactorRing(2.75, 0.018, new THREE.Euler(0.25, 1.15, 0.5), 0.2);
-const ring3 = createReactorRing(3.35, 0.009, new THREE.Euler(1.55, 0.55, 0.2), 0.14);
-const ring4 = createReactorRing(2.45, 0.008, new THREE.Euler(0.4, 0.8, 1.2), 0.14);
-
-// --- PARTICLES ---
-const particleCount = 450;
-const particlePositions = new Float32Array(particleCount * 3);
-
-for (let i = 0; i < particleCount; i++) {
-  const radius = 2.4 + Math.random() * 2.2;
-  const theta = Math.random() * Math.PI * 2;
-  const phi = Math.acos(2 * Math.random() - 1);
-  particlePositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-  particlePositions[i * 3 + 1] = radius * Math.cos(phi);
-  particlePositions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
-}
-
-const particleGeo = new THREE.BufferGeometry();
-particleGeo.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
-
-const particleMat = new THREE.PointsMaterial({
-  color: 0xff2020,
-  size: 0.025,
-  transparent: true,
-  opacity: 0.38,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-});
-
-const reactorParticles = new THREE.Points(particleGeo, particleMat);
-reactor.add(reactorParticles);
-
-/* =========================================================
-   MATRIX RAIN
-   ========================================================= */
-
-const matrixCanvas = document.getElementById("matrix");
-const matrixContext = matrixCanvas.getContext("2d");
-let matrixWidth = 0;
-let matrixHeight = 0;
-
-const matrixFontSize = 16;
-const matrixChars = "01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF";
-
-let matrixColumns = [];
-let matrixSpeeds = [];
-let matrixBrightness = [];
-
-function resizeMatrix() {
-  matrixWidth = matrixCanvas.width = window.innerWidth;
-  matrixHeight = matrixCanvas.height = window.innerHeight;
-  const columns = Math.floor(matrixWidth / matrixFontSize);
-  
-  matrixColumns = new Array(columns).fill(0).map(() => Math.random() * matrixHeight / matrixFontSize);
-  matrixSpeeds = new Array(columns).fill(0).map(() => 0.15 + Math.random() * 0.4);
-  matrixBrightness = new Array(columns).fill(0).map(() => Math.random());
-}
-
-function drawMatrix() {
-  // Heavier fade for subtler trails
-  matrixContext.fillStyle = "rgba(0, 0, 0, 0.08)";
-  matrixContext.fillRect(0, 0, matrixWidth, matrixHeight);
-  
-  matrixContext.font = `${matrixFontSize}px 'Courier New', monospace`;
-
-  for (let i = 0; i < matrixColumns.length; i++) {
-    // Skip some columns for less density
-    if (i % 3 === 0) continue;
-    
-    const x = i * matrixFontSize;
-    const y = matrixColumns[i] * matrixFontSize;
-    
-    // Random character
-    const char = matrixChars[Math.floor(Math.random() * matrixChars.length)];
-    
-    // Brightness variation (less intense)
-    const brightness = matrixBrightness[i];
-    
-    // Simpler color scheme, less glow
-    if (brightness > 0.85) {
-      matrixContext.fillStyle = "#ff5555";
-    } else if (brightness > 0.6) {
-      matrixContext.fillStyle = "#cc2222";
-    } else {
-      matrixContext.fillStyle = "#661111";
+async function requestJSON(path, { method = "GET", body, signal, timeout = 7000 } = {}) {
+  const abort = new AbortController();
+  const cancel = () => abort.abort();
+  if (signal?.aborted) cancel();
+  signal?.addEventListener("abort", cancel, { once: true });
+  pendingRequests.add(abort);
+  const timer = setTimeout(cancel, timeout);
+  try {
+    const response = await fetch(`/api${path}`, {
+      method, headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body), signal: abort.signal,
+    });
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      const error = new Error(data.error || `API error ${response.status}`);
+      error.status = response.status;
+      throw error;
     }
-    
-    matrixContext.fillText(char, x, y);
-    
-    // Reset when off screen (less frequent)
-    if (y > matrixHeight && Math.random() > 0.985) {
-      matrixColumns[i] = 0;
-      matrixBrightness[i] = Math.random();
-      matrixSpeeds[i] = 0.15 + Math.random() * 0.4;
-    } else {
-      matrixColumns[i] += matrixSpeeds[i];
-    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", cancel);
+    pendingRequests.delete(abort);
   }
 }
 
-/* =========================================================
-   ANIMATION
-   ========================================================= */
+function friendlyError(error) {
+  if (error.name === "AbortError") return "The request timed out. The action may still be running; check KIRA before trying it again.";
+  if (error.status === 503 || /fetch|network|backend not available/i.test(error.message)) {
+    return "KIRA’s backend is unavailable. Start the desktop app or run python launch_web.py on your computer, then try again.";
+  }
+  return error.message || "Unable to complete this request.";
+}
+function notify(message) {
+  writeText("toast", message);
+  $("toast").hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { $("toast").hidden = true; }, 4500);
+}
 
-const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-let motionPreference = "auto";
-try {
-  const saved = localStorage.getItem("kira.motion");
-  if (["auto", "on", "off"].includes(saved)) motionPreference = saved;
-} catch { /* private/embedded browsers may block storage */ }
-const motionButton = document.getElementById("motion-toggle");
-const motionStatus = document.getElementById("motion-status");
-const voiceMeter = document.getElementById("voice-level");
-const motionTest = document.getElementById("motion-test");
-const voiceTest = document.getElementById("voice-test");
-let motionDemoStarted = -Infinity;
+/* Conversation messages are text, never executable HTML from the model/API. */
+function addMessage(sender, text, isUser = false, historic = false) {
+  messageSequence++;
+  const block = document.createElement("article");
+  block.className = `message-block${isUser ? " user-block" : sender === "SYSTEM" ? " system-block" : ""}`;
+  const avatar = document.createElement("span");
+  avatar.className = "message-avatar";
+  avatar.innerHTML = `<svg class="icon" aria-hidden="true"><use href="#${isUser ? "i-user" : sender === "SYSTEM" ? "i-terminal" : "i-kira"}" /></svg>`;
+  const content = document.createElement("div");
+  content.className = "message-content";
+  const meta = document.createElement("div");
+  meta.className = "message-meta";
+  const name = document.createElement("span");
+  name.textContent = sender;
+  const time = document.createElement("time");
+  time.textContent = historic ? "HISTORY" : new Date().toTimeString().slice(0, 8);
+  if (!historic) time.dateTime = new Date().toISOString();
+  const message = document.createElement("p");
+  message.className = "message";
+  message.textContent = String(text);
+  meta.append(name, time);
+  content.append(meta, message);
+  block.append(avatar, content);
+  $("conversation").appendChild(block);
+  // Bound the live DOM. Saved conversation history is not modified.
+  if ($("conversation").children.length > 100) $("conversation").firstElementChild.remove();
+  $("conversation").scrollTop = $("conversation").scrollHeight;
+  $("conversation-empty").hidden = true;
+  return block;
+}
+
+function setActivity(state) {
+  if (state === "READY") state = commandPending ? "THINKING" : speechState !== "READY" ? speechState : "READY";
+  writeText("activity", state);
+  $("activity-dot").className = `activity-dot ${state === "THINKING" ? "thinking" : state === "SPEAKING" ? "speaking" : state === "READY" ? "active" : ""}`;
+  $("hologram").dataset.activity = state.toLowerCase();
+  const labels = { THINKING: "PROCESSING YOUR REQUEST", SPEAKING: "VOICE CHANNEL ACTIVE", LISTENING: "LISTENING TO OPERATOR", ERROR: "CHECK SYSTEM CONNECTION" };
+  document.querySelector(".stage-status-detail").textContent = labels[state] || "AWAITING YOUR COMMAND";
+}
+
+const speech = new SpeechPlayer({
+  fetchAudio: (text, { signal }) => requestJSON("/tts", { method: "POST", body: { text, voice: "jenny" }, signal, timeout: 15000 }),
+  onState: (state) => { speechState = state; setActivity(state); },
+});
+speech.setEnabled(speechEnabled);
+const hologram = new Hologram(document);
+function speak(text) { return speech.speak(text); }
+function stopSpeaking() { speech.stop(); }
+
+function updateVoiceControls() {
+  const name = speechEnabled ? "i-volume" : "i-muted";
+  $("mute").innerHTML = `<svg class="icon" aria-hidden="true"><use href="#${name}" /></svg>`;
+  $("mute").setAttribute("aria-pressed", String(!speechEnabled));
+  $("mute").setAttribute("aria-label", speechEnabled ? "Mute voice output" : "Enable voice output");
+  $("mute").title = speechEnabled ? "Mute voice output" : "Enable voice output";
+  writeText("deck-voice-state", speechEnabled ? "ENABLED" : "MUTED");
+  writeText("voice-output", speechEnabled ? "ENABLED" : "MUTED");
+  writeText("settings-voice", speechEnabled ? "VOICE: ON" : "VOICE: OFF");
+  $("deck-voice").setAttribute("aria-pressed", String(speechEnabled));
+  $("deck-voice").querySelector(".button-light").classList.toggle("off", !speechEnabled);
+  $("voice-test").disabled = !speechEnabled;
+  $("voice-test").title = speechEnabled ? "Test KIRA’s voice" : "Enable voice output in Settings first";
+}
+function toggleVoice() {
+  speechEnabled = !speechEnabled;
+  speech.setEnabled(speechEnabled);
+  if (speechEnabled) speech.unlock();
+  savePreference("kira.voice", speechEnabled ? "on" : "off");
+  updateVoiceControls();
+}
+["mute", "deck-voice", "settings-voice"].forEach((id) => $(id).addEventListener("click", toggleVoice));
+updateVoiceControls();
+
 function motionDisabled() {
   return motionPreference === "off" || (motionPreference === "auto" && reducedMotion.matches);
 }
 function updateMotionButton() {
-  motionButton.textContent = `MOTION: ${motionPreference.toUpperCase()}`;
-  motionButton.title = "Auto follows Windows reduced motion. On explicitly enables movement. Off keeps it still.";
+  document.documentElement.dataset.motion = motionPreference;
+  writeText("motion-toggle", `MOTION: ${motionPreference.toUpperCase()}`);
+  writeText("deck-motion-state", `MOTION: ${motionPreference.toUpperCase()}`);
+  $("motion-toggle").title = "Auto follows system reduced motion. On explicitly enables movement. Off keeps the projection still.";
+  $("deck-motion").querySelector(".button-light").classList.toggle("off", motionDisabled());
 }
-motionButton.addEventListener("click", () => {
+function cycleMotion() {
   const choices = ["auto", "on", "off"];
   motionPreference = choices[(choices.indexOf(motionPreference) + 1) % choices.length];
-  try { localStorage.setItem("kira.motion", motionPreference); } catch { /* optional */ }
+  savePreference("kira.motion", motionPreference);
   updateMotionButton();
+}
+$("motion-toggle").addEventListener("click", cycleMotion);
+$("deck-motion").addEventListener("click", cycleMotion);
+reducedMotion.addEventListener?.("change", updateMotionButton);
+$("motion-test").addEventListener("click", () => {
+  if (motionDisabled()) {
+    writeText("diagnostic-status", "Motion is disabled. Select Motion: On in Settings to test it.");
+    return;
+  }
+  motionDemoStarted = performance.now();
+  $("system-dialog").close();
+  notify("Testing the holographic field · 3 seconds · no audio");
 });
-motionTest.addEventListener("click", () => { motionDemoStarted = performance.now(); });
-voiceTest.addEventListener("click", () => {
+$("voice-test").addEventListener("click", () => {
   if (!speech.enabled) return;
   speech.unlock();
-  speak("My core moves with my voice. A short pause. Now I am speaking again.");
+  $("system-dialog").close();
+  speak("I am Kira. My neural field moves with my voice. A short pause. Always at your service, Operator.");
 });
 updateMotionButton();
-let lastFrame = performance.now();
-let voiceRotation = 0;
 
-function animate() {
-  requestAnimationFrame(animate);
-  const now = performance.now();
-  const time = now * 0.001;
-  const dt = Math.min((now - lastFrame) / 1000, 0.1);
+function animate(now = performance.now()) {
+  if (destroyed) return;
+  animationId = requestAnimationFrame(animate);
+  // CSS handles the slow ambient orbits; audio cues only need 30 updates/second.
+  if (document.hidden || now - lastFrame < 1000 / 30) return;
   lastFrame = now;
   const voice = speech.motion.sample(now);
   const disabled = motionDisabled();
   const demoAge = (now - motionDemoStarted) / 1000;
   const demo = demoAge >= 0 && demoAge < 3;
-  const demoEnergy = demo ? Math.sin(demoAge * Math.PI / 3) * (0.35 + 0.6 * Math.sin(demoAge * 9) ** 2) : 0;
-  const level = demo ? demoEnergy : voice.energy;
-  voiceMeter.style.transform = `scaleX(${voice.energy.toFixed(3)})`;
+  const demoEnergy = demo ? Math.sin(demoAge * Math.PI / 3) * (0.35 + 0.6 * Math.sin(demoAge * 9) ** 2) : null;
+  hologram.update(voice, { disabled, demoEnergy, time: now / 1000 });
+  $("voice-level").style.transform = `scaleX(${voice.energy.toFixed(3)})`;
   const label = disabled ? (motionPreference === "auto" ? "MOTION OFF · SYSTEM SETTING" : "MOTION OFF")
     : demo ? "TEST MOTION · NO AUDIO"
     : !speech.enabled ? "VOICE MUTED"
     : !voice.active ? (speechState === "THINKING" ? "WAITING FOR VOICE" : "VOICE IDLE")
     : voice.source === "audio" ? (voice.energy > 0.015 ? "VOICE SYNC · AUDIO" : "VOICE SYNC · QUIET / NO SIGNAL")
     : voice.source === "words" ? "VOICE SYNC · WORD TIMING" : "VOICE SYNC · ESTIMATED";
-  if (motionStatus.textContent !== label) motionStatus.textContent = label;
-  // Reduced motion keeps a quiet brightness cue, not speech-driven movement.
-  const energy = disabled ? 0 : level;
-  const low = disabled ? 0 : demo ? demoEnergy * 0.6 : voice.low;
-  const high = disabled ? 0 : demo ? demoEnergy * 0.3 : voice.high;
-  const light = level * (disabled ? 0.12 : 1);
-  const motionTime = disabled ? 0 : time;
-  const step = disabled ? 0 : dt;
-  voiceRotation += energy * step;
-  voiceUniforms.voiceTime.value = motionTime;
-  voiceUniforms.voiceEnergy.value = energy;
-  voiceUniforms.voiceLow.value = low;
-  voiceUniforms.voiceHigh.value = high;
-
-  // Keep the original silhouette. Vowels expand the core; crisp consonants
-  // brighten the inner rings. Silence releases smoothly to its idle breath.
-  reactor.rotation.y = motionTime * 0.12;
-  reactor.rotation.x = Math.sin(motionTime * 0.18) * 0.08;
-  // Make the whole visible neuron breathe, not just its tiny central light.
-  reactor.scale.set(1.05 + energy * 0.12, 1.05 + energy * 0.23, 1.05 + energy * 0.12);
-  reactor.position.y = Math.sin(motionTime * 3.5) * energy * 0.14;
-  armorGroup.rotation.y = -motionTime * 0.08;
-  verticalArmor.rotation.y = motionTime * 0.05;
-  halo.rotation.z = motionTime * 1.8 + voiceRotation * 0.5;
-  halo.scale.setScalar(1 + low * 0.25);
-  haloMat.opacity = 0.35 + light * 0.12;
-  neuralCore.rotation.z = motionTime * 0.35 + voiceRotation * 0.65;
-  neuralCore.scale.setScalar(1 + energy * 0.2);
-  innerRing.rotation.z = motionTime * 1.2 + voiceRotation;
-  innerRing.scale.setScalar(1 + high * 0.25);
-  secondRing.rotation.z = -motionTime * 0.8 - voiceRotation * 0.7;
-  secondRing.scale.setScalar(1 + low * 0.2);
-  neuralOrbit1.rotation.x = motionTime * 0.7 + voiceRotation;
-  neuralOrbit1.rotation.y = motionTime * 0.4;
-  neuralOrbit2.rotation.x = -motionTime * 0.5;
-  neuralOrbit2.rotation.z = motionTime * 0.8 + voiceRotation;
-  energyDisc.scale.setScalar(1 + Math.sin(motionTime * 4) * 0.04 + energy * 0.2);
-  beamGroup.rotation.z = -motionTime * 0.25;
-  beamGroup.scale.setScalar(1 + low * 0.12);
-  beamMat.opacity = 0.45 + light * 0.14;
-
-  // Frame-rate independent ring movement.
-  ring1.rotation.z += step * 0.15;
-  ring1.rotation.x += step * 0.06;
-  ring2.rotation.y += step * 0.18;
-  ring2.rotation.z -= step * 0.072;
-  ring3.rotation.x -= step * 0.09;
-  ring3.rotation.y += step * 0.108;
-  ring4.rotation.z += step * 0.21;
-
-  energySphere.scale.setScalar(1 + Math.sin(motionTime * 2.8) * 0.03 + energy * 0.1 + low * 0.08);
-  const breath = Math.sin(motionTime * 2.2) * 0.035;
-  core.scale.set(1 + breath + energy * 0.16, 1 + breath + energy * 0.34, 1 + breath + low * 0.2);
-  coreGlow.scale.setScalar(1 + breath + energy * 0.28);
-  glowMaterial.opacity = 0.38 + light * 0.12;
-  whiteGlow.scale.setScalar(1 + breath + high * 0.22 + energy * 0.1);
-  whiteGlowMaterial.opacity = 0.22 + light * 0.07;
-  reactorLight.intensity = 9 + light * 3;
-  bloomPass.strength = 1.45 + light * 0.18;
-
-  reactorParticles.rotation.y = motionTime * 0.025;
-  reactorParticles.rotation.x = Math.sin(motionTime * 0.15) * 0.15;
-  reactorParticles.scale.setScalar(1 + low * 0.05);
-  particleMat.size = 0.025 + high * 0.012;
-
-  if (!disabled) drawMatrix();
-  composer.render();
+  writeText("motion-status", label);
+  writeText("diagnostic-status", label);
 }
 
-/* =========================================================
-   RESIZE
-   ========================================================= */
+async function sendCommand(text) {
+  text = String(text).trim();
+  if (!text || commandPending || destroyed) return;
+  commandPending = true;
+  clearTimeout(errorTimer);
+  stopSpeaking();
+  speech.unlock(); // Unlock Web Audio during the user's gesture, before the reply.
+  addMessage("OPERATOR", text, true);
+  setActivity("THINKING");
+  $("send").disabled = true;
+  $("command-form").setAttribute("aria-busy", "true");
+  commandCount++;
+  writeText("command-count", String(commandCount).padStart(3, "0"));
+  const thinking = addMessage("KIRA", "Processing your request…");
+  thinking.classList.add("thinking");
+  const started = performance.now();
+  try {
+    const data = await requestJSON("/command", { method: "POST", body: { text }, timeout: 120000 });
+    if (destroyed) return;
+    thinking.remove();
+    writeText("response-time", `${((performance.now() - started) / 1000).toFixed(2)} s`);
+    // Failed actions must never be labelled as successfully executed.
+    const response = data.success === false ? `KIRA could not complete: ${data.action || "this action"}.${data.response ? `\nBackend response: ${data.response}` : ""}`
+      : data.response || data.details || (data.action && data.action !== "none" ? `Done: ${data.action.replace(/_/g, " ")}` : "Command received.");
+    addMessage(data.success === false ? "SYSTEM" : "KIRA", response);
+    if (data.success !== false) speak(response);
+  } catch (error) {
+    if (destroyed) return;
+    thinking.remove();
+    addMessage("SYSTEM", friendlyError(error));
+    setActivity("ERROR");
+    errorTimer = setTimeout(() => setActivity("READY"), 4000);
+  } finally {
+    commandPending = false;
+    $("send").disabled = false;
+    $("command-form").setAttribute("aria-busy", "false");
+    if (!destroyed) {
+      if ($("activity").textContent !== "ERROR") setActivity("READY");
+      updateTasks();
+    }
+  }
+}
 
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
+$("command-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const text = $("command").value;
+  if (!text.trim() || commandPending) return;
+  $("command").value = "";
+  sendCommand(text);
+});
+window.quickCmd = (command) => sendCommand(command); // Retain compatibility with desktop integrations.
+document.querySelectorAll("[data-command]").forEach((button) => button.addEventListener("click", () => {
+  if (commandPending) return notify("KIRA is still processing your previous command.");
+  sendCommand(button.dataset.command);
+}));
+document.querySelectorAll("[data-prompt]").forEach((button) => button.addEventListener("click", () => {
+  $("command").value = button.dataset.prompt;
+  $("command").focus();
+  $("command").scrollIntoView({ block: "nearest" });
+}));
+document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    $("system-dialog").close();
+    $("command").focus();
+  }
+});
+$("clear-chat").addEventListener("click", () => {
+  if (commandPending) return notify("Wait for the current command to finish before clearing the view.");
+  $("conversation").replaceChildren();
+  addMessage("KIRA", "Channel cleared.\nReady for your next command, Operator.");
+  $("conversation-empty").hidden = false;
+  notify("Conversation view cleared. Saved history is unchanged.");
 });
 
-/* =========================================================
-   KIRA BACKEND INTEGRATION
-   ========================================================= */
-
-// Detect if running in pywebview (native app) or browser
-const IS_NATIVE = typeof window.pywebview !== "undefined";
-const API_BASE = window.location.protocol + "//" + window.location.hostname + ":8765";
-
-// Set boot time
-document.getElementById("boot-time").textContent = new Date().toTimeString().slice(0, 5);
-
-// ─────────────────────────────────────────────
-// Live Clock
-// ─────────────────────────────────────────────
+/* Browser voice input; the projection reacts to OUTPUT, not microphone audio. */
+$("voice-language").value = voiceLanguage;
+$("voice-language").addEventListener("change", () => {
+  voiceLanguage = $("voice-language").value;
+  savePreference("kira.language", voiceLanguage);
+  if (recognition) {
+    if (listening) recognition.stop();
+    recognition.lang = voiceLanguage;
+  }
+});
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (Recognition) {
+  recognition = new Recognition();
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.lang = voiceLanguage;
+  recognition.onstart = () => {
+    listening = true;
+    stopSpeaking();
+    $("mic").classList.add("listening");
+    $("mic").setAttribute("aria-label", "Stop voice input");
+    setActivity("LISTENING");
+  };
+  recognition.onresult = (event) => {
+    const text = event.results[0][0].transcript;
+    $("command").value = text;
+    if (!commandPending) { $("command").value = ""; sendCommand(text); }
+  };
+  recognition.onend = () => {
+    listening = false;
+    $("mic").classList.remove("listening");
+    $("mic").setAttribute("aria-label", "Start voice input");
+    setActivity("READY");
+  };
+  recognition.onerror = (event) => {
+    if (event.error === "aborted") return;
+    notify(event.error === "not-allowed" ? "Microphone access was denied. Allow it in your browser settings, or type a command."
+      : event.error === "no-speech" ? "No speech detected. Try again, or type a command."
+      : "Voice input is unavailable. You can still type a command.");
+  };
+  $("mic").addEventListener("click", () => {
+    if (commandPending) return notify("Wait for KIRA to finish processing before using voice input.");
+    try { speech.unlock(); listening ? recognition.stop() : recognition.start(); }
+    catch { notify("Voice input is already starting. Please wait a moment."); }
+  });
+} else {
+  $("mic").disabled = true;
+  $("mic").title = "Speech recognition is unavailable in this browser. Type a command instead.";
+}
 
 function updateClock() {
   const now = new Date();
-  const timeEl = document.getElementById("clock-time");
-  const dateEl = document.getElementById("clock-date");
-  
-  if (timeEl) {
-    timeEl.textContent = now.toLocaleTimeString('en-US', { hour12: false });
-  }
-  
-  if (dateEl) {
-    dateEl.textContent = now.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    }).toUpperCase();
-  }
+  writeText("clock-time", now.toLocaleTimeString("en-GB", { hour12: false }));
+  writeText("clock-date", now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" }).toUpperCase());
+  const seconds = Math.floor((performance.now() - startedAt) / 1000);
+  writeText("uptime", [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map((n) => String(n).padStart(2, "0")).join(":"));
 }
-
+$("boot-time").textContent = new Date().toTimeString().slice(0, 8);
+writeText("transport", window.location.protocol === "https:" ? "HTTPS" : "HTTP / LOCAL");
 updateClock();
-setInterval(updateClock, 1000);
 
-// Conversation management
-function addMessage(sender, text, isUser = false) {
-  const conversation = document.getElementById("conversation");
-  const time = new Date().toTimeString().slice(0, 5);
-  
-  const block = document.createElement("div");
-  block.className = isUser ? "message-block user-block" : "message-block";
-  block.innerHTML = `
-    <div class="message-meta ${isUser ? 'user' : ''}">${sender} &nbsp;//&nbsp; ${time}</div>
-    <div class="message">${text}</div>
-  `;
-  
-  conversation.appendChild(block);
-  conversation.scrollTop = conversation.scrollHeight;
-}
-
-// READY from a command/mic callback must not overwrite ongoing speech.
-let speechState = "READY";
-function setActivity(state) {
-  if (state === "READY" && speechState !== "READY") state = speechState;
-  const activityEl = document.getElementById("activity");
-  const dotEl = document.getElementById("activity-dot");
-  
-  activityEl.textContent = state;
-  dotEl.className = "activity-dot";
-  
-  if (state === "THINKING") {
-    dotEl.classList.add("thinking");
-  } else if (state === "SPEAKING") {
-    dotEl.classList.add("speaking");
-  } else if (state !== "STANDBY") {
-    dotEl.classList.add("active");
-  }
-}
-
-// ─────────────────────────────────────────────
-// Text-to-Speech (KIRA speaks responses aloud using neural voices)
-// ─────────────────────────────────────────────
-
-let speechEnabled = true;
-const speech = new SpeechPlayer({
-  fetchAudio: async (text, { signal }) => {
-    const response = await fetch(`${API_BASE}/api/tts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice: "jenny" }),
-      signal,
-    });
-    if (!response.ok) throw new Error(`TTS API error: ${response.status}`);
-    return response.json();
-  },
-  onState: (state) => {
-    speechState = state;
-    setActivity(state);
-  },
-});
-
-function speak(text) {
-  return speech.speak(text);
-}
-
-function stopSpeaking() {
-  speech.stop();
-}
-
-window.addEventListener("pagehide", () => speech.destroy());
-
-// Mute/unmute toggle
-const muteButton = document.getElementById("mute");
-if (muteButton) {
-  muteButton.addEventListener("click", () => {
-    speechEnabled = !speechEnabled;
-    speech.setEnabled(speechEnabled);
-    if (speechEnabled) speech.unlock();
-    
-    // Update icon
-    if (speechEnabled) {
-      muteButton.innerHTML = `
-        <svg viewBox="0 0 24 24">
-          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-        </svg>
-      `;
-      muteButton.title = "Voice output ON";
-    } else {
-      muteButton.innerHTML = `
-        <svg viewBox="0 0 24 24">
-          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-          <line x1="23" y1="9" x2="17" y2="15"></line>
-          <line x1="17" y1="9" x2="23" y2="15"></line>
-        </svg>
-      `;
-      muteButton.title = "Voice output OFF";
-    }
-    
-    if (!speechEnabled) {
-      stopSpeaking();
-    }
-    
-    console.log(`[KIRA] Voice output ${speechEnabled ? "enabled" : "disabled"}`);
-  });
-}
-
-// Send command to backend (works in both native and browser modes)
-async function sendCommand(text) {
-  if (!text.trim()) return;
-  stopSpeaking();
-  speech.unlock(); // user gesture: unlock Web Audio before awaiting the model
-
-  addMessage("YOU", text, true);
-  setActivity("THINKING");
-  
+let statusPending = false;
+async function updateStatus() {
+  if (statusPending || commandPending || destroyed || document.hidden) return;
+  statusPending = true;
+  const started = performance.now();
   try {
-    // Always use HTTP API — works in both native app and browser
-    const response = await fetch(`${API_BASE}/api/command`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    
-    if (data.error) {
-      addMessage("SYSTEM", `Error: ${data.error}`);
-    } else if (data.response) {
-      addMessage("KIRA", data.response);
-      speak(data.response);
-    } else if (data.action && data.success) {
-      addMessage("KIRA", `Done: ${data.action}`);
-      speak(`Done. ${data.action.replace(/_/g, ' ')}`);
-    } else if (data.action) {
-      addMessage("KIRA", `Executed: ${data.action}`);
-    } else {
-      addMessage("KIRA", "Done.");
-    }
-    
-    setActivity("READY");
-  } catch (error) {
-    console.error("Command failed:", error);
-    
-    if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError") || error.message.includes("fetch")) {
-      addMessage("SYSTEM", "Cannot reach KIRA backend at " + API_BASE + ". Check that the API server is running.");
-    } else {
-      addMessage("SYSTEM", `Error: ${error.message}`);
-    }
-    
-    setActivity("ERROR");
-    setTimeout(() => setActivity("READY"), 3000);
-  }
+    const data = await requestJSON("/status");
+    const available = data.backend_available ?? Boolean(data.model && data.model !== "unknown");
+    writeText("latency", `${Math.round(performance.now() - started)} ms`);
+    writeText("model-name", data.model && data.model !== "unknown" ? data.model : "NOT LOADED");
+    $("model-name").title = data.model || "No neural engine loaded";
+    writeText("neural-status", available ? "ACTIVE" : "STANDBY");
+    writeText("backend-state", available ? "CONNECTED" : "NOT LOADED");
+    writeText("status-text", available ? "NEURAL LINK ACTIVE" : "INTERFACE PREVIEW");
+    $("connection-pill").classList.toggle("connected", available);
+    writeText("diagnostic-connection", available ? "Connected to local KIRA" : "API online · command engine not loaded");
+  } catch {
+    writeText("latency", "—");
+    writeText("model-name", "UNAVAILABLE");
+    writeText("neural-status", "OFFLINE");
+    writeText("backend-state", "OFFLINE");
+    writeText("status-text", "BACKEND OFFLINE");
+    $("connection-pill").classList.remove("connected");
+    writeText("diagnostic-connection", "Offline · start the KIRA launcher");
+  } finally { statusPending = false; }
 }
 
-// Command input handling
-const commandInput = document.getElementById("command");
-const sendButton = document.getElementById("send");
-
-sendButton.addEventListener("click", () => {
-  sendCommand(commandInput.value);
-  commandInput.value = "";
-});
-
-commandInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    sendCommand(commandInput.value);
-    commandInput.value = "";
-  }
-});
-
-// Quick command function (exposed globally for onclick)
-window.quickCmd = function(cmd) {
-  commandInput.value = cmd;
-  sendCommand(cmd);
-  commandInput.value = "";
-};
-
-// Voice input (Web Speech API)
-const micButton = document.getElementById("mic");
-let recognition = null;
-
-if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  recognition = new SpeechRecognition();
-  recognition.continuous = false;
-  recognition.interimResults = false;
-  recognition.lang = "en-US";
-  
-  recognition.onstart = () => {
-    stopSpeaking();
-    micButton.classList.add("listening");
-    setActivity("LISTENING");
-  };
-  
-  recognition.onresult = (event) => {
-    const transcript = event.results[0][0].transcript;
-    commandInput.value = transcript;
-    sendCommand(transcript);
-    commandInput.value = "";
-  };
-  
-  recognition.onend = () => {
-    micButton.classList.remove("listening");
-    setActivity("READY");
-  };
-  
-  recognition.onerror = (event) => {
-    console.error("Speech recognition error:", event.error);
-    micButton.classList.remove("listening");
-    setActivity("ERROR");
-  };
-  
-  micButton.addEventListener("click", () => {
-    if (recognition) {
-      speech.unlock();
-      recognition.start();
-    }
-  });
-} else {
-  micButton.style.display = "none";
-}
-
-// Poll system telemetry every 3 seconds
+let telemetryPending = false;
 async function updateTelemetry() {
+  if (telemetryPending || commandPending || destroyed || document.hidden) return;
+  telemetryPending = true;
+  const paint = (key, value) => {
+    const valid = typeof value === "number" && Number.isFinite(value);
+    const percent = valid ? Math.max(0, Math.min(100, value)) : 0;
+    writeText(key, valid ? `${percent.toFixed(1)}%` : "—");
+    $(`${key}-bar`).style.width = `${percent}%`;
+  };
   try {
-    let data;
-    
-    if (IS_NATIVE && window.pywebview && window.pywebview.api) {
-      data = await window.pywebview.api.get_system_info();
-    } else {
-      const response = await fetch(`${API_BASE}/api/system`);
-      data = await response.json();
-    }
-    
-    if (data.cpu_percent !== undefined) {
-      document.getElementById("cpu").textContent = `${data.cpu_percent}%`;
-      const cpuBar = document.getElementById("cpu-bar");
-      if (cpuBar) cpuBar.style.width = `${data.cpu_percent}%`;
-    }
-    if (data.memory_percent !== undefined) {
-      document.getElementById("memory").textContent = `${data.memory_percent}%`;
-      const memBar = document.getElementById("memory-bar");
-      if (memBar) memBar.style.width = `${data.memory_percent}%`;
-    }
-    if (data.gpu) {
-      document.getElementById("gpu").textContent = data.gpu;
-    }
-  } catch (error) {
-    // Backend not available
-  }
+    const data = await requestJSON("/system");
+    paint("cpu", data.cpu_percent);
+    paint("memory", data.memory_percent);
+    paint("disk", data.disk_percent);
+    writeText("gpu", data.gpu || "UNAVAILABLE");
+    $("gpu").title = data.gpu || "Graphics telemetry is unavailable";
+    writeText("telemetry-live", "LIVE");
+    $("telemetry-live").classList.add("live");
+  } catch {
+    ["cpu", "memory", "disk"].forEach((key) => paint(key, null));
+    writeText("gpu", "UNAVAILABLE");
+    writeText("telemetry-live", "OFFLINE");
+    $("telemetry-live").classList.remove("live");
+  } finally { telemetryPending = false; }
 }
 
-// Poll tasks every 5 seconds
+let tasksPending = false;
 async function updateTasks() {
+  if (tasksPending || destroyed || commandPending) return;
+  tasksPending = true;
   try {
-    let data;
-    
-    if (IS_NATIVE && window.pywebview && window.pywebview.api) {
-      data = await window.pywebview.api.get_tasks();
-    } else {
-      const response = await fetch(`${API_BASE}/api/tasks?type=todo&completed=false`);
-      data = await response.json();
+    const data = await requestJSON("/tasks?type=todo&completed=false");
+    const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+    writeText("task-count", tasks.length);
+    $("tasks-list").replaceChildren();
+    if (!tasks.length) {
+      const empty = document.createElement("p");
+      empty.className = "task-empty";
+      empty.textContent = "All clear. No pending tasks.\nAdd a task below, or ask KIRA to remember it.";
+      $("tasks-list").appendChild(empty);
     }
-    
-    const tasksList = document.getElementById("tasks-list");
-    
-    if (data.tasks && data.tasks.length > 0) {
-      tasksList.innerHTML = data.tasks.slice(0, 5).map(task => `
-        <div class="task-item">
-          <span class="task-bullet"></span>
-          <span>${task.title}</span>
-        </div>
-      `).join("");
-    } else {
-      tasksList.innerHTML = '<div class="task-empty">No pending tasks</div>';
-    }
-  } catch (error) {
-    // Backend not available
-  }
+    tasks.forEach((task) => {
+      const row = document.createElement("div");
+      row.className = "task-item";
+      const complete = document.createElement("button");
+      complete.type = "button";
+      complete.title = "Mark complete";
+      complete.setAttribute("aria-label", `Complete task: ${task.title}`);
+      complete.textContent = "✓";
+      complete.addEventListener("click", async () => {
+        complete.disabled = true;
+        try {
+          const result = await requestJSON("/task/complete", { method: "POST", body: { id: task.id } });
+          if (!result.success) throw new Error("The task could not be completed.");
+          writeText("task-feedback", "Task completed.");
+          await updateTasks();
+        } catch (error) { complete.disabled = false; writeText("task-feedback", friendlyError(error)); }
+      });
+      const title = document.createElement("span");
+      title.textContent = task.title;
+      row.append(complete, title);
+      $("tasks-list").appendChild(row);
+    });
+  } catch {
+    writeText("task-count", "—");
+    $("tasks-list").replaceChildren();
+    const empty = document.createElement("p");
+    empty.className = "task-empty";
+    empty.textContent = "Task manager unavailable. Start KIRA’s backend to access your tasks.";
+    $("tasks-list").appendChild(empty);
+  } finally { tasksPending = false; }
+}
+$("task-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const title = $("task-title").value.trim();
+  const button = $("task-form").querySelector("button");
+  if (!title || button.disabled) return;
+  button.disabled = true;
+  writeText("task-feedback", "Saving…");
+  try {
+    await requestJSON("/task", { method: "POST", body: { title, type: "todo" } });
+    $("task-title").value = "";
+    writeText("task-feedback", "Task saved to local memory.");
+    await updateTasks();
+  } catch (error) { writeText("task-feedback", friendlyError(error)); }
+  finally { button.disabled = false; }
+});
+
+async function loadHistory() {
+  try {
+    const sequence = messageSequence;
+    const data = await requestJSON("/history?limit=20");
+    if (messageSequence !== sequence || !Array.isArray(data.messages) || !data.messages.length) return;
+    $("conversation").replaceChildren();
+    data.messages.forEach((message) => {
+      if (message.role !== "user" && message.role !== "assistant") return;
+      addMessage(message.role === "user" ? "OPERATOR" : "KIRA", message.content, message.role === "user", true);
+    });
+  } catch { /* Fresh/offline instances keep the genuine startup greeting. */ }
 }
 
-setInterval(updateTelemetry, 3000);
-setInterval(updateTasks, 5000);
+/* Dialog is native: focus is trapped, Escape works, and focus is restored. */
+function openPanel(name) {
+  const titles = { settings: "INTERFACE SETTINGS", diagnostics: "SYSTEM DIAGNOSTICS", tasks: "YOUR WORKSPACE" };
+  if (!titles[name]) return;
+  ["settings", "diagnostics", "tasks"].forEach((panel) => { $(`${panel}-panel`).hidden = panel !== name; });
+  writeText("dialog-title", titles[name]);
+  if (!$("system-dialog").open) $("system-dialog").showModal();
+  if (name === "tasks") updateTasks();
+  if (name === "diagnostics") updateStatus();
+}
+document.querySelectorAll("[data-dialog]").forEach((button) => button.addEventListener("click", () => openPanel(button.dataset.dialog)));
+$("close-dialog").addEventListener("click", () => $("system-dialog").close());
+$("system-dialog").addEventListener("click", (event) => {
+  if (event.target !== $("system-dialog")) return;
+  const box = $("system-dialog").getBoundingClientRect();
+  if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) $("system-dialog").close();
+});
+$("fullscreen").addEventListener("click", async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+    else notify("Use your window’s maximize button for a full-screen cockpit.");
+  } catch { notify("Fullscreen is unavailable here. Open KIRA in its own window to use it."); }
+});
+document.addEventListener("fullscreenchange", () => {
+  $("fullscreen").title = document.fullscreenElement ? "Exit fullscreen" : "Enter fullscreen";
+});
+
+window.addEventListener("pagehide", () => {
+  destroyed = true;
+  cancelAnimationFrame(animationId);
+  intervals.forEach(clearInterval);
+  clearTimeout(toastTimer);
+  clearTimeout(errorTimer);
+  pendingRequests.forEach((request) => request.abort());
+  reducedMotion.removeEventListener?.("change", updateMotionButton);
+  recognition?.abort();
+  speech.destroy();
+});
+// A back/forward-cache restore needs fresh timers and a new audio context.
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) window.location.reload();
+});
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && !destroyed) { lastFrame = -Infinity; updateStatus(); updateTelemetry(); }
+});
+intervals.push(setInterval(updateClock, 1000), setInterval(updateTelemetry, 3000), setInterval(updateStatus, 10000), setInterval(() => {
+  if (!document.hidden) updateTasks();
+}, 8000));
+updateStatus();
 updateTelemetry();
 updateTasks();
-
-/* =========================================================
-   START
-   ========================================================= */
-
-resizeMatrix();
+loadHistory();
 animate();

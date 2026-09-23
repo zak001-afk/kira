@@ -125,67 +125,119 @@ build_kira.bat
 - "Help"
 
 ### Text Input
-Use the command bar at the bottom of the interface to type commands instead of using voice.
+Use the command bar at the bottom of the conversation panel to type commands instead of using voice. Press **Ctrl+K** (or **Cmd+K**) to focus it.
 
-### Web Interface
-With `main_window.py` running, the interface is served at `http://127.0.0.1:8766`;
-the API uses port 8765.
+### Holographic cockpit interface
+KIRA's native window and browser mode use the same redesigned `ui/` interface:
+- A blue-eyed android projection inside animated red orbital rings.
+- Angular, double-framed conversation and live telemetry panels.
+- A machined projection platform and lower quick-action console.
+- Working voice/mute controls, command input, task creation/completion, settings,
+  diagnostics and fullscreen. Search/Learn prepare a prompt rather than executing
+  an incomplete command.
+- Responsive layouts, keyboard focus indicators and reduced-motion support.
 
-### Speech-reactive neural core
-The core now moves with KIRA's spoken reply rather than running a fixed talking
-animation. Neural audio is analysed locally with the Web Audio API: loudness
-controls expansion and glow, while low/high frequencies reshape the energy shell
-and animate the inner rings. Pauses relax the core; playback ending or muting it
-returns it smoothly to idle. No microphone audio is analysed for this effect.
+The portrait is an original AI-generated illustration, not a live avatar or a
+lip-synced video. SVG/CSS render the field without WebGL, a CDN or external font
+requests. The bundled artwork and fonts also work offline. AI replies, desktop
+control and neural speech still require their existing backend dependencies.
 
-Browser speech uses word-boundary events when the selected voice supplies them.
-Otherwise it uses approximate text-paced motion. This is speech-rhythm animation,
-not phoneme/lip synchronization or word-meaning recognition. If Web Audio is
-unavailable, audio still plays normally with estimated motion. The operating
-system's **Reduce motion** preference disables deformation and moving effects,
-leaving a subtle brightness cue.
+Start the application normally:
+```sh
+python main_window.py    # Native desktop window (Windows / pywebview)
+python launch_web.py     # Browser mode, with the desktop backend
+```
+The UI is served at `http://127.0.0.1:8766`. The shared `kira_ui.py` handler proxies
+same-origin `/api/*` requests to the loopback API on port 8765; the browser never
+needs a second port or a `localhost` URL to another service. Static files are
+served without caching so relaunching picks up a changed interface. The Windows
+build scripts include `ui/`, including its artwork and fonts. Rebuild an existing
+`.exe` with `build_kira.bat` to update its bundled interface.
 
-**If the core appears still:**
-1. Close KIRA, update your checkout and relaunch `python main_window.py`.
-2. Look for **SPEECH SYNC 02** in the right-hand panel. If it is absent, you
-   are running an older copy/build. The source UI is now served without caching.
-3. Click **MOTION: AUTO** once to select **MOTION: ON**. This is an explicit
-   opt-in to animation even if Windows requests reduced motion; Off/Auto remain
-   available, and your choice is remembered.
-4. Click **TEST MOTION**. The whole core should breathe for three seconds. This
-   checks rendering without audio, Ollama or a command to your computer.
-5. Leave voice output on and click **TEST VOICE**. Watch the red meter:
-   **AUDIO** means real audio samples, **WORD TIMING** means browser word events,
-   and **ESTIMATED** means approximate timing. **QUIET / NO SIGNAL** means no
-   measurable output at that moment; **SYSTEM SETTING** means motion is disabled.
-6. Ask for a longer reply, then mute it mid-sentence. The core should settle.
+**Hardware-independent visual preview** (no Ollama, microphone or Windows agent):
+```sh
+python kira_ui.py --preview
+# For a proxied development workspace only:
+python kira_ui.py --preview --host 0.0.0.0 --port 8766
+```
+Preview mode starts the real telemetry/task API, but does **not** load computer
+control or AI chat. It is labelled **INTERFACE PREVIEW**. `psutil` provides real
+system readings; unavailable readings show dashes, never simulated numbers.
+Tasks still use the local SQLite database. The standalone UI without `--preview`
+can also proxy an already-running API (`--api-port` changes its port).
+KIRA is a local, unauthenticated computer agent: do not expose it publicly.
 
-The complete neuron now expands with speech, so the response is visible rather
-than limited to the small central light. Quiet audio gets gentle gain. A slow
-browser voice no longer stops animating merely because its timing estimate ran
-out; that fallback remains approximate until real speech-end/boundary events.
-If the visual-only test works but voice does not, report the meter/status text
-and whether you can hear the reply. Neither test analyses the microphone.
+### Still seeing the old interface on Windows?
+The source launcher can be run with your existing virtual environment:
+```powershell
+.\.venv\Scripts\python.exe main_window.py
+```
+No executable rebuild is needed for this command. **Update the complete project**,
+including `ui/` and `kira_ui.py`, not just `main_window.py`. Arena workspace changes
+are not automatically installed on your PC. Likewise, `git pull` on `main` does
+not download an unmerged feature branch: fetch and switch to the branch containing
+the redesign, or merge its pull request before updating `main`.
 
-**Developer checks** (Node.js 22+, no npm packages required):
+After updating, close the previous KIRA window and relaunch. The new title and UI
+read **HOLOGRAPHIC COCKPIT 01**. The console prints `[KIRA UI]`, the Python interpreter
+and the absolute `ui/` path so you can identify the actual checkout being served.
+The launcher rejects a missing or older UI bundle instead of quietly mixing versions.
+Keep your `.venv`, configuration and local database; do not use a destructive reset
+to get past a Git warning about local edits.
+
+### Speech-reactive holographic field
+KIRA's spoken replies drive the red field, portrait drift and voice waveform.
+Neural audio is analysed locally with the Web Audio API: loudness expands the
+rings, bass adds breadth, and treble brightens the field. Pauses relax it; ending
+or muting playback returns it to idle. No microphone audio is analysed for this
+effect. Slow ambient orbital motion is independent of speech.
+
+Browser speech uses word-boundary events when available, with approximate
+text-paced motion otherwise. This is speech-rhythm animation, **not** phoneme/lip
+synchronization or word-meaning recognition. Without Web Audio, playback still
+works with estimated timing. **Reduce motion** disables all ambient animation,
+waveform movement and speech displacement, leaving a subtle brightness cue.
+
+**Check motion and voice:**
+1. Open **SETTINGS** in the right panel, or use **HOLOGRAM** on the lower console.
+   **MOTION: AUTO** follows the system; **ON** explicitly opts into motion;
+   **OFF** keeps it still. The preference is remembered.
+2. Open **DIAGNOSTICS**, then **TEST MOTION**. The dialog closes so you can watch
+   the field breathe for three seconds, without audio, Ollama or a desktop command.
+3. With voice output enabled, use **TEST VOICE**. The status under the left-hand
+   waveform shows **AUDIO** for measured output, **WORD TIMING** for browser
+   boundaries, **ESTIMATED** for approximate timing, or **QUIET / NO SIGNAL**.
+4. Mute a reply mid-sentence; the portrait and rings settle back to idle.
+
+**Developer checks** (Node.js 22+ and Python, no npm packages required):
 ```sh
 node --check ui/app.js
 node --check ui/speech.mjs
+node --check ui/hologram.mjs
 node --test tests/*.test.mjs
 python -m unittest discover -s tests -p "test_*.py"
 ```
-The tests cover the audio envelope, fallback timing, interruption/mute, stale
-callbacks, resource cleanup and the actual app's reactor wiring with rendering
-and audio test doubles. A real headless Chromium test with decoded PCM audio also exercised the actual
-WebGL renderer and the controls. These checks do not replace a Windows/WebView2
-listening test.
+These cover the audio envelope and lifecycle, actual controller/compositor wiring,
+reduced motion, safe message rendering, command concurrency, unavailable data,
+static assets and the same-origin API proxy. Optional real-browser regressions:
+```sh
+pip install playwright
+playwright install chromium
+python tests/cockpit_browser.py
+```
+The browser suite uses API fixtures, never desktop actions. It checks nine screen
+sizes, commands, task creation/completion, persisted settings, offline states and reduced motion.
+These checks do not replace a Windows/WebView2 listening and desktop-control test.
 
 ## 🏗️ Architecture
 
 ### Core Modules
 
 - **kira_voice_agent.py** — Voice recognition, TTS, command parsing, action execution
-- **main_window.py** — Desktop UI with CustomTkinter and animated HUD
+- **main_window.py** — Native pywebview window hosting the holographic cockpit
+- **main_window_tk.py** — Legacy CustomTkinter interface
+- **kira_ui.py** — Shared static asset server and same-origin API proxy
+- **ui/** — Offline-capable cockpit, artwork, speech player and compositor
 - **kira_memory.py** — SQLite-based persistent memory system
 - **kira_tasks.py** — Task, reminder, and timer management
 - **kira_plugins.py** — Plugin discovery and registration system
