@@ -141,127 +141,163 @@ for (let i = 0; i < 8; i++) {
   verticalArmor.add(plate);
 }
 
-// --- INNER ENERGY SPHERE ---
-const energyGeometry = new THREE.SphereGeometry(1.55, 64, 64);
-const energyMaterial = new THREE.MeshBasicMaterial({
-  color: 0xff0808,
-  transparent: true,
-  opacity: 0.2,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-});
-// Deform on the GPU: the voice gives the energy shell a soft, living surface.
-// Reuse uniforms/buffers each frame; no per-frame geometry reconstruction.
+// =========================================================
+// KIRA VISAGE HOLOGRAMME -- REMPLACE LE NOYAU / REACTEUR
+// Le noyau energétique sphérique est remplacé par le visage de KIRA
+// à la place exacte du noyau. Les anneaux extérieurs restent comme cadre.
+// =========================================================
 const voiceUniforms = {
   voiceTime: { value: 0 },
   voiceEnergy: { value: 0 },
   voiceLow: { value: 0 },
   voiceHigh: { value: 0 },
 };
-energyMaterial.onBeforeCompile = (shader) => {
-  Object.assign(shader.uniforms, voiceUniforms);
-  shader.vertexShader = `
-    uniform float voiceTime;
-    uniform float voiceEnergy;
-    uniform float voiceLow;
-    uniform float voiceHigh;
-  ` + shader.vertexShader;
-  shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", `
-    #include <begin_vertex>
-    float wave = sin(position.y * 5.0 + voiceTime * 3.0)
-               * cos(position.x * 4.0 - voiceTime * 2.0);
-    float detail = sin(position.z * 9.0 + voiceTime * 5.0);
-    transformed += normal * (wave * (voiceEnergy * 0.12 + voiceLow * 0.16)
-                           + detail * voiceHigh * 0.06);
-  `);
-};
-const energySphere = new THREE.Mesh(energyGeometry, energyMaterial);
-reactor.add(energySphere);
 
-// --- CORE ---
-const coreGeometry = new THREE.SphereGeometry(0.42, 64, 64);
-const coreMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffffff,
-  toneMapped: false,
+// -- Chargement texture visage --
+const textureLoader = new THREE.TextureLoader();
+const faceTexture = textureLoader.load('./kira_face.png', (tex) => {
+  tex.colorSpace = THREE.SRGBColorSpace;
+  try { tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch {}
 });
-const core = new THREE.Mesh(coreGeometry, coreMaterial);
-reactor.add(core);
+faceTexture.colorSpace = THREE.SRGBColorSpace;
 
-// --- CORE GLOW ---
-const glowGeometry = new THREE.SphereGeometry(0.78, 64, 64);
-const glowMaterial = new THREE.MeshBasicMaterial({
+const faceGroup = new THREE.Group();
+reactor.add(faceGroup);
+
+// Halo lumineux derrière le visage (remplace coreGlow/whiteGlow)
+const faceBackGlowGeo = new THREE.CircleGeometry(1.75, 64);
+const faceBackGlowMat = new THREE.MeshBasicMaterial({
   color: 0xff1515,
   transparent: true,
-  opacity: 0.42,
+  opacity: 0.15,
   blending: THREE.AdditiveBlending,
   depthWrite: false,
-  toneMapped: false,
 });
-const coreGlow = new THREE.Mesh(glowGeometry, glowMaterial);
-reactor.add(coreGlow);
+const faceBackGlow = new THREE.Mesh(faceBackGlowGeo, faceBackGlowMat);
+faceBackGlow.position.z = 0.34;
+faceGroup.add(faceBackGlow);
 
-// --- WHITE HOT AURA ---
-const whiteGlowGeometry = new THREE.SphereGeometry(0.62, 64, 64);
-const whiteGlowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffdddd,
+const faceBackGlow2Geo = new THREE.CircleGeometry(2.08, 64);
+const faceBackGlow2Mat = new THREE.MeshBasicMaterial({
+  color: 0x220505,
   transparent: true,
-  opacity: 0.28,
+  opacity: 0.32,
+  side: THREE.DoubleSide,
   blending: THREE.AdditiveBlending,
   depthWrite: false,
-  toneMapped: false,
 });
-const whiteGlow = new THREE.Mesh(whiteGlowGeometry, whiteGlowMaterial);
-reactor.add(whiteGlow);
+const faceBackGlow2 = new THREE.Mesh(faceBackGlow2Geo, faceBackGlow2Mat);
+faceBackGlow2.position.z = 0.30;
+faceGroup.add(faceBackGlow2);
 
-// --- NEURAL CORE (central processor) ---
+// Visage - Shader holographique avec synchro voix (bouche/yeux réagissent)
+const faceUniforms = {
+  tFace: { value: faceTexture },
+  time: { value: 0 },
+  energy: { value: 0 },
+  low: { value: 0 },
+  high: { value: 0 },
+};
+
+const faceGeo = new THREE.CircleGeometry(1.48, 96);
+const faceMat = new THREE.ShaderMaterial({
+  uniforms: faceUniforms,
+  transparent: true,
+  depthWrite: false,
+  vertexShader: `
+    varying vec2 vUv;
+    void main(){
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tFace;
+    uniform float time;
+    uniform float energy;
+    uniform float low;
+    uniform float high;
+    varying vec2 vUv;
+    void main(){
+      vec2 uv = vUv;
+      // micro ondulation voix - simulacre de mouvement bouche/joues
+      uv.x += sin(uv.y * 28.0 + time * 7.0) * energy * 0.013;
+      uv.y += cos(uv.x * 22.0 - time * 5.0) * low * 0.011;
+      // petit glitch horizontal sur les aigus (consonnes)
+      uv.x += high * 0.015 * sin(time * 50.0 + uv.y * 60.0);
+      vec4 col = texture2D(tFace, uv);
+      // masque circulaire doux (vignette holographique)
+      vec2 c = uv - 0.5;
+      float r = length(c) * 2.0;
+      float mask = 1.0 - smoothstep(0.88, 1.03, r);
+      // scanlines holographiques subtiles
+      float scan = 0.92 + 0.08 * sin(uv.y * 420.0 - time * 35.0);
+      // flicker & boost selon voix
+      float flick = 1.0 + energy * 0.45 + low * 0.25;
+      float edge = smoothstep(0.82, 1.0, r);
+      vec3 edgeCol = vec3(1.0, 0.18, 0.18) * edge * 0.55;
+      col.rgb = col.rgb * flick * scan + edgeCol;
+      col.rgb += high * 0.28;
+      col.rgb += edge * 0.12;
+      col.a *= mask * (0.98 + energy * 0.07);
+      if(col.a < 0.02) discard;
+      gl_FragColor = col;
+    }
+  `,
+});
+const faceMesh = new THREE.Mesh(faceGeo, faceMat);
+faceMesh.position.z = 0.52;
+faceGroup.add(faceMesh);
+
+// Reflet vitreux devant (légère brillance holographique)
+const faceGlassGeo = new THREE.CircleGeometry(1.50, 64);
+const faceGlassMat = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.035,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+const faceGlass = new THREE.Mesh(faceGlassGeo, faceGlassMat);
+faceGlass.position.z = 0.56;
+faceGroup.add(faceGlass);
+
+// Cadres holographiques autour du visage (remplace innerRing/secondRing d'origine)
+// On garde les mêmes noms de variables pour compatibilité avec l'animation
 const neuralCore = new THREE.Group();
 reactor.add(neuralCore);
 
-const innerRingGeo = new THREE.TorusGeometry(0.62, 0.035, 12, 96);
+const innerRingGeo = new THREE.TorusGeometry(1.60, 0.028, 12, 96);
 const innerRingMat = new THREE.MeshBasicMaterial({
   color: 0xff2020,
   transparent: true,
-  opacity: 0.9,
+  opacity: 0.88,
   blending: THREE.AdditiveBlending,
 });
 const innerRing = new THREE.Mesh(innerRingGeo, innerRingMat);
 innerRing.rotation.x = Math.PI / 2;
 neuralCore.add(innerRing);
 
-const secondRingGeo = new THREE.TorusGeometry(0.92, 0.018, 12, 128);
+const secondRingGeo = new THREE.TorusGeometry(1.84, 0.016, 12, 128);
 const secondRingMat = new THREE.MeshBasicMaterial({
   color: 0xff3030,
   transparent: true,
-  opacity: 0.65,
+  opacity: 0.55,
   blending: THREE.AdditiveBlending,
 });
 const secondRing = new THREE.Mesh(secondRingGeo, secondRingMat);
 secondRing.rotation.x = Math.PI / 2;
 neuralCore.add(secondRing);
 
-const frameGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.16, 32);
-const frameMat = new THREE.MeshStandardMaterial({
-  color: 0x090909,
-  metalness: 1,
-  roughness: 0.2,
-  emissive: 0x220000,
-  emissiveIntensity: 0.3,
-});
-const coreFrame = new THREE.Mesh(frameGeo, frameMat);
-coreFrame.rotation.x = Math.PI / 2;
-neuralCore.add(coreFrame);
+// Objets fantômes pour compatibilité animation (les anciens core/energySphere n'existent plus mais l'anim y fait encore référence)
+const energySphere = { scale: new THREE.Vector3(1,1,1) };
+const core = { scale: new THREE.Vector3(1,1,1) };
+const coreGlow = faceBackGlow;
+const glowMaterial = faceBackGlowMat;
+const whiteGlow = faceBackGlow2;
+const whiteGlowMaterial = faceBackGlow2Mat;
+const energyDisc = { scale: { setScalar: ()=>{} }, rotation: {x:0} };
 
-const discGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.18, 64);
-const discMat = new THREE.MeshBasicMaterial({
-  color: 0xff0808,
-  transparent: true,
-  opacity: 1.0,
-  blending: THREE.AdditiveBlending,
-});
-const energyDisc = new THREE.Mesh(discGeo, discMat);
-energyDisc.rotation.x = Math.PI / 2;
-energyDisc.position.z = 0.11;
-neuralCore.add(energyDisc);
 
 // --- NEURAL ORBITS ---
 const neuralOrbit1 = new THREE.Group();
@@ -510,52 +546,61 @@ function animate() {
   voiceUniforms.voiceEnergy.value = energy;
   voiceUniforms.voiceLow.value = low;
   voiceUniforms.voiceHigh.value = high;
+  // synchro visage
+  faceUniforms.time.value = motionTime;
+  faceUniforms.energy.value = energy;
+  faceUniforms.low.value = low;
+  faceUniforms.high.value = high;
 
-  // Keep the original silhouette. Vowels expand the core; crisp consonants
-  // brighten the inner rings. Silence releases smoothly to its idle breath.
-  reactor.rotation.y = motionTime * 0.12;
-  reactor.rotation.x = Math.sin(motionTime * 0.18) * 0.08;
-  // Make the whole visible neuron breathe, not just its tiny central light.
-  reactor.scale.set(1.05 + energy * 0.12, 1.05 + energy * 0.23, 1.05 + energy * 0.12);
-  reactor.position.y = Math.sin(motionTime * 3.5) * energy * 0.14;
-  armorGroup.rotation.y = -motionTime * 0.08;
-  verticalArmor.rotation.y = motionTime * 0.05;
-  halo.rotation.z = motionTime * 1.8 + voiceRotation * 0.5;
-  halo.scale.setScalar(1 + low * 0.25);
-  haloMat.opacity = 0.35 + light * 0.12;
-  neuralCore.rotation.z = motionTime * 0.35 + voiceRotation * 0.65;
-  neuralCore.scale.setScalar(1 + energy * 0.2);
-  innerRing.rotation.z = motionTime * 1.2 + voiceRotation;
-  innerRing.scale.setScalar(1 + high * 0.25);
-  secondRing.rotation.z = -motionTime * 0.8 - voiceRotation * 0.7;
-  secondRing.scale.setScalar(1 + low * 0.2);
-  neuralOrbit1.rotation.x = motionTime * 0.7 + voiceRotation;
-  neuralOrbit1.rotation.y = motionTime * 0.4;
-  neuralOrbit2.rotation.x = -motionTime * 0.5;
-  neuralOrbit2.rotation.z = motionTime * 0.8 + voiceRotation;
-  energyDisc.scale.setScalar(1 + Math.sin(motionTime * 4) * 0.04 + energy * 0.2);
-  beamGroup.rotation.z = -motionTime * 0.25;
-  beamGroup.scale.setScalar(1 + low * 0.12);
-  beamMat.opacity = 0.45 + light * 0.14;
+  // Visage holographique : respirations subtiles, suit la voix
+  reactor.rotation.y = motionTime * 0.09;
+  reactor.rotation.x = Math.sin(motionTime * 0.14) * 0.06;
+  // le visage respire légèrement avec la voix (échelle verticale = bouche qui s'ouvre)
+  const breath = Math.sin(motionTime * 1.9) * 0.015;
+  reactor.scale.set(1.05 + energy * 0.10, 1.05 + energy * 0.18 + breath*0.4, 1.05 + energy * 0.10);
+  reactor.position.y = Math.sin(motionTime * 2.8) * energy * 0.10;
+  armorGroup.rotation.y = -motionTime * 0.06;
+  verticalArmor.rotation.y = motionTime * 0.04;
+  halo.rotation.z = motionTime * 1.4 + voiceRotation * 0.4;
+  halo.scale.setScalar(1 + low * 0.22);
+  haloMat.opacity = 0.30 + light * 0.14;
+  neuralCore.rotation.z = motionTime * 0.28 + voiceRotation * 0.45;
+  neuralCore.scale.setScalar(1 + energy * 0.14);
+  innerRing.rotation.z = motionTime * 0.9 + voiceRotation * 0.8;
+  innerRing.scale.setScalar(1 + high * 0.20);
+  secondRing.rotation.z = -motionTime * 0.6 - voiceRotation * 0.55;
+  secondRing.scale.setScalar(1 + low * 0.16);
+  neuralOrbit1.rotation.x = motionTime * 0.55 + voiceRotation * 0.8;
+  neuralOrbit1.rotation.y = motionTime * 0.32;
+  neuralOrbit2.rotation.x = -motionTime * 0.42;
+  neuralOrbit2.rotation.z = motionTime * 0.65 + voiceRotation * 0.7;
+  // plus de disc energie - remplacé par micro mouvement du visage
+  faceGroup.rotation.z = Math.sin(motionTime * 0.9) * 0.02 + voiceRotation * 0.05;
+  faceMesh.scale.set(1 + breath*0.5 + energy*0.06, 1 + energy*0.12 + high*0.04, 1);
+  // la bouche/menton s'étire verticalement sur les voyelles (low), les aigus font briller
+  faceGlass.scale.setScalar(1 + low*0.04);
+  beamGroup.rotation.z = -motionTime * 0.20;
+  beamGroup.scale.setScalar(1 + low * 0.10);
+  beamMat.opacity = 0.32 + light * 0.12;
 
   // Frame-rate independent ring movement.
-  ring1.rotation.z += step * 0.15;
-  ring1.rotation.x += step * 0.06;
-  ring2.rotation.y += step * 0.18;
-  ring2.rotation.z -= step * 0.072;
-  ring3.rotation.x -= step * 0.09;
-  ring3.rotation.y += step * 0.108;
-  ring4.rotation.z += step * 0.21;
+  ring1.rotation.z += step * 0.12;
+  ring1.rotation.x += step * 0.05;
+  ring2.rotation.y += step * 0.15;
+  ring2.rotation.z -= step * 0.060;
+  ring3.rotation.x -= step * 0.075;
+  ring3.rotation.y += step * 0.090;
+  ring4.rotation.z += step * 0.18;
 
-  energySphere.scale.setScalar(1 + Math.sin(motionTime * 2.8) * 0.03 + energy * 0.1 + low * 0.08);
-  const breath = Math.sin(motionTime * 2.2) * 0.035;
-  core.scale.set(1 + breath + energy * 0.16, 1 + breath + energy * 0.34, 1 + breath + low * 0.2);
-  coreGlow.scale.setScalar(1 + breath + energy * 0.28);
-  glowMaterial.opacity = 0.38 + light * 0.12;
-  whiteGlow.scale.setScalar(1 + breath + high * 0.22 + energy * 0.1);
-  whiteGlowMaterial.opacity = 0.22 + light * 0.07;
-  reactorLight.intensity = 9 + light * 3;
-  bloomPass.strength = 1.45 + light * 0.18;
+  // Halo visage - pulse avec voix
+  faceBackGlow.scale.setScalar(1 + breath + energy * 0.22);
+  glowMaterial.opacity = 0.15 + light * 0.10 + high*0.04;
+  faceBackGlow2.scale.setScalar(1 + breath*0.7 + high * 0.18 + energy * 0.08);
+  whiteGlowMaterial.opacity = 0.28 + light * 0.06;
+  // éclairage ponctuel du visage pulse avec la voix
+  reactorLight.intensity = 7 + light * 4 + high*2;
+  reactorLight.color.setHSL(0.0, 1.0, 0.55 + light*0.1);
+  bloomPass.strength = 1.20 + light * 0.22 + energy*0.12;
 
   reactorParticles.rotation.y = motionTime * 0.025;
   reactorParticles.rotation.x = Math.sin(motionTime * 0.15) * 0.15;

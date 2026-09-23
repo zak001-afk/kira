@@ -1339,70 +1339,87 @@ class KiraUI(ctk.CTk):
                 x1, y1, x2, y2, fill=marker_color, width=2 if i % 5 == 0 else 1
             )
 
-        # Core glow
-        layers = [
-            (158, "#100304"),
-            (148, "#190506"),
-            (138, "#260707"),
-            (128, "#350909"),
-            (118, "#220506"),
-        ]
+        # === VISAGE HOLOGRAMME KIRA — REMPLACE LE NOYAU/CORE ===
+        # Halos derrière visage (remplace core glow)
+        halo_r = 138 + pulse * profile["pulse"] * 0.35
+        c.create_oval(cx - halo_r, cy - halo_r*1.12, cx + halo_r, cy + halo_r*1.12, fill="#140505", outline="")
+        c.create_oval(cx - halo_r*0.86, cy - halo_r*0.86*1.12, cx + halo_r*0.86, cy + halo_r*0.86*1.12, fill="#1e0909", outline="#3a0a0a", width=1)
+        edge_radius = 118 + pulse * profile["pulse"] * 0.30
+        c.create_oval(cx - edge_radius, cy - edge_radius*1.12, cx + edge_radius, cy + edge_radius*1.12, outline=profile["edge"], width=3)
+        c.create_oval(cx - edge_radius*1.10, cy - edge_radius*1.10*1.12, cx + edge_radius*1.10, cy + edge_radius*1.10*1.12, outline="#2a0a0a", width=1)
 
-        for radius, color in layers:
-            factor = profile["pulse"]
-            if radius < 140:
-                factor *= 0.8
+        # Parametres visage selon etat (bouche/yeux bougent)
+        face_w = 84
+        face_h = 108
+        # mouth_open simule la voix : plus grand quand SPEAKING / LISTENING
+        if state == "SPEAKING":
+            mouth_open = 4 + pulse * 9 + abs(math.sin(self.phase*6))*3
+        elif state == "LISTENING":
+            mouth_open = 2 + pulse * 3
+        elif state == "THINKING":
+            mouth_open = 2.5 + math.sin(self.phase*2)*1.2
+        else:
+            mouth_open = 2.5 + pulse*2
+        mouth_w = 20 + pulse*3
+        eye_pulse = 1.0 + pulse*0.10
+        is_speaking = state == "SPEAKING"
 
-            r = radius + pulse * factor
-            c.create_oval(cx - r, cy - r, cx + r, cy + r, fill=color, outline="")
+        face_top = cy - 64
+        # ombre
+        c.create_oval(cx - face_w -2, face_top -2, cx + face_w +2, face_top + face_h*1.32 +2, fill="#0a0202", outline="")
+        # base visage
+        c.create_oval(cx - face_w, face_top, cx + face_w, face_top + face_h*1.32, fill="#1b0f0f", outline="#3a1515", width=1)
+        # eclaircissement central
+        c.create_oval(cx - face_w*0.75, face_top+10, cx + face_w*0.75, face_top+face_h*1.18, fill="#281818", outline="")
+        c.create_oval(cx - face_w*0.52, face_top+20, cx + face_w*0.52, face_top+face_h*0.98, fill="#362424", outline="")
+        # cheveux haut
+        c.create_oval(cx - face_w*0.90, face_top -10, cx + face_w*0.90, face_top+36, fill="#070201", outline="#1a0a0a", width=1)
+        # circuits joues
+        cheek_y = face_top + face_h*0.58
+        col_circuit = profile["edge"] if is_speaking or pulse>0.6 else "#00d8ff"
+        c.create_line(cx - 48, cheek_y -5, cx - 26, cheek_y+3, cx - 20, cheek_y+16, fill=col_circuit, width=1, smooth=True)
+        c.create_line(cx + 48, cheek_y -5, cx + 26, cheek_y+3, cx + 20, cheek_y+16, fill=col_circuit, width=1, smooth=True)
+        c.create_oval(cx - 40, face_top+32, cx -36, face_top+36, fill="#00e5ff", outline="")
+        c.create_oval(cx + 36, face_top+32, cx + 40, face_top+36, fill="#00e5ff", outline="")
 
-        edge_radius = 112 + pulse * profile["pulse"] * 0.35
-        c.create_oval(
-            cx - edge_radius,
-            cy - edge_radius,
-            cx + edge_radius,
-            cy + edge_radius,
-            outline=profile["edge"],
-            width=4 if state != "READY" else 3,
-        )
+        # yeux
+        eye_y = face_top + 48
+        eye_w = 22
+        base_eye_h = 12
+        blink = 0.28 if (int(self.phase*0.9) % 90 == 0) else 1.0
+        eye_h = base_eye_h * blink
+        for dx in (-1, 1):
+            ex = cx + dx*30
+            c.create_oval(ex - eye_w, eye_y - eye_h, ex + eye_w, eye_y + eye_h, fill="#0a0a0a", outline="#4a4a4a", width=1)
+            iris_r = 8.5 * eye_pulse
+            # iris couleur selon etat
+            iris_col = "#0ab8ff" if state != "ERROR" else "#ff4040"
+            c.create_oval(ex - iris_r, eye_y - iris_r*0.92, ex + iris_r, eye_y + iris_r*0.92, fill=iris_col, outline="#00e5ff" if state!="ERROR" else "#ff6060", width=1)
+            c.create_oval(ex -4, eye_y -4.5, ex +4, eye_y +4.5, fill="#00141f", outline="")
+            c.create_oval(ex -1.7, eye_y -3.5, ex +1.7, eye_y -0.8, fill="#ffffff", outline="")
+            c.create_oval(ex - eye_w -1.5, eye_y - eye_h -1.5, ex + eye_w +1.5, eye_y + eye_h +1.5, outline="#00d8ff" if state!="ERROR" else "#ff2020", width=1)
 
-        # Neural waves
-        wave_count = 7 if state in {"THINKING", "EXECUTING"} else 5
-
-        for k in range(wave_count):
-            points = []
-
-            for x in range(-94, 95, 4):
-                base_amp = 4 + k * 1.8
-                dynamic_amp = (
-                    profile["wave"] * pulse
-                    + abs(math.sin(self.phase * 1.7 + k * 0.8)) * profile["wave"] * 0.4
-                )
-
-                y = (
-                    math.sin(x * 0.055 + self.phase * (1.0 + profile["rotation"]) + k)
-                    * (base_amp + dynamic_amp)
-                    * math.sin((x + 95) * math.pi / 190)
-                )
-
-                if state == "SPEAKING":
-                    y *= 1.0 + 0.35 * math.sin(self.phase * 3 + x * 0.03)
-
-                points.extend([cx + x, cy + y + (k - (wave_count - 1) / 2) * 11])
-
-            c.create_line(
-                *points,
-                fill=(profile["edge"] if k == wave_count // 2 else "#B51212"),
-                width=3 if k == wave_count // 2 else 1,
-                smooth=True,
-            )
-
-        # Central KIRA text
-        c.create_text(cx, cy - 8, text="KIRA", fill=TEXT, font=(FONT, 30, "bold"))
-
-        c.create_text(
-            cx, cy + 25, text="CORE", fill=profile["edge"], font=(FONT, 9, "bold")
-        )
+        # sourcils
+        brow_y = eye_y - 15
+        c.create_line(cx -50, brow_y, cx -16, brow_y-2, fill="#2a2a2a", width=2)
+        c.create_line(cx +16, brow_y-2, cx +50, brow_y, fill="#2a2a2a", width=2)
+        # nez
+        c.create_line(cx, face_top+54, cx -2.5, face_top+76, cx +2.5, face_top+80, fill="#1a0a0a", width=1, smooth=True)
+        # bouche
+        mouth_y = face_top + 92
+        c.create_line(cx - mouth_w, mouth_y, cx, mouth_y -1, cx + mouth_w, mouth_y, fill="#4a2020", width=2, smooth=True)
+        # ouverture
+        mouth_h = mouth_open
+        c.create_oval(cx - mouth_w*0.60, mouth_y -1, cx + mouth_w*0.60, mouth_y + mouth_h, fill="#120202" if not is_speaking else "#1e0a0a", outline="#6a2a2a", width=1)
+        c.create_line(cx - mouth_w*0.60, mouth_y + mouth_h, cx, mouth_y + mouth_h +1, cx + mouth_w*0.60, mouth_y + mouth_h, fill="#8a3a3a", width=1, smooth=True)
+        # scanlines holographiques subtiles sur visage
+        for sy in range(0, int(face_h*1.1), 13):
+            y = face_top + 14 + sy + int(pulse*3) % 13
+            if face_top+10 < y < face_top + face_h*1.28:
+                c.create_line(cx - face_w*0.78, y, cx + face_w*0.78, y, fill="#ff202014", width=1)
+        # texte sous visage
+        c.create_text(cx, face_top + face_h*1.42, text="KIRA", fill=TEXT, font=(FONT, 22, "bold"))
+        c.create_text(cx, face_top + face_h*1.42 + 18, text="VISAGE  •  " + state, fill=profile["edge"], font=(FONT, 7, "bold"))
 
         # Bottom audio waveform
         if hasattr(self, "wave"):

@@ -785,274 +785,233 @@ class KiraTheme(ctk.CTk):
                 )
 
         # ====================================================
-        # 3D SPHERE
+        # KIRA VISAGE HOLOGRAMME -- REMPLACE LA SPHERE 3D
+        # Le noyau/reacteur est remplacé par le visage de KIRA
+        # à la place exacte du noyau (centre cx,cy)
         # ====================================================
 
-        sphere = 112
-
-        # Outer dark sphere
-
+        # Halos holographiques derrière le visage (remplace core glow)
+        halo_r = 122 + pulse * 10
         canvas.create_oval(
-            cx - sphere,
-            cy - sphere,
-            cx + sphere,
-            cy + sphere,
-            fill="#080101",
-            outline="#4A0505",
-            width=2,
-            tags="core",
+            cx - halo_r, cy - halo_r, cx + halo_r, cy + halo_r,
+            fill="#1a0505", outline="", tags="core",
+        )
+        canvas.create_oval(
+            cx - halo_r*0.88, cy - halo_r*0.88, cx + halo_r*0.88, cy + halo_r*0.88,
+            fill="#2a0808", outline=RED_DARK, width=1, tags="core",
+        )
+        # anneau lumineux autour du visage
+        canvas.create_oval(
+            cx - 118, cy - 142, cx + 118, cy + 142,
+            outline=RED, width=2, tags="core",
+        )
+        canvas.create_oval(
+            cx - 128, cy - 152, cx + 128, cy + 152,
+            outline="#3a0a0a", width=1, tags="core",
         )
 
-        # Layered spherical shading
-
-        shading = [
-            (105, "#0D0101"),
-            (96, "#120202"),
-            (87, "#180303"),
-            (78, "#200404"),
-            (69, "#280505"),
-        ]
-
-        for radius, fill in shading:
-
-            # Offset toward upper-left to simulate light
-
-            offset_x = -8
-            offset_y = -10
-
-            canvas.create_oval(
-                cx - radius + offset_x,
-                cy - radius + offset_y,
-                cx + radius + offset_x,
-                cy + radius + offset_y,
-                fill=fill,
-                outline="",
-                tags="core",
-            )
-
-        # ====================================================
-        # SPHERE OUTLINE
-        # ====================================================
-
+        # --- Visage base (oval) ---
+        face_w = 92
+        face_h = 118 + pulse * 5  # respire légèrement verticalement
+        face_top = cy - 72
+        face_bottom = face_top + face_h*2*0.72  # approx
+        # on dessine l'ovale visage avec teinte peau légèrement rosée / holographique
+        # ombre portée
         canvas.create_oval(
-            cx - sphere,
-            cy - sphere,
-            cx + sphere,
-            cy + sphere,
-            outline=RED,
-            width=2,
-            tags="core",
+            cx - face_w -2, face_top -2, cx + face_w +2, face_top + face_h*1.45 +2,
+            fill="#0d0202", outline="", tags="core",
+        )
+        # base visage
+        canvas.create_oval(
+            cx - face_w, face_top, cx + face_w, face_top + face_h*1.45,
+            fill="#1c0f0f", outline=RED_DARK, width=1, tags="core",
+        )
+        # highlight peau (dégradé simulé par ovales plus clairs inset)
+        canvas.create_oval(
+            cx - face_w*0.78, face_top + 8, cx + face_w*0.78, face_top + face_h*1.30,
+            fill="#2a1818", outline="", tags="core",
+        )
+        canvas.create_oval(
+            cx - face_w*0.55, face_top + 18, cx + face_w*0.55, face_top + face_h*1.10,
+            fill="#3a2424", outline="", tags="core",
         )
 
-        # ====================================================
-        # LATITUDE LINES
-        # ====================================================
-
-        latitude_specs = [
-            (0.72, 0.18),
-            (0.48, 0.30),
-            (0.24, 0.42),
-            (0.00, 0.50),
-            (-0.24, 0.42),
-            (-0.48, 0.30),
-            (-0.72, 0.18),
-        ]
-
-        for vertical, width_factor in latitude_specs:
-
-            y = cy + vertical * sphere
-
-            half_width = sphere * width_factor
-
-            canvas.create_arc(
-                cx - half_width,
-                y - sphere * 0.18,
-                cx + half_width,
-                y + sphere * 0.18,
-                start=0,
-                extent=360,
-                style="arc",
-                outline="#650808",
-                width=1,
-                tags="core",
-            )
-
-        # ====================================================
-        # LONGITUDE LINES
-        # ====================================================
-
-        for i in range(8):
-
-            angle = i * math.pi / 8 + rotation * 0.25
-
-            squash = abs(math.cos(angle))
-
-            half_width = max(8, sphere * squash)
-
-            canvas.create_oval(
-                cx - half_width,
-                cy - sphere,
-                cx + half_width,
-                cy + sphere,
-                outline="#4A0505",
-                width=1,
-                tags="core",
-            )
-
-        # ====================================================
-        # CENTRAL ENERGY CORE
-        # ====================================================
-
-        core_radius = 43 + pulse * 6
-
+        # --- Cheveux / haut tête ---
         canvas.create_oval(
-            cx - core_radius - 8,
-            cy - core_radius - 8,
-            cx + core_radius + 8,
-            cy + core_radius + 8,
-            outline="#650808",
-            width=2,
-            tags="core",
+            cx - face_w*0.92, face_top - 12, cx + face_w*0.92, face_top + 42,
+            fill="#080201", outline="#1a0a0a", width=1, tags="core",
         )
-
-        canvas.create_oval(
-            cx - core_radius,
-            cy - core_radius,
-            cx + core_radius,
-            cy + core_radius,
-            fill="#190202",
-            outline=RED_BRIGHT,
-            width=2,
-            tags="core",
-        )
-
-        # Inner energy layers
-
-        for i in range(3):
-
-            r = core_radius - 8 - i * 8
-
-            canvas.create_oval(
-                cx - r,
-                cy - r,
-                cx + r,
-                cy + r,
-                outline="#7A0A0A",
-                width=1,
-                tags="core",
+        # mèches holographiques cyan/rouge sur côtés
+        for dx, col in [(-face_w*0.88, "#00d8ff"), (face_w*0.88, "#00d8ff")]:
+            canvas.create_line(
+                cx+dx, face_top+8, cx+dx*0.92, face_top+52,
+                fill=col, width=1, tags="core",
             )
 
-        # ====================================================
-        # NEURAL WAVEFORM
-        # ====================================================
-
-        points = []
-
-        for x in range(-65, 66, 3):
-
-            wave = math.sin(x * 0.13 + t * 5)
-
-            wave2 = math.sin(x * 0.045 - t * 2)
-
-            amplitude = 7 + pulse * 8
-
-            y = cy + wave * amplitude + wave2 * 3
-
-            points.extend(
-                [
-                    cx + x,
-                    y,
-                ]
-            )
-
+        # --- Cou / collier tech (comme sur l'image) ---
+        neck_w = 42 + pulse*2
+        neck_top = face_top + face_h*1.32
+        canvas.create_rectangle(
+            cx - neck_w, neck_top, cx + neck_w, neck_top + 28,
+            fill="#070202", outline=RED_DARK, width=1, tags="core",
+        )
+        # lueur centrale verticale cyan
         canvas.create_line(
-            *points,
-            fill=RED_BRIGHT,
-            width=2,
-            smooth=True,
-            tags="core",
+            cx, neck_top+2, cx, neck_top+22,
+            fill="#00e5ff", width=2, tags="core",
+        )
+        # détails collier
+        canvas.create_line(
+            cx - neck_w + 6, neck_top+14, cx - 8, neck_top+14,
+            fill="#333333", width=1, tags="core",
+        )
+        canvas.create_line(
+            cx + 8, neck_top+14, cx + neck_w -6, neck_top+14,
+            fill="#333333", width=1, tags="core",
         )
 
-        # ====================================================
-        # ORBITING ENERGY PARTICLES
-        # ====================================================
+        # --- Circuit holographique joues (lignes qui pulsent avec voix) ---
+        circuit_alpha = 0.6 + pulse*0.4
+        cheek_y = face_top + face_h*0.58
+        # joue gauche
+        canvas.create_line(
+            cx - 52, cheek_y - 6, cx - 28, cheek_y + 4, cx - 22, cheek_y + 18,
+            fill=RED_BRIGHT if pulse>0.5 else "#00d8ff", width=1, smooth=True, tags="core",
+        )
+        # joue droite
+        canvas.create_line(
+            cx + 52, cheek_y - 6, cx + 28, cheek_y + 4, cx + 22, cheek_y + 18,
+            fill=RED_BRIGHT if pulse>0.5 else "#00d8ff", width=1, smooth=True, tags="core",
+        )
+        # petits points lumineux aux tempes
+        canvas.create_oval(cx - 44, face_top + 38, cx - 40, face_top + 42, fill="#00e5ff", outline="", tags="core")
+        canvas.create_oval(cx + 40, face_top + 38, cx + 44, face_top + 42, fill="#00e5ff", outline="", tags="core")
 
-        for i in range(16):
-
-            angle = t * 1.2 + i * math.pi * 2 / 16
-
-            radius = 145
-
-            x = cx + math.cos(angle) * radius
-            y = cy + math.sin(angle) * radius * 0.35
-
-            size = 2 if i % 3 else 3
-
+        # --- Yeux (avec iris bleu cyan qui pulse) ---
+        eye_y = face_top + 52
+        eye_w = 24
+        eye_h = 13 + pulse*1.2  # clignement subtil quand t varie? on module avec phase
+        # petite fonction clignement auto tous les ~4 secondes
+        blink = 1.0
+        if (int(t*0.7) % 80 == 0):
+            blink = 0.22
+        eye_h_eff = eye_h * blink
+        iris_pulse = 1.0 + pulse*0.12
+        for dx in (-1, 1):
+            ex = cx + dx*32
+            # fond blanc oeil
             canvas.create_oval(
-                x - size,
-                y - size,
-                x + size,
-                y + size,
-                fill=RED_BRIGHT,
-                outline="",
-                tags="core",
+                ex - eye_w, eye_y - eye_h_eff, ex + eye_w, eye_y + eye_h_eff,
+                fill="#0a0a0a", outline="#3a3a3a", width=1, tags="core",
+            )
+            # iris bleu cyan brillant
+            iris_r = 9 * iris_pulse
+            canvas.create_oval(
+                ex - iris_r, eye_y - iris_r*0.92, ex + iris_r, eye_y + iris_r*0.92,
+                fill="#0ab8ff", outline="#00e5ff", width=1, tags="core",
+            )
+            # pupille
+            canvas.create_oval(
+                ex - 4.5, eye_y - 5, ex + 4.5, eye_y + 5,
+                fill="#00141f", outline="", tags="core",
+            )
+            # reflet lumineux
+            canvas.create_oval(
+                ex - 2, eye_y - 4, ex + 2, eye_y - 1,
+                fill="#ffffff", outline="", tags="core",
+            )
+            # lueur externe yeux (glow)
+            glow = 0.7 + pulse*0.3
+            canvas.create_oval(
+                ex - eye_w -2, eye_y - eye_h_eff -2, ex + eye_w +2, eye_y + eye_h_eff +2,
+                outline="#00d8ff", width=1, tags="core",
             )
 
-        # ====================================================
-        # KIRA TEXT
-        # ====================================================
+        # --- Sourcils ---
+        brow_y = eye_y - 16
+        canvas.create_line(cx - 54, brow_y, cx - 18, brow_y - 2, fill="#2a2a2a", width=2, tags="core")
+        canvas.create_line(cx + 18, brow_y - 2, cx + 54, brow_y, fill="#2a2a2a", width=2, tags="core")
 
+        # --- Nez ---
+        nose_top = face_top + 58
+        nose_bottom = face_top + 84
+        canvas.create_line(
+            cx, nose_top, cx - 3, nose_bottom - 6, cx + 3, nose_bottom,
+            fill="#1a0a0a", width=1, smooth=True, tags="core",
+        )
+        # narines subtiles
+        canvas.create_oval(cx - 7, nose_bottom -2, cx - 3, nose_bottom+1, fill="#1e0f0f", outline="", tags="core")
+        canvas.create_oval(cx + 3, nose_bottom -2, cx + 7, nose_bottom+1, fill="#1e0f0f", outline="", tags="core")
+
+        # --- Bouche / lèvres (s'anime avec pulse = simulation voix) ---
+        mouth_y = face_top + 98
+        mouth_open = 3 + pulse * 7  # 3=fermé, 10=ouverte quand KIRA parle
+        mouth_w = 22 + pulse * 4
+        # lèvre supérieure
+        canvas.create_line(
+            cx - mouth_w, mouth_y, cx, mouth_y - 1, cx + mouth_w, mouth_y,
+            fill="#4a2020", width=2, smooth=True, tags="core",
+        )
+        # ouverture bouche (intérieur sombre)
+        canvas.create_oval(
+            cx - mouth_w*0.62, mouth_y - 1, cx + mouth_w*0.62, mouth_y + mouth_open,
+            fill="#120202" if mouth_open<6 else "#1a0a0a", outline="#6a2a2a", width=1, tags="core",
+        )
+        # lèvres inférieures highlight
+        canvas.create_line(
+            cx - mouth_w*0.62, mouth_y + mouth_open, cx, mouth_y + mouth_open + 1, cx + mouth_w*0.62, mouth_y + mouth_open,
+            fill="#8a3a3a", width=1, smooth=True, tags="core",
+        )
+        # reflet lèvres
+        canvas.create_line(
+            cx - mouth_w*0.38, mouth_y + 1, cx - 2, mouth_y + 2,
+            fill="#c06060", width=1, tags="core",
+        )
+
+        # --- Menton / contour visage léger lueur rouge ---
+        canvas.create_arc(
+            cx - face_w*0.72, face_top + face_h*0.9, cx + face_w*0.72, face_top + face_h*1.38,
+            start=200, extent=140, style="arc", outline=RED_DARK, width=1, tags="core",
+        )
+
+        # --- Scanline holographique sur visage ---
+        for sy in range(0, int(face_h*1.3), 14):
+            y = face_top + 12 + sy + int(pulse*4) % 14
+            if face_top + 10 < y < face_top + face_h*1.35:
+                canvas.create_line(
+                    cx - face_w*0.82, y, cx + face_w*0.82, y,
+                    fill="#ff202014", width=1, tags="core",
+                )
+
+        # --- Nom KIRA sous le visage (remplace ancien KIRA central) ---
         canvas.create_text(
-            cx,
-            cy - 8,
+            cx, neck_top + 42,
             text="KIRA",
             fill=WHITE,
-            font=(
-                FONT,
-                30,
-                "bold",
-            ),
+            font=(FONT, 18, "bold"),
             tags="core",
         )
-
         canvas.create_text(
-            cx,
-            cy + 27,
-            text="NEURAL CORE",
+            cx, neck_top + 60,
+            text="VISAGE HOLOGRAMME • VOIX SYNC",
             fill=RED_BRIGHT,
-            font=(
-                MONO,
-                8,
-                "bold",
-            ),
+            font=(MONO, 7, "bold"),
             tags="core",
         )
 
-        # ====================================================
-        # STATUS
-        # ====================================================
-
+        # --- Indicateur READY juste sous ---
+        dot_pulse = 0.6 + pulse*0.4
+        dot_col = RED_BRIGHT if dot_pulse>0.7 else "#ff6a6a"
         canvas.create_oval(
-            cx - 32,
-            cy + 52,
-            cx - 26,
-            cy + 58,
-            fill=RED_BRIGHT,
-            outline="",
-            tags="core",
+            cx - 28, neck_top + 74, cx - 22, neck_top + 80,
+            fill=dot_col, outline="", tags="core",
         )
-
         canvas.create_text(
-            cx - 18,
-            cy + 55,
-            text="READY",
+            cx - 14, neck_top + 77,
+            text="VISAGE ACTIF // PRET",
             anchor="w",
             fill=RED_BRIGHT,
-            font=(
-                MONO,
-                8,
-                "bold",
-            ),
+            font=(MONO, 7, "bold"),
             tags="core",
         )
 
