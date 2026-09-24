@@ -115,6 +115,24 @@ class ParseOpenTests(unittest.TestCase):
         self.assertEqual(self.parse("i want you to open youtube"), {"action": "open_url", "target": "https://www.youtube.com"})
         self.assertIsNone(self.parse("je veux que tu ouvriez gmail"))
 
+    def test_nicknames_and_typos_reach_the_real_service(self):
+        self.assertEqual(self.parse("ouvre insta"), {"action": "open_url", "target": "https://www.instagram.com"})
+        self.assertEqual(self.parse("ouvre instagrame"), {"action": "open_url", "target": "https://www.instagram.com"})
+        self.assertEqual(self.parse("ouvre insta gram"), {"action": "open_url", "target": "https://www.instagram.com"})
+        self.assertEqual(self.parse("open facebok"), {"action": "open_url", "target": "https://www.facebook.com"})
+        self.assertEqual(self.parse("open yutube"), {"action": "open_url", "target": "https://www.youtube.com"})
+        self.assertEqual(self.parse("ouvre fb"), {"action": "open_url", "target": "https://www.facebook.com"})
+
+    def test_a_file_with_extension_stays_a_file_despite_similar_app_names(self):
+        self.assertEqual(self.parse("open nots.txt"), {"action": "open_file", "target": "nots.txt"})
+
+    def test_named_browser_overrides_the_default(self):
+        self.assertEqual(self.parse("ouvre facebook sur firefox"), {"action": "open_url", "target": "https://www.facebook.com", "browser": "firefox"})
+        self.assertEqual(self.parse("open google maps in edge"), {"action": "open_url", "target": "https://www.google.com/maps", "browser": "edge"})
+        self.assertEqual(self.parse("ouvre github dans google chrome"), {"action": "open_url", "target": "https://github.com", "browser": "chrome"})
+        self.assertEqual(self.parse("open spotify with brave"), {"action": "open_url", "target": "https://open.spotify.com", "browser": "brave"})
+        self.assertEqual(self.parse("ouvre chrome"), {"action": "open_app", "target": "chrome"})
+
     def test_folder_requests(self):
         self.assertEqual(self.parse("open folder downloads"), {"action": "open_folder", "target": "downloads"})
         self.assertEqual(self.parse("open the dossier documents"), {"action": "open_folder", "target": "documents"})
@@ -227,6 +245,10 @@ class VoiceAgentIntegrationTests(unittest.TestCase):
         self.assertEqual(self.action("ouvre moi le'aplication google"), "open_url")
         self.assertEqual(self.action("peux-tu m'ouvrir google"), "open_url")
         self.assertEqual(self.action("tu peux m ouvrir gmail"), "open_url")
+
+    def test_search_can_name_its_browser(self):
+        self.assertEqual(self.parse("search weather on firefox"), {"action": "search", "query": "weather", "browser": "firefox"})
+        self.assertEqual(self.parse("recherche la météo sur chrome"), {"action": "search", "query": "la météo", "browser": "chrome"})
 
     def test_combined_open_and_search_sequence_is_preserved(self):
         self.assertEqual(self.action("open chrome and search news"), "sequence")
@@ -369,6 +391,52 @@ class FindFileSpeedTests(unittest.TestCase):
             started = time.monotonic()
             self.assertIsNone(kira_open.find_file("zzzznope", search_dirs=[home], time_budget=0.5))
             self.assertLess(time.monotonic() - started, 3.0)
+
+
+class BrowserPreferenceTests(unittest.TestCase):
+    """Pages and searches open in Chrome by default, unless the request
+    names another browser (or the user remembered one)."""
+
+    def test_default_browser_is_chrome_and_can_be_changed(self):
+        self.assertEqual(kira_open.DEFAULT_BROWSER, "chrome")
+        try:
+            kira_open.set_default_browser("Mozilla Firefox")
+            self.assertEqual(kira_open.default_browser(), "firefox")
+        finally:
+            kira_open.set_default_browser("chrome")
+        self.assertEqual(kira_open.default_browser(), "chrome")
+
+    def test_open_url_uses_the_named_browser_controller(self):
+        controller = Mock()
+        with patch.object(kira_open.webbrowser, "get", return_value=controller) as get, \
+             patch.object(kira_open.webbrowser, "open") as fallback:
+            self.assertTrue(kira_open.open_url("https://example.com", browser="firefox"))
+            get.assert_called_once_with("firefox")
+            controller.open.assert_called_once_with("https://example.com")
+            fallback.assert_not_called()
+
+    def test_the_default_browser_applies_without_an_override(self):
+        controller = Mock()
+        with patch.object(kira_open.webbrowser, "get", return_value=controller) as get, \
+             patch.object(kira_open.webbrowser, "open"):
+            self.assertTrue(kira_open.open_url("example.com"))
+            get.assert_called_once_with("chrome")
+            controller.open.assert_called_once_with("https://example.com")
+
+    def test_open_url_falls_back_to_the_system_default(self):
+        with patch.object(kira_open.webbrowser, "get", side_effect=kira_open.webbrowser.Error("none")), \
+             patch.object(kira_open.webbrowser, "open", return_value=True) as fallback:
+            self.assertTrue(kira_open.open_url("https://example.com", browser="firefox"))
+            fallback.assert_called_once_with("https://example.com")
+
+    def test_find_browser_exe_searches_windows_install_roots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(kira_open.find_browser_exe("chrome", roots=[tmp]))
+            application = Path(tmp) / "Google" / "Chrome" / "Application"
+            application.mkdir(parents=True)
+            (application / "chrome.exe").write_text("", encoding="utf-8")
+            self.assertEqual(kira_open.find_browser_exe("google chrome", roots=[tmp]), str(application / "chrome.exe"))
+            self.assertIsNone(kira_open.find_browser_exe("lynx", roots=[tmp]))
 
 
 if __name__ == "__main__":

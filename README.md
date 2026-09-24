@@ -121,6 +121,11 @@ build_kira.bat
   path first, then searched in Desktop/Documents/Downloads/Pictures/Music/Videos
   and opened with their default application.
 - "Open folder downloads" / "Ouvre le dossier documents" — opens folders.
+- Nicknames and typos resolve to the real thing: "ouvre insta",
+  "instagrame", "facebok", "yutube" work.
+- Pages and searches open in **Chrome by default**. Name another browser for
+  one request: "ouvre facebook sur firefox", "open google maps in edge",
+  "open spotify with brave". Without Chrome, the system browser is used.
 - Politeness and filler never hide the target: "Peux-tu m'ouvrir google ?",
   "ouvre moi l'application gmail", "stp ouvre youtube" all work.
 - KIRA opens things on the computer running the KIRA engine (your PC). The

@@ -1168,7 +1168,8 @@ def parse_simple_command(command: str):
             }
 
     if lower.startswith("search "):
-        return {"action": "search", "query": text[7:].strip()}
+        query, browser = kira_open.extract_browser(text[7:].strip())
+        return {"action": "search", "query": query, **({"browser": browser} if browser else {})}
 
     for phrase in [
         ("recherche ", "fr"),
@@ -1179,7 +1180,8 @@ def parse_simple_command(command: str):
     ]:
         prefix, _ = phrase
         if lower.startswith(prefix):
-            return {"action": "search", "query": text[len(prefix) :].strip()}
+            query, browser = kira_open.extract_browser(text[len(prefix) :].strip())
+            return {"action": "search", "query": query, **({"browser": browser} if browser else {})}
 
     if lower.startswith("type "):
         return {"action": "type", "text": text[5:].strip()}
@@ -2107,8 +2109,10 @@ def open_app(target: str):
     return kira_open.open_app(target)
 
 
-def open_url(target: str):
-    return kira_open.open_url(target)
+def open_url(target: str, browser=None):
+    """Open a page: requested browser first, then the remembered default."""
+    remembered = str(USER_MEMORY.get("default_browser", "") or "").strip() or None
+    return kira_open.open_url(target, browser=browser or remembered)
 
 
 def press_key(target: str):
@@ -2127,13 +2131,11 @@ def type_text(text: str):
     return True
 
 
-def search_web(query: str):
+def search_web(query: str, browser=None):
     q = quote_plus((query or "").strip())
     if not q:
         return False
-    url = f"https://www.google.com/search?q={q}"
-    webbrowser.open(url)
-    return True
+    return kira_open.open_url(f"https://www.google.com/search?q={q}", browser=browser)
 
 
 def mouse_move(x, y):
@@ -2373,7 +2375,7 @@ def execute_action(action_data):
         return open_app(str(action_data.get("target", "")))
 
     if action == "open_url":
-        return open_url(str(action_data.get("target", "")))
+        return open_url(str(action_data.get("target", "")), browser=action_data.get("browser"))
 
     if action == "type":
         return type_text(str(action_data.get("text", "")))
@@ -2382,7 +2384,7 @@ def execute_action(action_data):
         return press_key(str(action_data.get("target", "")))
 
     if action == "search":
-        return search_web(str(action_data.get("query", "")))
+        return search_web(str(action_data.get("query", "")), browser=action_data.get("browser"))
 
     if action == "mouse_move":
         return mouse_move(action_data.get("x"), action_data.get("y"))

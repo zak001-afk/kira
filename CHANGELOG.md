@@ -1,6 +1,21 @@
 # KIRA Changelog
 
-## Unreleased — Open flow and speed (OPEN 03)
+## Unreleased — Approximate names and Chrome by default (OPEN 04)
+
+- KIRA now understands approximate and shortened names: "ouvre insta",
+  "ouvre instagrame", "open facebok", "open yutube", "ouvre fb" resolve to the
+  real service (prefix matching, small typo tolerance, nicknames), both for
+  web pages and applications, including the Start Menu shortcut search.
+  A file with an extension ("nots.txt") still stays a file.
+- Pages and searches open in **Chrome by default**. Another browser can be
+  named per request — "ouvre facebook sur firefox", "open google maps in
+  edge", "open spotify with brave" (an app requested inside a named browser
+  opens its web version), "recherche X sur chrome", "افتح على كروم" — and if
+  Chrome is missing KIRA falls back to the system browser. On Windows the
+  browser executable is located in the install folders when needed.
+- UI build label: **COCKPIT 04 / OPEN 04**.
+
+ Unreleased — Open flow and speed (OPEN 03)
 
 - Open requests now follow the expected flow: check whether the application
   exists on the PC (aliases, Start Menu shortcut, install folders), and when

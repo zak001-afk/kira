@@ -69,6 +69,11 @@ SITES = {
     "mail google": "https://mail.google.com",
     "youtube": "https://www.youtube.com",
     "youtube kids": "https://www.youtubekids.com",
+    "yt": "https://www.youtube.com",
+    "instagram": "https://www.instagram.com",
+    "insta": "https://www.instagram.com",
+    "insta gram": "https://www.instagram.com",
+    "fb": "https://www.facebook.com",
     "wikipedia": "https://www.wikipedia.org",
     "github": "https://github.com",
     "gitlab": "https://gitlab.com",
@@ -94,6 +99,56 @@ SITES = {
     "steam": "https://store.steampowered.com",
     "teams": "https://teams.microsoft.com",
 }
+
+
+# ─────────────────────────────────────────────
+# Default browser (Chrome unless the user asks for another one)
+# ─────────────────────────────────────────────
+
+BROWSER_ALIASES = {
+    "chrome": "chrome", "google chrome": "chrome", "chromium": "chrome",
+    "firefox": "firefox", "mozilla": "firefox", "mozilla firefox": "firefox",
+    "edge": "edge", "microsoft edge": "edge", "ms edge": "edge", "msedge": "edge",
+    "opera": "opera", "brave": "brave", "safari": "safari", "vivaldi": "vivaldi",
+    "كروم": "chrome", "فايرفوكس": "firefox", "إيدج": "edge", "ادج": "edge",
+}
+
+DEFAULT_BROWSER = "chrome"
+
+
+def set_default_browser(name):
+    """Remember which browser KIRA should open pages with."""
+    global DEFAULT_BROWSER
+    key = BROWSER_ALIASES.get(fold(name), fold(name)) if name else ""
+    DEFAULT_BROWSER = key or "chrome"
+
+
+def default_browser():
+    return DEFAULT_BROWSER
+
+
+# A trailing browser name picks the browser for one request:
+# "ouvre facebook sur firefox", "open maps in edge", "avec brave".
+BROWSER_PATTERN = re.compile(
+    r"\s+(?:sur|dans|avec|via|on|in|using|with|على)\s+"
+    r"(google\s+chrome|chrome|chromium|firefox|mozilla(?:\s+firefox)?|"
+    r"microsoft\s+edge|ms\s+edge|msedge|edge|opera|brave|safari|vivaldi|"
+    r"كروم|فايرفوكس|إيدج|ادج)\s*[.!?؟]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def extract_browser(text):
+    """Split a trailing browser name: -> (cleaned text, browser or None)."""
+    cleaned = str(text or "").strip()
+    match = BROWSER_PATTERN.search(cleaned)
+    if not match:
+        return cleaned, None
+    browser = BROWSER_ALIASES.get(fold(match.group(1)))
+    if not browser:
+        return cleaned, None
+    remaining = cleaned[: match.start()].rstrip(" ,.!؟،؛:")
+    return (remaining, browser) if remaining else (cleaned, None)
 
 
 # ─────────────────────────────────────────────
@@ -302,6 +357,58 @@ def _has_file_extension(target):
 
 
 # ─────────────────────────────────────────────
+# Approximate name matching ("insta"/"instagrame" -> instagram)
+# ─────────────────────────────────────────────
+
+def edit_distance(left, right, cap=4):
+    """Levenshtein distance, giving up beyond cap."""
+    if left == right:
+        return 0
+    if abs(len(left) - len(right)) > cap:
+        return cap + 1
+    previous = list(range(len(right) + 1))
+    for i, left_char in enumerate(left, start=1):
+        current = [i] + [0] * len(right)
+        for j, right_char in enumerate(right, start=1):
+            current[j] = min(
+                previous[j] + 1,
+                current[j - 1] + 1,
+                previous[j - 1] + (left_char != right_char),
+            )
+        previous = current
+    return previous[-1]
+
+
+def best_fuzzy_match(wanted, keys):
+    """Best (key, score) among keys for a name with a typo or a nickname.
+
+    "insta" matches "instagram" by prefix; "instagrame"/"facebok"/"yutube"
+    match with a small edit distance. Very short names never match.
+    """
+    wanted = fold(wanted)
+    if len(wanted) < 3:
+        return None, 0
+    best, best_score = None, 0
+    for key in keys:
+        label = fold(key)
+        if not label or label == wanted:
+            continue
+        score = 0
+        if label.startswith(wanted):
+            score = 100 - len(label)
+        elif wanted.startswith(label) and len(label) >= 3:
+            score = 85 - len(label)
+        else:
+            limit = 1 if len(wanted) <= 5 else (2 if len(wanted) <= 9 else 3)
+            distance = edit_distance(wanted, label, limit)
+            if distance <= limit:
+                score = 70 - distance * 12
+        if score > best_score:
+            best, best_score = key, score
+    return best, best_score
+
+
+# ─────────────────────────────────────────────
 # Resolution
 # ─────────────────────────────────────────────
 
@@ -352,7 +459,19 @@ def resolve_open(target):
     if _has_file_extension(raw):
         return {"kind": "file", "target": strip_file_markers(raw)}
 
-    # 7. Otherwise KIRA assumes an application.
+    # 7. A close name: "insta"/"instagrame" -> instagram, "facebok" -> facebook.
+    if len(folded) >= 3:
+        best_key, best_score, best_kind = None, 0, None
+        for table, kind in ((APPS, "app"), (SITES, "url")):
+            key, score = best_fuzzy_match(folded, list(table))
+            if key and score > best_score:
+                best_key, best_score, best_kind = key, score, kind
+        if best_key and best_score >= 45:
+            if best_kind == "url":
+                return {"kind": "url", "target": SITES[best_key]}
+            return {"kind": "app", "target": best_key}
+
+    # 8. Otherwise KIRA assumes an application.
     return {"kind": "app", "target": raw}
 
 
@@ -513,6 +632,10 @@ def find_start_menu_app(name, dirs=None):
                 score = 60 - len(label)
             elif label in wanted and len(label) >= 4:
                 score = 50 - len(label)
+            else:
+                limit = 1 if len(wanted) <= 5 else 2
+                if edit_distance(wanted, label, limit) <= limit:
+                    score = 45 - len(label)
             if score > best_score:
                 best, best_score = os.path.join(root, entry), score
     return best
@@ -534,6 +657,32 @@ def windows_install_roots():
             seen.add(root)
             unique.append(root)
     return unique
+
+
+def find_browser_exe(name, roots=None):
+    """A browser executable on Windows (chrome, edge, firefox, brave, opera)."""
+    key = BROWSER_ALIASES.get(fold(name), fold(name)) if name else ""
+    if not key:
+        return None
+    if roots is None:
+        if os.name != "nt":
+            return None
+        roots = windows_install_roots()
+    relative = {
+        "chrome": ["Google/Chrome/Application/chrome.exe"],
+        "edge": ["Microsoft/Edge/Application/msedge.exe"],
+        "firefox": ["Mozilla Firefox/firefox.exe"],
+        "brave": ["BraveSoftware/Brave-Browser/Application/brave.exe"],
+        "opera": ["Programs/Opera/launcher.exe"],
+    }.get(key)
+    if not relative:
+        return None
+    for root in roots:
+        for path in relative:
+            candidate = os.path.join(root, *path.split("/"))
+            if os.path.isfile(candidate):
+                return candidate
+    return None
 
 
 def find_installed_exe(name, bases=None):
@@ -586,13 +735,40 @@ def open_path(path):
         return False
 
 
-def open_url(url):
-    """Open a web page in the default browser."""
+def _browser_controller(name):
+    """A webbrowser controller for a named browser, or None."""
+    key = BROWSER_ALIASES.get(fold(name), fold(name)) if name else ""
+    if not key or key in {"default", "system"}:
+        return None
+    try:
+        return webbrowser.get(key)
+    except webbrowser.Error:
+        pass
+    if os.name == "nt":
+        path = find_browser_exe(key)
+        if path:
+            try:
+                return webbrowser.BackgroundBrowser(path)
+            except Exception:
+                return None
+    return None
+
+
+def open_url(url, browser=None):
+    """Open a web page with the requested browser, then KIRA's default
+    (Chrome), then the system default as a last resort."""
     url = str(url or "").strip()
     if not url:
         return False
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
+    controller = _browser_controller(browser or DEFAULT_BROWSER)
+    if controller is not None:
+        try:
+            controller.open(url)
+            return True
+        except Exception:
+            pass
     try:
         webbrowser.open(url)
         return True
@@ -813,6 +989,11 @@ def parse_open_command(text):
     if not target:
         return None
 
+    # A trailing browser name ("sur firefox", "in edge") picks the browser.
+    target, browser = extract_browser(target)
+    if not target:
+        return None
+
     # "open folder X" is an explicit folder request.
     words = target.split()
     if words and fold(words[0]) in FOLDER_PREFIX_WORDS:
@@ -842,10 +1023,18 @@ def parse_open_command(text):
     kind = resolved["kind"]
     if force_file and kind == "app":
         kind = "file"
+    # "ouvre spotify sur firefox": an app requested inside a named browser
+    # becomes its web version.
+    if browser and kind == "app" and fold(resolved["target"]) in SITES:
+        return {"action": "open_url", "target": SITES[fold(resolved["target"])], "browser": browser}
     if kind == "url":
-        return {"action": "open_url", "target": resolved["target"]}
-    if kind == "folder":
-        return {"action": "open_folder", "target": resolved["target"]}
-    if kind == "file":
-        return {"action": "open_file", "target": resolved["target"]}
-    return {"action": "open_app", "target": resolved["target"]}
+        action = {"action": "open_url", "target": resolved["target"]}
+    elif kind == "folder":
+        action = {"action": "open_folder", "target": resolved["target"]}
+    elif kind == "file":
+        action = {"action": "open_file", "target": resolved["target"]}
+    else:
+        action = {"action": "open_app", "target": resolved["target"]}
+    if browser and kind == "url":
+        action["browser"] = browser
+    return action
