@@ -133,7 +133,9 @@ build_kira.bat
 - "Cherche moi les dossiers dell sur le c et ouvre chaque dossier" runs as
   one command: KIRA finds every folder named "dell" on C: (system folders
   included) and opens them all. "Find every file named rapport and open
-  them" works the same way on the whole PC.
+  them" works the same way on the whole PC. The drive scan is breadth-first
+  with a generous budget, so matches behind huge system trees (Program
+  Files, Windows…) are found too — up to 20 opened at once.
 - "Ouvre tous les rapports" / "open all reports" opens every match at once.
 - "Ouvre le dossier projets" finds a folder by name on the PC; a bare
   "open folder" opens Documents. Nested requests work: "ouvre le dossier

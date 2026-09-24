@@ -1,8 +1,8 @@
 import { I18n, UI_LANGUAGES, interfaceLanguage } from "./i18n.mjs";
 import { speechLocale, baseLanguage, FALLBACK_LANGUAGES, VOICE_SAMPLES } from "./locale.mjs";
-import { SpeechPlayer } from "./speech.mjs?v=open-11";
+import { SpeechPlayer } from "./speech.mjs?v=open-12";
 import { lipDemoPose } from "./lips.mjs";
-import { Hologram } from "./hologram.mjs?v=open-11";
+import { Hologram } from "./hologram.mjs?v=open-12";
 
 /* KIRA / cockpit controller. The desktop and browser share the same local UI.
    API calls stay on this origin; kira_ui.py proxies them to the local backend. */

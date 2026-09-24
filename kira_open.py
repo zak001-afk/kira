@@ -21,6 +21,7 @@ import time
 import unicodedata
 import webbrowser
 from pathlib import Path
+from collections import deque
 from urllib.parse import quote_plus
 
 # ─────────────────────────────────────────────
@@ -586,6 +587,40 @@ def deep_search_dirs():
     return drives + [home] if home not in drives else drives
 
 
+def _walk_bfs(roots, prune_system):
+    """Breadth-first walk of the given roots.
+
+    Yields (directory, subdirs, files, depth). Shallow folders are scanned
+    before deep ones, so a huge system tree (Program Files, WinSxS…) can no
+    longer eat the whole budget before the other matches are reached.
+    Symlinks and junctions are never followed, like os.walk's default.
+    """
+    queue = deque((root, 1) for root in roots)
+    while queue:
+        directory, depth = queue.popleft()
+        try:
+            entries = list(os.scandir(directory))
+        except OSError:
+            yield directory, [], [], depth
+            continue
+        subdirs, files, children = [], [], []
+        for entry in entries:
+            name = entry.name
+            try:
+                is_dir = entry.is_dir(follow_symlinks=False)
+            except OSError:
+                continue
+            if is_dir:
+                if name.startswith(".") or (prune_system and fold(name) in SKIP_DIR_NAMES):
+                    continue
+                subdirs.append(name)
+                children.append(os.path.join(directory, name))
+            else:
+                files.append(name)
+        yield directory, subdirs, files, depth
+        queue.extend((child, depth + 1) for child in children)
+
+
 def find_file_matches(name, search_dirs=None, max_entries=50000, time_budget=4.0, limit=10, prune_system=True):
     """Every plausible file for a name: all exact matches first, then the
     scored approximations, best first. Used to ask the user which one."""
@@ -604,37 +639,29 @@ def find_file_matches(name, search_dirs=None, max_entries=50000, time_budget=4.0
 
     exact, scored = [], []
     scanned = 0
-    for folder in (list(search_dirs) if search_dirs is not None else common_file_dirs()):
-        try:
-            for root, subdirs, files in os.walk(folder):
-                if prune_system:
-                    subdirs[:] = [d for d in subdirs if fold(d) not in SKIP_DIR_NAMES and not d.startswith(".")]
-                else:
-                    subdirs[:] = [d for d in subdirs if not d.startswith(".")]
-                depth = root[len(folder):].count(os.sep) + 1
-                for entry in files:
-                    scanned += 1
-                    if scanned > max_entries or (scanned % 256 == 0 and time.monotonic() > deadline):
-                        return (exact or [path for _score, path in sorted(scored, reverse=True)])[:limit]
-                    label = fold(entry)
-                    stem = label.rsplit(".", 1)[0] if "." in label else label
-                    found = os.path.join(root, entry)
-                    if label == wanted or stem == wanted:
-                        exact.append(found)
-                        if len(exact) >= limit:
-                            return exact
-                        continue
-                    score = 0
-                    if stem == wanted_stem and "." in wanted:
-                        score = 90
-                    elif stem.startswith(wanted) and len(wanted) >= 2:
-                        score = 70 - depth
-                    elif wanted in label and len(wanted) >= 4:
-                        score = 50 - depth
-                    if score > 0:
-                        scored.append((score, found))
-        except OSError:
-            continue
+    for root, _subdirs, files, depth in _walk_bfs(
+            list(search_dirs) if search_dirs is not None else common_file_dirs(), prune_system):
+        for entry in files:
+            scanned += 1
+            if scanned > max_entries or (scanned % 256 == 0 and time.monotonic() > deadline):
+                return (sorted(exact) or [path for _score, path in sorted(scored, reverse=True)])[:limit]
+            label = fold(entry)
+            stem = label.rsplit(".", 1)[0] if "." in label else label
+            found = os.path.join(root, entry)
+            if label == wanted or stem == wanted:
+                exact.append(found)
+                if len(exact) >= limit:
+                    return sorted(exact)[:limit]
+                continue
+            score = 0
+            if stem == wanted_stem and "." in wanted:
+                score = 90
+            elif stem.startswith(wanted) and len(wanted) >= 2:
+                score = 70 - depth
+            elif wanted in label and len(wanted) >= 4:
+                score = 50 - depth
+            if score > 0:
+                scored.append((score, found))
     if exact:
         return sorted(exact)[:limit]
     return [path for _score, path in sorted(scored, key=lambda item: (-item[0], item[1]))][:limit]
@@ -656,35 +683,27 @@ def find_folder_matches(name, search_dirs=None, max_entries=40000, time_budget=2
     folders = list(search_dirs) if search_dirs is not None else common_file_dirs()
     exact, scored = [], []
     scanned = 0
-    for base in folders:
-        try:
-            for root, subdirs, _files in os.walk(base):
-                if prune_system:
-                    subdirs[:] = [d for d in subdirs if fold(d) not in SKIP_DIR_NAMES and not d.startswith(".")]
-                else:
-                    subdirs[:] = [d for d in subdirs if not d.startswith(".")]
-                scanned += 1
-                if scanned > max_entries or (scanned % 256 == 0 and time.monotonic() > deadline):
-                    return (exact or [path for _score, path in sorted(scored, reverse=True)])[:limit]
-                for entry in subdirs:
-                    label = fold(entry)
-                    found = os.path.join(root, entry)
-                    if label == wanted or label == wanted_stem:
-                        exact.append(found)
-                        if len(exact) >= limit:
-                            return exact
-                        continue
-                    score = 0
-                    if label.startswith(wanted) and len(wanted) >= 3:
-                        score = 80 - len(label)
-                    elif wanted.startswith(label) and len(label) >= 3:
-                        score = 65 - len(label)
-                    elif wanted in label and len(wanted) >= 4:
-                        score = 50 - len(label)
-                    if score > 0:
-                        scored.append((score, found))
-        except OSError:
-            continue
+    for directory, subdirs, _files, _depth in _walk_bfs(folders, prune_system):
+        scanned += 1
+        if scanned > max_entries or (scanned % 256 == 0 and time.monotonic() > deadline):
+            return (sorted(exact) or [path for _score, path in sorted(scored, key=lambda item: (-item[0], item[1]))])[:limit]
+        for entry in subdirs:
+            label = fold(entry)
+            found = os.path.join(directory, entry)
+            if label == wanted or label == wanted_stem:
+                exact.append(found)
+                if len(exact) >= limit:
+                    return sorted(exact)[:limit]
+                continue
+            score = 0
+            if label.startswith(wanted) and len(wanted) >= 3:
+                score = 80 - len(label)
+            elif wanted.startswith(label) and len(label) >= 3:
+                score = 65 - len(label)
+            elif wanted in label and len(wanted) >= 4:
+                score = 50 - len(label)
+            if score > 0:
+                scored.append((score, found))
     if exact:
         return sorted(exact)[:limit]
     return [path for _score, path in sorted(scored, key=lambda item: (-item[0], item[1]))][:limit]
@@ -952,8 +971,9 @@ def file_matches(name, parent=None, base_home=None, limit=10, deep_always=True):
                 return [direct]
             is_root = len(parent_dir) <= 3
             return find_file_matches(name, search_dirs=[parent_dir], limit=limit,
-                                     max_entries=250000 if is_root else 40000,
-                                     time_budget=12.0 if is_root else 8.0)
+                                     prune_system=not is_root,
+                                     max_entries=500000 if is_root else 150000,
+                                     time_budget=45.0 if is_root else 20.0)
         return []
     matches = find_file_matches(name, search_dirs=common_file_dirs(base_home) if base_home else None, limit=limit)
     # Already ambiguous in the usual places: asking now is correct and fast.
@@ -963,7 +983,7 @@ def file_matches(name, parent=None, base_home=None, limit=10, deep_always=True):
     if deep_always or not matches:
         for drive in deep_search_dirs():
             for path in find_file_matches(name, search_dirs=[drive], limit=limit,
-                                          prune_system=False, max_entries=250000, time_budget=10.0):
+                                          prune_system=False, max_entries=300000, time_budget=20.0):
                 if path not in matches:
                     matches.append(path)
             if len(matches) >= limit:
@@ -984,8 +1004,8 @@ def folder_matches(name, parent=None, base_home=None, limit=10, deep_always=True
             is_root = len(parent_dir) <= 3
             return find_folder_matches(name, search_dirs=[parent_dir], limit=limit,
                                        prune_system=not is_root,
-                                       max_entries=250000 if is_root else 40000,
-                                       time_budget=12.0 if is_root else 8.0)
+                                       max_entries=500000 if is_root else 150000,
+                                       time_budget=45.0 if is_root else 20.0)
         return []
     matches = find_folder_matches(name, search_dirs=common_file_dirs(base_home) if base_home else None, limit=limit)
     if len(matches) >= 2:
@@ -993,7 +1013,7 @@ def folder_matches(name, parent=None, base_home=None, limit=10, deep_always=True
     if deep_always or not matches:
         for drive in deep_search_dirs():
             for path in find_folder_matches(name, search_dirs=[drive], limit=limit,
-                                            prune_system=False, max_entries=200000, time_budget=8.0):
+                                            prune_system=False, max_entries=250000, time_budget=15.0):
                 if path not in matches:
                     matches.append(path)
             if len(matches) >= limit:

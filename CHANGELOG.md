@@ -1,5 +1,19 @@
 # KIRA Changelog
 
+## Unreleased — The search no longer stops at the first folder found (OPEN 12)
+
+- On a real C: drive the search dove alphabetically into huge system trees
+  (Program Files, WinSxS…) and its budget expired before reaching the other
+  matches — « cherche les dossiers dell sur le c » opened only 1 folder.
+- The scan is now **breadth-first**: everything shallow on the drive is
+  scanned before anything deep, so all folders/files near the root (and a
+  few levels down) are found even when a giant system tree sits next to
+  them. Verified on a trap tree where the old walk found 0/3 and the new
+  one finds 3/3.
+- Bigger budgets on a drive root (45 s / 500 000 entries instead of
+  12 s / 250 000), and file searches there now include system folders too.
+- Up to 20 matches are opened instead of 10.
+
 ## Unreleased — "Find … and open each" runs as a real search (OPEN 11)
 
 - Sentences like "cherche moi les dossier dell sur le c et ouvre chaque

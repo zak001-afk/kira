@@ -8,6 +8,7 @@ for native, web and HTTP clients.
 import ast
 import os
 import re
+import shutil
 import tempfile
 import time
 import unittest
@@ -680,7 +681,7 @@ class AskWhichOneTests(unittest.TestCase):
         if data.get("all"):
             matches = kira_open.file_matches(data["target"], parent=data.get("parent"), deep_always=True)
             opened = 0
-            for path in matches[:10]:
+            for path in matches[:20]:
                 self.opened.append(path)
                 opened += 1
             return opened
@@ -944,7 +945,7 @@ class FindOpenExecutionTests(unittest.TestCase):
                     and all(isinstance(path, str) for path in matches)):
                 matches = kira_open.folder_matches(data["target"], parent=data.get("parent"))
             opened = 0
-            for path in matches[:10]:
+            for path in matches[:20]:
                 self.opened.append(path)
                 opened += 1
             return opened
@@ -967,3 +968,56 @@ class FindOpenExecutionTests(unittest.TestCase):
         source = (ROOT / "kira_voice_agent.py").read_text()
         self.assertIn('action_data.get("candidates")', source,
                       "the voice agent must reuse the single search result")
+
+
+class BreadthFirstSearchTests(unittest.TestCase):
+    """A huge sibling tree (Program Files on a real C:) must not swallow the
+    whole budget before the other matches are reached: the walk is
+    breadth-first, so shallow matches are always found first."""
+
+    def test_folders_behind_a_huge_tree_are_found(self):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        huge = root / "aaa_Program_Files"
+        huge.mkdir()
+        for index in range(600):
+            (huge / f"pad{index:04d}").mkdir()
+        expected = []
+        for sub in ["mmm", "zzz1", "zzz2"]:
+            folder = root / sub / "dell"
+            folder.mkdir(parents=True)
+            expected.append(str(folder))
+        found = kira_open.find_folder_matches("dell", search_dirs=[str(root)], prune_system=False,
+                                              max_entries=100, time_budget=30.0, limit=10)
+        self.assertEqual(sorted(found), sorted(expected))
+
+    def test_files_behind_a_huge_tree_are_found(self):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        huge = root / "aaa_big"
+        huge.mkdir()
+        for index in range(300):
+            folder = huge / f"pad{index:04d}"
+            folder.mkdir()
+            (folder / "junk.log").write_text("x", encoding="utf-8")
+        expected = []
+        for sub in ["mmm", "zzz"]:
+            target = root / sub / "dell.txt"
+            target.parent.mkdir(parents=True)
+            target.write_text("x", encoding="utf-8")
+            expected.append(str(target))
+        found = kira_open.find_file_matches("dell.txt", search_dirs=[str(root)], prune_system=False,
+                                            max_entries=100, time_budget=30.0, limit=10)
+        self.assertEqual(sorted(found), sorted(expected))
+
+    def test_drive_root_budgets_cover_system_folders(self):
+        source = (ROOT / "kira_open.py").read_text()
+        self.assertIn("max_entries=500000 if is_root else 150000", source)
+        self.assertIn("time_budget=45.0 if is_root else 20.0", source)
+        self.assertIn("prune_system=not is_root,\n                                     max_entries=500000",
+                      source, "file searches on a drive root must include system folders too")
+
+    def test_open_all_cap_is_twenty(self):
+        source = (ROOT / "kira_voice_agent.py").read_text()
+        self.assertIn("for path in matches[:20]:", source)
+        self.assertIn("kira_open.folder_matches(target, parent=parent, limit=20)", source)

@@ -2199,11 +2199,11 @@ def resolve_open_matches(action_data):
         if action == "open_file":
             if kira_open.fold(target) in kira_open.FOLDER_ALIASES:
                 return None  # a known place: nothing to disambiguate
-            return kira_open.file_matches(target, parent=parent)
+            return kira_open.file_matches(target, parent=parent, limit=20)
         if action == "open_folder":
             if kira_open.fold(target) in kira_open.FOLDER_ALIASES or kira_open.parse_drive(target):
                 return None
-            return kira_open.folder_matches(target, parent=parent)
+            return kira_open.folder_matches(target, parent=parent, limit=20)
     except Exception:
         logging.exception("resolve_open_matches failed")
     return []
@@ -2447,7 +2447,7 @@ def execute_action(action_data):
                 and all(isinstance(path, str) for path in matches)):
             matches = resolve_open_matches(action_data)
         opened = 0
-        for path in matches[:10]:
+        for path in matches[:20]:
             if kira_open.open_path(path):
                 opened += 1
         return opened
