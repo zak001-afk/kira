@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 from kira_ui import KiraUIHandler
 import kira_language
 import kira_commands
+import kira_open
 from playwright.sync_api import sync_playwright, expect
 
 
@@ -325,6 +326,25 @@ class CockpitBrowserTests(unittest.TestCase):
         expect(self.page.locator(".message").last).to_contain_text("Bonjour")
         posted = [request for request in self.requests if request.url.endswith("/api/command")][-1]
         self.assertEqual(posted.post_data_json["reply_language"], "fr")
+
+    def test_open_command_resolves_and_never_navigates_the_page(self):
+        self.real_language_policy = True
+        self.language_backend = SimpleNamespace(
+            normalize_command=lambda text: text,
+            parse_simple_command=lambda text: kira_open.parse_open_command(text),
+            execute_action=lambda action: True,
+            build_reply=lambda language, name, target: f"J'ouvre {target} maintenant.",
+        )
+        self.load()
+        self.page.locator("#mute").click()
+        self.page.locator("#command").fill("ouvre google maps")
+        self.page.locator("#send").click()
+        expect(self.page.locator(".message").last).to_contain_text("J'ouvre https://www.google.com/maps maintenant.")
+        posted = [request for request in self.requests if request.url.endswith("/api/command")][-1]
+        self.assertEqual(posted.post_data_json["reply_language"], "auto")
+        self.assertEqual(self.page.url.rstrip("/") + "/", self.base + "/")
+        external = [request for request in self.requests if not request.url.startswith(self.base)]
+        self.assertEqual(external, [], "KIRA must open pages on the desktop, not inside the cockpit")
 
     def test_offline_state_is_explicit_and_does_not_show_fake_telemetry(self):
         self.offline = True

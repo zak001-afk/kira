@@ -24,6 +24,7 @@ import psutil
 import speech_recognition as sr
 import sounddevice as sd
 import numpy as np
+import kira_open
 from ollama import chat
 
 DEFAULT_MODEL = "qwen3:0.6b"
@@ -531,6 +532,8 @@ def build_reply(language: str, action: str, target: str = "") -> str:
             return f"J'ouvre {target or 'l application'} maintenant, monsieur."
         if action == "open_url":
             return f"J'ouvre le lien {target or 'maintenant'}, monsieur."
+        if action == "open_file":
+            return f"J'ouvre le fichier {target or 'demandé'} maintenant, monsieur."
         if action == "search":
             return f"Je cherche {target or 'la requête'} maintenant, monsieur."
         if action == "type":
@@ -571,7 +574,7 @@ def build_reply(language: str, action: str, target: str = "") -> str:
             return "Je lis le presse-papiers, monsieur."
         if action == "help":
             return (
-                "Je peux ouvrir des applications et des sites web, saisir du texte, "
+                "Je peux ouvrir des applications, des fichiers et des sites web, saisir du texte, "
                 "effectuer des recherches, contrôler le volume et les médias, "
                 "gérer les fenêtres, utiliser le presse-papiers, prendre des captures, "
                 "analyser votre écran, localiser des éléments visibles, "
@@ -590,6 +593,8 @@ def build_reply(language: str, action: str, target: str = "") -> str:
             return f"سأفتح {target or 'التطبيق'} الآن، سيدي."
         if action == "open_url":
             return f"سأفتح الرابط {target or 'الآن'}، سيدي."
+        if action == "open_file":
+            return f"سأفتح الملف {target or 'المطلوب'} الآن، سيدي."
         if action == "search":
             return f"سأبحث عن {target or 'الاستعلام'} الآن، سيدي."
         if action == "type":
@@ -630,7 +635,7 @@ def build_reply(language: str, action: str, target: str = "") -> str:
             return "سأقرأ الحافظة، سيدي."
         if action == "help":
             return (
-                "أستطيع فتح التطبيقات والمواقع، كتابة النصوص، البحث على الويب، "
+                "أستطيع فتح التطبيقات والملفات والمواقع، كتابة النصوص، البحث على الويب، "
                 "التحكم في الصوت والوسائط، إدارة النوافذ، استخدام الحافظة، "
                 "التقاط لقطات الشاشة، تحليل الشاشة، تحديد العناصر الظاهرة، "
                 "عرض معلومات النظام والإجابة عن أسئلتك باستخدام الذكاء الاصطناعي المحلي، سيدي."
@@ -646,6 +651,8 @@ def build_reply(language: str, action: str, target: str = "") -> str:
         return f"Opening {target or 'the app'} now {user_title}."
     if action == "open_url":
         return f"Opening {target or 'the link'} now {user_title}."
+    if action == "open_file":
+        return f"Opening the file {target or 'you asked for'} now {user_title}."
     if action == "search":
         return f"Searching for {target or 'your request'} now {user_title}."
     if action == "type":
@@ -686,7 +693,7 @@ def build_reply(language: str, action: str, target: str = "") -> str:
         return f"Reading the clipboard {user_title}."
     if action == "help":
         return (
-            "I can open applications and websites, type text, search the web, "
+            "I can open applications, files and websites, type text, search the web, "
             "control volume and media, manage windows, work with the clipboard, "
             "take screenshots, analyze your screen, locate visible elements, "
             "report system information, and answer questions using my local AI."
@@ -1083,6 +1090,14 @@ def parse_simple_command(command: str):
                 },
             ],
         }
+    # ── Files / applications / web pages: one resolver for EN/FR/AR ──
+    # Runs after the fixed phrases above so "start conversation", media
+    # commands, etc. keep their meaning. It fires only on an open request,
+    # never on a plain question.
+    parsed_open = kira_open.parse_open_command(text)
+    if parsed_open:
+        return parsed_open
+
     if lower.startswith("open "):
         target = text[5:].strip()
         if target:
@@ -1193,22 +1208,16 @@ def parse_simple_command(command: str):
     if lower.startswith("open ") and "http" in lower:
         return {"action": "open_url", "target": text[5:].strip()}
 
-    for key in [
-        "google",
-        "youtube",
-        "notepad",
-        "calculator",
-        "paint",
-        "vscode",
-        "edge",
-        "chrome",
-    ]:
-        if key in lower:
-            if key == "google":
-                return {"action": "open_url", "target": "https://www.google.com"}
-            if key == "youtube":
-                return {"action": "open_url", "target": "https://www.youtube.com"}
-            return {"action": "open_app", "target": key}
+    # A bare, exact name ("google", "notepad", "téléchargements" ...) opens it.
+    # Substring matching deliberately avoided: mentioning an app inside a
+    # question must not open anything — KIRA opens only what is requested.
+    known_names = {kira_open.fold(name) for name in list(kira_open.SITES) + list(kira_open.APPS) + list(kira_open.FOLDER_ALIASES)}
+    folded_command = kira_open.fold(text)
+    if folded_command in known_names:
+        resolved = kira_open.resolve_open(text)
+        if resolved:
+            action = {"url": "open_url", "folder": "open_folder", "file": "open_file", "app": "open_app"}[resolved["kind"]]
+            return {"action": action, "target": resolved["target"]}
 
     return None
 
@@ -2094,36 +2103,12 @@ def recognize_offline(audio, sample_rate):
 
 
 def open_app(target: str):
-    key = (target or "").strip().lower()
-    exe = APP_ALIASES.get(key, key)
-    if os.path.isdir(exe) or os.path.isfile(exe):
-        try:
-            os.startfile(exe)
-            return True
-        except Exception:
-            return False
-    if not exe.endswith(".exe"):
-        exe = f"{exe}.exe"
-
-    try:
-        subprocess.Popen(exe)
-        return True
-    except Exception:
-        try:
-            os.startfile(exe)
-            return True
-        except Exception:
-            return False
+    """Open an app via the shared resolver (aliases, Start Menu, web fallback)."""
+    return kira_open.open_app(target)
 
 
 def open_url(target: str):
-    url = (target or "").strip()
-    if not url:
-        return False
-    if not url.startswith("http://") and not url.startswith("https://"):
-        url = "https://" + url
-    webbrowser.open(url)
-    return True
+    return kira_open.open_url(target)
 
 
 def press_key(target: str):
@@ -2192,15 +2177,12 @@ def switch_app():
 
 
 def open_folder(target: str):
-    key = (target or "").strip().lower()
-    folder = APP_ALIASES.get(key, (target or "").strip())
-    if not folder:
-        return False
-    try:
-        os.startfile(folder)
-        return True
-    except Exception:
-        return False
+    return kira_open.open_folder(target)
+
+
+def open_file(target: str):
+    """Open a document: direct path first, then the common folders."""
+    return kira_open.open_file(target)
 
 
 def take_screenshot():
@@ -2424,6 +2406,9 @@ def execute_action(action_data):
     if action == "open_folder":
         return open_folder(str(action_data.get("target", "")))
 
+    if action == "open_file":
+        return open_file(str(action_data.get("target", "")))
+
     if action == "screenshot":
         return take_screenshot()
 
@@ -2562,6 +2547,14 @@ def describe_action(action_data):
     if action == "open_url":
         target = str(action_data.get("target", "website")).strip() or "website"
         return f"open the website {target}"
+
+    if action == "open_folder":
+        target = str(action_data.get("target", "folder")).strip() or "folder"
+        return f"open the {target} folder"
+
+    if action == "open_file":
+        target = str(action_data.get("target", "file")).strip() or "file"
+        return f"open the file {target}"
 
     if action == "type":
         text = str(action_data.get("text", "text")).strip() or "text"
@@ -2813,6 +2806,8 @@ def main():
                     target_text = "screenshot"
                 elif action == "open_folder":
                     target_text = str((result or {}).get("target", "folder"))
+                elif action == "open_file":
+                    target_text = str((result or {}).get("target", "file"))
 
                 if action_name == "close_window":
                     speak(build_reply(lang, "close_window", target_text))

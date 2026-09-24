@@ -83,7 +83,7 @@ class UIBundleTests(unittest.TestCase):
                 path = Path(tmp, name)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("old UI", encoding="utf-8")
-            with self.assertRaisesRegex(RuntimeError, "does not match HOLOGRAPHIC COCKPIT 03"):
+            with self.assertRaisesRegex(RuntimeError, "does not match HOLOGRAPHIC COCKPIT 04"):
                 validate_ui_bundle(tmp)
 
 

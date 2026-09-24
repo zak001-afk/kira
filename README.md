@@ -350,6 +350,7 @@ Windows/WebView2 listening and desktop-control test.
 - **kira_api.py** — REST API bridge for web UI
 - **kira_language.py** — Offline detection, explicit-language policy and voice matching
 - **kira_commands.py** — Shared native/web command path with language metadata
+- **kira_open.py** — Open-resolver for files, applications and web pages (EN/FR/AR)
 
 ### Data Flow
 

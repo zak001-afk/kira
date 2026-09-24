@@ -1,5 +1,26 @@
 # KIRA Changelog
 
+## Unreleased — Open files, apps and web pages
+
+- New **kira_open.py** resolver: one place decides whether an open request is a
+  web page (Google services, YouTube, GitHub, ...), a folder (téléchargements,
+  bureau ...), a local file (direct path, or searched in the common folders) or
+  an installed application (aliases, direct launch, Windows Start Menu shortcut
+  search, web version as a last resort). English, French and Arabic prefixes are
+  supported ("open", "ouvre", "lance", "شغل" ...).
+- **Files can be opened by name** ("ouvre mon rapport.pdf", "open file budget")
+  and are searched in Desktop/Documents/Downloads/Pictures/Music/Videos.
+- New **open_file** action with localized acknowledgements; the help replies now
+  mention files in English, French and Arabic.
+- An app merely **mentioned** inside a question ("Who created Google?") no longer
+  triggers an open; only explicit open requests and bare names do.
+- Existing commands keep priority ("start conversation", media, tasks, the
+  combined "open X and search Y" sequence). Actions still execute exactly once,
+  in the conversation language, through the shared command path.
+- UI build label moves to **COCKPIT 04 / OPEN 01**; 34 new unit tests and a
+  real-browser check that opening never navigates the cockpit page.
+
+
 ## Unreleased — Speech sync 02 follow-up
 
 - Add **Motion: Auto / On / Off** (remembered per browser). Auto still respects
