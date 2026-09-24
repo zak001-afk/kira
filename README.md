@@ -125,7 +125,10 @@ build_kira.bat
   disque c", "open c drive", "disque dur" open drives; "corbeille" opens the
   recycle bin.
 - "Ouvre le dossier projets" finds a folder by name on the PC; a bare
-  "open folder" opens Documents.
+  "open folder" opens Documents. Files and folders missed in the standard
+  places are searched on **every drive** (a few seconds, honestly answered
+  when not found). Apps on PATH and portable apps without shortcuts launch
+  too.
 - Nicknames and typos resolve to the real thing: "ouvre insta",
   "instagrame", "facebok", "yutube" work.
 - Pages and searches open in **Chrome by default**. Name another browser for

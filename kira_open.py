@@ -14,6 +14,7 @@ user's machine.
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -570,6 +571,21 @@ SKIP_DIR_NAMES = {
 }
 
 
+def available_drives():
+    """Every mounted drive root (C:\\, D:\\ ... on Windows, / elsewhere)."""
+    if os.name == "nt":
+        import string
+        return [letter + ":\\" for letter in string.ascii_uppercase if os.path.exists(letter + ":\\")]
+    return ["/"]
+
+
+def deep_search_dirs():
+    """All drive roots: searching here finds files anywhere on the PC."""
+    drives = available_drives()
+    home = str(Path.home())
+    return drives + [home] if home not in drives else drives
+
+
 def find_file(name, search_dirs=None, max_entries=50000, time_budget=4.0):
     """Locate a file by name in the common folders. Returns a path or None.
 
@@ -779,6 +795,33 @@ def find_browser_exe(name, roots=None):
     return None
 
 
+def find_installed_exe_deep(name, roots=None, time_budget=6.0):
+    """A <name>.exe anywhere under the install folders (depth-budgeted walk)."""
+    if roots is None:
+        if os.name != "nt":
+            return None
+        roots = windows_install_roots()
+    folded = fold(name)
+    if not folded:
+        return None
+    candidates = {folded + ".exe", folded.replace(" ", "") + ".exe"}
+    deadline = time.monotonic() + max(1.0, time_budget)
+    scanned = 0
+    for root in roots:
+        try:
+            for current, subdirs, files in os.walk(root):
+                subdirs[:] = [d for d in subdirs if fold(d) not in SKIP_DIR_NAMES and not d.startswith(".")]
+                scanned += 1
+                if scanned % 256 == 0 and time.monotonic() > deadline:
+                    return None
+                for entry in files:
+                    if entry.lower() in candidates:
+                        return os.path.join(current, entry)
+        except OSError:
+            continue
+    return None
+
+
 def find_installed_exe(name, bases=None):
     """A <name>.exe directly inside common install roots (depth <= 2)."""
     if bases is None and os.name != "nt":
@@ -899,7 +942,11 @@ def open_folder(target, base_home=None):
         return open_path(folder)
 
     # Otherwise search the PC for a folder with that name.
-    found = find_folder(raw, search_dirs=common_file_dirs(base_home) if base_home else None)
+    search_dirs = common_file_dirs(base_home) if base_home else None
+    found = find_folder(raw, search_dirs=search_dirs)
+    if found:
+        return open_path(found)
+    found = find_folder(raw, search_dirs=deep_search_dirs(), max_entries=300000, time_budget=12.0)
     if found:
         return open_path(found)
     return False
@@ -917,9 +964,13 @@ def open_file(target, base_home=None, search_dirs=None):
         if path.exists():
             return open_path(path)
         return False
-    if search_dirs is None and base_home:
-        search_dirs = common_file_dirs(base_home)
+    if search_dirs is None:
+        search_dirs = common_file_dirs(base_home) if base_home else None
     found = find_file(name, search_dirs=search_dirs)
+    if found:
+        return open_path(found)
+    # Not in the usual places: search every drive (time-limited).
+    found = find_file(name, search_dirs=deep_search_dirs(), max_entries=400000, time_budget=15.0)
     if found:
         return open_path(found)
     return False
@@ -956,6 +1007,23 @@ def open_app(name, start_menu_dirs=None, base_home=None):
         return open_url(site) if site else False
 
     exe = value if value.lower().endswith((".exe", ".bat", ".cmd", ".lnk", ".url")) else f"{value}.exe"
+
+    # On PATH (CLI tools, apps registered by installers).
+    for which_candidate in (low, key, value):
+        if not which_candidate:
+            continue
+        located = shutil.which(which_candidate)
+        if located:
+            try:
+                subprocess.Popen([located], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except Exception:
+                try:
+                    open_path(located)
+                    return True
+                except Exception:
+                    pass
+
     tried = set()
     for candidate in (exe, key):
         if not candidate or candidate in tried:
@@ -980,6 +1048,14 @@ def open_app(name, start_menu_dirs=None, base_home=None):
 
     if os.name == "nt":
         installed = find_installed_exe(low)
+        if installed:
+            try:
+                os.startfile(installed)
+                return True
+            except Exception:
+                pass
+        # Portable apps without a shortcut: deeper time-limited walk.
+        installed = find_installed_exe_deep(low)
         if installed:
             try:
                 os.startfile(installed)

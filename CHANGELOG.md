@@ -1,6 +1,17 @@
 # KIRA Changelog
 
-## Unreleased — This PC, drives and folders (OPEN 05)
+## Unreleased — Whole-PC coverage (OPEN 06)
+
+- Files and folders are no longer limited to the standard folders: when the
+  usual places miss, KIRA searches **every mounted drive** (C:\, D:\ ...),
+  time-limited with system folders pruned, and opens what it finds. A deep
+  search can take a few seconds and then answers honestly when nothing exists.
+- Applications: commands on PATH, a deeper time-limited walk of the install
+  folders for **portable apps without shortcuts**, in addition to aliases,
+  Start Menu search and install-root lookup.
+- UI build label: **COCKPIT 04 / OPEN 06**.
+
+ Unreleased — This PC, drives and folders (OPEN 05)
 
 - **"ouvre ce pc" / "open this pc" / "ouvre mon pc"** now opens the Windows
   "This PC" view (also "ordinateur", "poste de travail", "جهازي"); the

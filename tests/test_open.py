@@ -395,8 +395,10 @@ class OpenAppFallbackTests(unittest.TestCase):
     def run_open_app(self, name):
         opened = []
         with patch.object(kira_open.subprocess, "Popen", side_effect=OSError("not installed")), \
+             patch.object(kira_open.shutil, "which", return_value=None), \
              patch.object(kira_open, "find_start_menu_app", return_value=None), \
              patch.object(kira_open, "find_installed_exe", return_value=None), \
+             patch.object(kira_open, "find_installed_exe_deep", return_value=None), \
              patch.object(kira_open.webbrowser, "open", side_effect=lambda url: opened.append(url) or True), \
              patch.object(kira_open, "find_file", side_effect=AssertionError("open_app must not scan user files")):
             result = kira_open.open_app(name)
@@ -500,6 +502,61 @@ class BrowserPreferenceTests(unittest.TestCase):
             (application / "chrome.exe").write_text("", encoding="utf-8")
             self.assertEqual(kira_open.find_browser_exe("google chrome", roots=[tmp]), str(application / "chrome.exe"))
             self.assertIsNone(kira_open.find_browser_exe("lynx", roots=[tmp]))
+
+
+class WholePcCoverageTests(unittest.TestCase):
+    """KIRA must reach files, folders and apps anywhere on the PC."""
+
+    def test_file_outside_the_common_folders_is_found_on_the_drives(self):
+        with tempfile.TemporaryDirectory() as drive, tempfile.TemporaryDirectory() as home:
+            (Path(drive) / "Divers").mkdir()
+            target = Path(drive) / "Divers" / "rapport annuel.pdf"
+            target.write_text("x", encoding="utf-8")
+            opened = []
+            with patch.object(kira_open, "deep_search_dirs", return_value=[drive]), \
+                 patch.object(kira_open, "open_path", side_effect=lambda path: opened.append(path) or True):
+                self.assertTrue(kira_open.open_file("rapport annuel.pdf", base_home=home))
+                self.assertTrue(str(opened[-1]).endswith("rapport annuel.pdf"))
+
+    def test_folder_anywhere_on_the_pc_is_found(self):
+        with tempfile.TemporaryDirectory() as drive, tempfile.TemporaryDirectory() as home:
+            folder = Path(drive) / "Divers" / "Projets 2026"
+            folder.mkdir(parents=True)
+            opened = []
+            with patch.object(kira_open, "deep_search_dirs", return_value=[drive]), \
+                 patch.object(kira_open, "open_path", side_effect=lambda path: opened.append(path) or True):
+                self.assertTrue(kira_open.open_folder("Projets 2026", base_home=home))
+                self.assertTrue(str(opened[-1]).endswith("Projets 2026"))
+
+    def test_missing_everywhere_returns_false_quickly(self):
+        with tempfile.TemporaryDirectory() as drive, tempfile.TemporaryDirectory() as home:
+            with patch.object(kira_open, "deep_search_dirs", return_value=[drive]):
+                started = time.monotonic()
+                self.assertFalse(kira_open.open_file("zzqqxxx.pdf", base_home=home))
+                self.assertLess(time.monotonic() - started, 5.0)
+
+    def test_deep_exe_walk_finds_portable_apps(self):
+        with tempfile.TemporaryDirectory() as apps:
+            vendor = Path(apps) / "SomeVendor" / "MyTool" / "bin"
+            vendor.mkdir(parents=True)
+            (vendor / "mytool.exe").write_text("", encoding="utf-8")
+            found = kira_open.find_installed_exe_deep("my tool", roots=[apps])
+            self.assertTrue(found and found.endswith("mytool.exe"), found)
+            self.assertIsNone(kira_open.find_installed_exe_deep("absent tool", roots=[apps]))
+
+    def test_open_app_uses_the_path_lookup(self):
+        located = os.path.join(os.sep, "usr", "bin", "mytool")
+        opened = []
+        with patch.object(kira_open.shutil, "which", return_value=located) as which, \
+             patch.object(kira_open.subprocess, "Popen", side_effect=OSError("no exec in tests")), \
+             patch.object(kira_open, "open_path", side_effect=lambda path: opened.append(path) or True):
+            self.assertTrue(kira_open.open_app("mytool"))
+            which.assert_called_once_with("mytool")
+            self.assertEqual(opened, [located])
+
+    def test_available_drives_have_a_root_form(self):
+        for drive in kira_open.available_drives():
+            self.assertTrue(drive.endswith(":\\" ) or drive == os.sep, drive)
 
 
 if __name__ == "__main__":
