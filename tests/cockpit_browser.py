@@ -337,9 +337,14 @@ class CockpitBrowserTests(unittest.TestCase):
         )
         self.load()
         self.page.locator("#mute").click()
-        self.page.locator("#command").fill("ouvre google maps")
-        self.page.locator("#send").click()
-        expect(self.page.locator(".message").last).to_contain_text("J'ouvre https://www.google.com/maps maintenant.")
+        for text, fragment in [
+            ("ouvre google maps", "J'ouvre https://www.google.com/maps maintenant."),
+            # The exact sentence that failed on the user's Windows PC.
+            ("ouvre moi le'aplication google", "J'ouvre https://www.google.com maintenant."),
+        ]:
+            self.page.locator("#command").fill(text)
+            self.page.locator("#send").click()
+            expect(self.page.locator(".message").last).to_contain_text(fragment)
         posted = [request for request in self.requests if request.url.endswith("/api/command")][-1]
         self.assertEqual(posted.post_data_json["reply_language"], "auto")
         self.assertEqual(self.page.url.rstrip("/") + "/", self.base + "/")

@@ -483,6 +483,52 @@ def find_start_menu_app(name, dirs=None):
     return best
 
 
+def windows_install_roots():
+    """Common Windows install roots for a depth-limited .exe search."""
+    roots = []
+    for variable in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+        base = os.environ.get(variable)
+        if base:
+            roots.append(base)
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        roots.append(os.path.join(local, "Programs"))
+    seen, unique = set(), []
+    for root in roots:
+        if root not in seen:
+            seen.add(root)
+            unique.append(root)
+    return unique
+
+
+def find_installed_exe(name, bases=None):
+    """A <name>.exe directly inside common install roots (depth <= 2)."""
+    if bases is None and os.name != "nt":
+        return None
+    folded = fold(name)
+    if not folded:
+        return None
+    candidates = {folded + ".exe", folded.replace(" ", "") + ".exe"}
+    roots = list(bases) if bases is not None else windows_install_roots()
+    for root in roots:
+        try:
+            entries = list(os.scandir(root))
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.is_file() and entry.name.lower() in candidates:
+                return entry.path
+            if entry.is_dir():
+                try:
+                    children = list(os.scandir(entry.path))
+                except OSError:
+                    continue
+                for child in children:
+                    if child.is_file() and child.name.lower() in candidates:
+                        return child.path
+    return None
+
+
 # ─────────────────────────────────────────────
 # Opening
 # ─────────────────────────────────────────────
@@ -602,6 +648,15 @@ def open_app(name, start_menu_dirs=None, base_home=None):
         if open_path(shortcut):
             return True
 
+    if os.name == "nt":
+        installed = find_installed_exe(low)
+        if installed:
+            try:
+                os.startfile(installed)
+                return True
+            except Exception:
+                pass
+
     if base_home:
         found = find_file(key, search_dirs=common_file_dirs(base_home))
     else:
@@ -635,17 +690,73 @@ def open_target(resolved):
 # ─────────────────────────────────────────────
 
 OPEN_PREFIXES = (
-    "open", "launch", "start", "run",
-    "ouvre", "ouvrir", "lance", "lancer",
-    "افتح", "فتح", "شغل", "تشغيل",
+    "open", "open up", "launch", "start", "run",
+    "ouvre", "ouvre-moi", "ouvrez", "ouvrir", "lance", "lance-moi", "lancer",
+    "افتح", "افتح لي", "فتح", "شغل", "تشغيل",
 )
 
 FOLDER_PREFIX_WORDS = {"folder", "dossier", "مجلد"}
+
+# Politeness around the verb: "peux-tu m'ouvrir google", "please open X",
+# "stp ouvre X", "من فضلك افتح X". Group 1 = verb, group 2 = target.
+POLITE_OPEN = re.compile(
+    r"^(?:est[- ]ce que (?:tu |vous )?)?"
+    r"(?:peux[- ]tu|pourrais[- ]tu|pouvez[- ]vous|tu peux|vous pouvez|"
+    r"can you|could you|would you|will you|"
+    r"s['’ ]?il (?:te|vous) pla[iî]t|stp|please|"
+    r"ارجوك|أرجوك|من فضلك(?:م)?)"
+    r"[,!]?\s*(?:moi\s+|m(?:['’]\s*|\s+)|me\s+|nous\s+|لي\s+)?"
+    r"(ouvrir|ouvre|ouvrez|open|lancer|lance|lancez|start|run|launch|شغل|شغّل|تشغيل|افتح|فتح)\s+(.+)$",
+    re.IGNORECASE,
+)
+
+# Request words around the target ("ouvre moi ...", "pour moi", "please").
+REQUEST_WORDS = {
+    "moi", "me", "nous", "te", "vous", "il", "s", "stp", "please", "plait",
+    "pour", "for", "لي", "من", "فضلك", "الرجاء",
+}
+
+# Container words naming WHAT is opened, not WHAT is opened
+# ("l'application google" -> "google", "open the X app" -> "x").
+APP_CONTAINER_WORDS = {
+    "application", "aplication", "aplications", "applications", "app", "appli",
+    "apps", "programme", "program", "programmes", "logiciel", "logiciels",
+    "site", "sites", "page", "pages", "web", "exe",
+    "تطبيق", "تطبيقات", "برنامج", "موقع", "صفحة",
+}
+
+_NOISE_WORDS = REQUEST_WORDS | LEADING_WORDS | APP_CONTAINER_WORDS
+
+
+def _token_is_noise(token):
+    """A token like "le'aplication" folds to several words; it is noise when
+    every one of those words is filler."""
+    parts = fold(token).split()
+    return bool(parts) and all(part in _NOISE_WORDS for part in parts)
+
+
+def clean_open_target(target):
+    """Drop filler around the real target: 'moi le'aplication google' -> 'google'."""
+    words = str(target or "").strip().split()
+    for _ in range(6):
+        changed = False
+        while words and _token_is_noise(words[0]):
+            words.pop(0)
+            changed = True
+        while words and _token_is_noise(words[-1]):
+            words.pop()
+            changed = True
+        if not changed:
+            break
+    return " ".join(words).strip()
 
 
 def parse_open_command(text):
     """Parse 'open X' / 'ouvre X' / 'شغل X' into an action dict, or None."""
     cleaned = str(text or "").strip()
+    polite = POLITE_OPEN.match(cleaned)
+    if polite:
+        cleaned = f"{polite.group(1).lower()} {polite.group(2).strip()}"
     low = cleaned.lower()
     target = None
     for prefix in OPEN_PREFIXES:
@@ -658,6 +769,7 @@ def parse_open_command(text):
     if not target:
         return None
 
+    target = clean_open_target(target)
     target = strip_leading_words(target)
     if not target:
         return None

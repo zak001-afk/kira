@@ -39,6 +39,15 @@ _MESSAGES = {
     },
     "auto": {"en": "Automatic language selection is enabled. I’ll follow the language of your questions.", "fr": "La langue automatique est activée. Je suivrai la langue de vos questions.", "ar": "تم تفعيل اختيار اللغة تلقائياً. سأتبع لغة أسئلتك."},
     "action_failed": {"en": "I could not complete that action.", "fr": "Je n’ai pas pu effectuer cette action.", "ar": "لم أتمكن من تنفيذ هذا الإجراء."},
+    "open_failed": {
+        "en": "I could not open {target} on this computer. Check that it exists or is installed, then try again.",
+        "fr": "Je n’ai pas pu ouvrir {target} sur cet ordinateur. Vérifie que le fichier existe ou que l’application est installée, puis réessaie.",
+        "ar": "لم أتمكن من فتح {target} على هذا الحاسوب. تحقق من وجوده أو من تثبيته ثم أعد المحاولة.",
+        "es": "No he podido abrir {target} en este equipo. Comprueba que existe o está instalado e inténtalo de nuevo.",
+        "de": "Ich konnte {target} auf diesem Computer nicht öffnen. Prüfe, ob es existiert oder installiert ist, und versuche es erneut.",
+        "it": "Non sono riuscita ad aprire {target} su questo computer. Verifica che esista o sia installato, poi riprova.",
+        "pt": "Não consegui abrir {target} neste computador. Verifique se existe ou está instalado e tente novamente.",
+    },
     "model_offline": {"en": "I cannot reach the local AI model. Start Ollama with ollama serve, then try again.", "fr": "Je ne peux pas joindre le modèle IA local. Démarrez Ollama avec ollama serve, puis réessayez.", "ar": "لا أستطيع الاتصال بنموذج الذكاء الاصطناعي المحلي. شغّل Ollama بالأمر ollama serve ثم حاول مجدداً."},
     "wrong_language": {"en": "The model could not answer in the requested language. Try a multilingual model or another language.", "fr": "Le modèle n’a pas réussi à répondre dans la langue demandée. Essayez un modèle multilingue ou une autre langue.", "ar": "لم يتمكن النموذج من الإجابة باللغة المطلوبة. جرّب نموذجاً متعدد اللغات أو لغة أخرى."},
 }
@@ -102,7 +111,12 @@ def process_command(backend, text, reply_language="auto", previous_language=None
             action = parsed["action"]
             success = backend.execute_action(parsed)  # Exactly once, before any translation.
             if not success:
-                reply = message("action_failed", choice.language) or message("action_failed", "en")
+                reply = None
+                if action in {"open_app", "open_url", "open_file", "open_folder"}:
+                    target = str(parsed.get("target", "")).strip()
+                    if target:
+                        reply = message("open_failed", choice.language, target=target)
+                reply = reply or message("action_failed", choice.language) or message("action_failed", "en")
             elif hasattr(backend, "build_reply"):
                 reply = backend.build_reply(choice.language, action, str(parsed.get("target", parsed.get("query", ""))))
             else:

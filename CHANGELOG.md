@@ -1,4 +1,21 @@
-# KIRA Changelog
+## Unreleased — Open-command robustness (OPEN 02)
+
+- Filler and politeness no longer hide the target: **"ouvre moi le'aplication
+  google"** (the exact sentence that failed on a real PC) now opens Google.
+  Leading/trailing filler ("moi", "s'il te plaît", "stp", "please", "le/la",
+  "l'application", "application", "site", "برنامج", "من فضلك" ...) is stripped,
+  including apostrophized tokens like "le'aplication".
+- Polite open requests are recognized: "peux-tu m'ouvrir google",
+  "tu peux m ouvrir gmail", "est-ce que tu peux ouvrir wikipedia",
+  "please open google", "من فضلك افتح كروم". Questions ABOUT opening
+  ("comment ouvrir un fichier pdf ?") still go to the model, not to actions.
+- Windows: after aliases, direct launch and the Start Menu search, KIRA also
+  looks for <name>.exe in Program Files / LOCALAPPDATA install roots.
+- A failed open now explains what failed and what to check, in the reply
+  language ("Je n'ai pas pu ouvrir chrome sur cet ordinateur...") instead of a
+  generic "action failed".
+- UI build label: **COCKPIT 04 / OPEN 02**. 42 open-related unit tests and a
+  real-browser run replaying the user's exact failing sentence.
 
 ## Unreleased — Open files, apps and web pages
 

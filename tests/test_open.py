@@ -84,6 +84,28 @@ class ParseOpenTests(unittest.TestCase):
         self.assertEqual(self.parse("ouvre le document budget"), {"action": "open_file", "target": "budget"})
         self.assertEqual(self.parse("open file C:\\x\\a.txt"), {"action": "open_file", "target": "C:\\x\\a.txt"})
 
+    def test_politeness_and_filler_never_hide_the_target(self):
+        # The exact sentence that failed in real use ("KIRA n'a pas pu effectuer open_app").
+        self.assertEqual(self.parse("ouvre moi le'aplication google"), {"action": "open_url", "target": "https://www.google.com"})
+        self.assertEqual(self.parse("ouvre moi l'application google"), {"action": "open_url", "target": "https://www.google.com"})
+        self.assertEqual(self.parse("ouvre l'application chrome"), {"action": "open_app", "target": "chrome"})
+        self.assertEqual(self.parse("open the google application"), {"action": "open_url", "target": "https://www.google.com"})
+        self.assertEqual(self.parse("ouvre le site github"), {"action": "open_url", "target": "https://github.com"})
+
+    def test_polite_questions_open_too(self):
+        self.assertEqual(self.parse("ouvre-moi google"), {"action": "open_url", "target": "https://www.google.com"})
+        self.assertEqual(self.parse("peux-tu m'ouvrir google"), {"action": "open_url", "target": "https://www.google.com"})
+        self.assertEqual(self.parse("tu peux m ouvrir gmail"), {"action": "open_url", "target": "https://mail.google.com"})
+        self.assertEqual(self.parse("s'il te plaît ouvre youtube"), {"action": "open_url", "target": "https://www.youtube.com"})
+        self.assertEqual(self.parse("stp ouvre google maps"), {"action": "open_url", "target": "https://www.google.com/maps"})
+        self.assertEqual(self.parse("please open google"), {"action": "open_url", "target": "https://www.google.com"})
+        self.assertEqual(self.parse("est-ce que tu peux ouvrir wikipedia"), {"action": "open_url", "target": "https://www.wikipedia.org"})
+        self.assertEqual(self.parse("من فضلك افتح كروم"), {"action": "open_app", "target": "كروم"})
+
+    def test_questions_about_opening_are_not_commands(self):
+        self.assertIsNone(self.parse("comment ouvrir un fichier pdf ?"))
+        self.assertIsNone(self.parse("open the folder"))
+
     def test_folder_requests(self):
         self.assertEqual(self.parse("open folder downloads"), {"action": "open_folder", "target": "downloads"})
         self.assertEqual(self.parse("open the dossier documents"), {"action": "open_folder", "target": "documents"})
@@ -192,6 +214,11 @@ class VoiceAgentIntegrationTests(unittest.TestCase):
         self.assertEqual(self.action("open folder downloads"), "open_folder")
         self.assertEqual(self.action("open C:\\Users\\me\\doc.pdf"), "open_file")
 
+    def test_filler_and_politeness_still_reach_the_resolver(self):
+        self.assertEqual(self.action("ouvre moi le'aplication google"), "open_url")
+        self.assertEqual(self.action("peux-tu m'ouvrir google"), "open_url")
+        self.assertEqual(self.action("tu peux m ouvrir gmail"), "open_url")
+
     def test_combined_open_and_search_sequence_is_preserved(self):
         self.assertEqual(self.action("open chrome and search news"), "sequence")
 
@@ -250,9 +277,9 @@ class OpenActionRoutingTests(unittest.TestCase):
         self.assertEqual(result["language"], "fr")
 
     def test_failed_open_is_admitted_in_the_interface_language(self):
-        result = commands.process_command(self.backend(success=False), "ouvre ghost.pdf", reply_language="fr", interface_language="fr")
+        result = commands.process_command(self.backend(target="ghost.pdf", success=False), "ouvre ghost.pdf", reply_language="fr", interface_language="fr")
         self.assertFalse(result["success"])
-        self.assertEqual(result["response"], commands.message("action_failed", "fr"))
+        self.assertIn("ghost.pdf", result["response"])
 
     def test_open_actions_are_blocked_in_chat_only_mode(self):
         backend = self.backend()

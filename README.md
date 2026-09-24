@@ -106,6 +106,24 @@ build_kira.bat
 - "Volume up/down/mute"
 - "Lock computer"
 
+**Opening files, apps and web pages (EN/FR/AR):**
+- "Open google maps" / "Ouvre gmail" / "افتح يوتيوب" — known web pages and
+  Google services open in the default browser.
+- "Open notepad" / "Lance spotify" — installed apps launch through their alias,
+  a direct launch, or a Windows Start Menu / install-folder search, with the
+  web version as a last resort (Spotify, Teams, Discord ...).
+- "Open my report.pdf" / "Ouvre le document budget" — files are found by direct
+  path first, then searched in Desktop/Documents/Downloads/Pictures/Music/Videos
+  and opened with their default application.
+- "Open folder downloads" / "Ouvre le dossier documents" — opens folders.
+- Politeness and filler never hide the target: "Peux-tu m'ouvrir google ?",
+  "ouvre moi l'application gmail", "stp ouvre youtube" all work.
+- KIRA opens things on the computer running the KIRA engine (your PC). The
+  interface preview without an engine honestly refuses instead.
+- If an app is not installed, the failure says so in the reply language
+  ("Je n'ai pas pu ouvrir X sur cet ordinateur...") instead of a generic error.
+- Mentioning an app inside a question ("Who created Google?") opens nothing.
+
 **Task Management:**
 - "Remind me to call mom in 5 minutes"
 - "Set a timer for 30 minutes"
