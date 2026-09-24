@@ -923,9 +923,13 @@ def open_url(url, browser=None):
         return False
 
 
-def file_matches(name, parent=None, base_home=None, limit=10, deep_always=False):
-    """Candidate files for a name: a parent location, the common folders,
-    then every drive (deep search only when needed or explicitly asked)."""
+def file_matches(name, parent=None, base_home=None, limit=10, deep_always=True):
+    """Every matching file on the PC.
+
+    Default: search the common folders first, then every drive, so the list
+    is complete before deciding to open directly or to ask. A parent
+    location limits the search exactly there.
+    """
     name = strip_file_markers(name)
     if not name:
         return []
@@ -943,19 +947,22 @@ def file_matches(name, parent=None, base_home=None, limit=10, deep_always=False)
             return find_file_matches(name, search_dirs=[parent_dir], time_budget=8.0, limit=limit)
         return []
     matches = find_file_matches(name, search_dirs=common_file_dirs(base_home) if base_home else None, limit=limit)
-    if not deep_always and matches:
+    # Already ambiguous in the usual places: asking now is correct and fast.
+    if len(matches) >= 2:
         return matches
-    for drive in deep_search_dirs():
-        for path in find_file_matches(name, search_dirs=[drive], limit=limit, max_entries=250000, time_budget=10.0):
-            if path not in matches:
-                matches.append(path)
-        if len(matches) >= limit:
-            break
+    # Otherwise complete the search across every drive before deciding.
+    if deep_always or not matches:
+        for drive in deep_search_dirs():
+            for path in find_file_matches(name, search_dirs=[drive], limit=limit, max_entries=250000, time_budget=10.0):
+                if path not in matches:
+                    matches.append(path)
+            if len(matches) >= limit:
+                break
     return matches[:limit]
 
 
-def folder_matches(name, parent=None, base_home=None, limit=10, deep_always=False):
-    """Candidate folders for a name (same strategy as file_matches)."""
+def folder_matches(name, parent=None, base_home=None, limit=10, deep_always=True):
+    """Every matching folder on the PC (same policy as file_matches)."""
     if len(fold(strip_leading_words(name))) < 2:
         return []
     if parent:
@@ -967,14 +974,15 @@ def folder_matches(name, parent=None, base_home=None, limit=10, deep_always=Fals
             return find_folder_matches(name, search_dirs=[parent_dir], time_budget=8.0, limit=limit)
         return []
     matches = find_folder_matches(name, search_dirs=common_file_dirs(base_home) if base_home else None, limit=limit)
-    if not deep_always and matches:
+    if len(matches) >= 2:
         return matches
-    for drive in deep_search_dirs():
-        for path in find_folder_matches(name, search_dirs=[drive], limit=limit, max_entries=200000, time_budget=8.0):
-            if path not in matches:
-                matches.append(path)
-        if len(matches) >= limit:
-            break
+    if deep_always or not matches:
+        for drive in deep_search_dirs():
+            for path in find_folder_matches(name, search_dirs=[drive], limit=limit, max_entries=200000, time_budget=8.0):
+                if path not in matches:
+                    matches.append(path)
+            if len(matches) >= limit:
+                break
     return matches[:limit]
 
 
@@ -1324,7 +1332,15 @@ def resolve_parent_dir(parent, base_home=None):
         candidate = Path(base_home) / candidate
     if candidate.is_dir():
         return str(candidate)
-    return find_folder(raw, search_dirs=[base_home] if base_home else None)
+    found = find_folder(raw, search_dirs=[base_home] if base_home else None)
+    if found:
+        return found
+    # The named location itself may live anywhere ("dans le dossier missions").
+    for drive in deep_search_dirs():
+        found = find_folder(raw, search_dirs=[drive], max_entries=200000, time_budget=8.0)
+        if found:
+            return found
+    return None
 
 
 def parse_open_command(text):

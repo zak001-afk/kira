@@ -735,6 +735,43 @@ class AskWhichOneTests(unittest.TestCase):
         self.assertFalse(result.get("needs_choice"))
         self.assertEqual(len(self.opened), 1)
 
+    def test_one_in_common_plus_others_on_drives_still_asks(self):
+        """The reported bug: one match in the usual places must not be opened
+        while same-named files exist elsewhere on the PC."""
+        documents = Path(self.drive_home) / "Documents"
+        documents.mkdir()
+        (documents / "bilan.pdf").write_text("x", encoding="utf-8")
+        extra = Path(self.drive_d) / "travail" / "missions"
+        extra.mkdir(parents=True)
+        (extra / "bilan.pdf").write_text("x", encoding="utf-8")
+        deep = Path(self.drive_c) / "divers" / "2025"
+        deep.mkdir(parents=True)
+        (deep / "bilan.pdf").write_text("x", encoding="utf-8")
+        result = commands.process_command(self.backend, "ouvre le fichier bilan", reply_language="fr")
+        self.assertTrue(result["needs_choice"], "one local match plus others must ask")
+        self.assertEqual(len(result["candidates"]), 3)
+        self.assertEqual(self.opened, [])
+
+    def test_one_single_file_deep_on_a_drive_opens_directly(self):
+        deep = Path(self.drive_d) / "secret" / "tres" / "profond"
+        deep.mkdir(parents=True)
+        (deep / "unique.txt").write_text("x", encoding="utf-8")
+        result = commands.process_command(self.backend, "ouvre le fichier unique.txt", reply_language="fr")
+        self.assertFalse(result.get("needs_choice"))
+        self.assertEqual(len(self.opened), 1)
+        self.assertTrue(self.opened[0].endswith("unique.txt"))
+
+    def test_a_named_location_limits_the_search(self):
+        archives = Path(self.drive_d) / "archives"
+        (archives / "special.pdf").write_text("x", encoding="utf-8")
+        elsewhere = Path(self.drive_c) / "somewhere"
+        elsewhere.mkdir(parents=True)
+        (elsewhere / "special.pdf").write_text("x", encoding="utf-8")
+        result = commands.process_command(self.backend, "ouvre le fichier special dans le dossier archives", reply_language="fr")
+        self.assertFalse(result.get("needs_choice"))
+        self.assertEqual(len(self.opened), 1)
+        self.assertTrue(self.opened[0].endswith("special.pdf"))
+
     def test_a_single_match_opens_without_asking(self):
         for index in (2, 3, 4):
             (Path(self.drive_c) / f"doc{index}" / "notes" / f"rapport{index}.pdf").unlink()

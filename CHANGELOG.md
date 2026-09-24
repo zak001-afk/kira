@@ -1,6 +1,19 @@
 # KIRA Changelog
 
-## Unreleased — Which one? and open-all (OPEN 08)
+## Unreleased — Whole-PC search is the default (OPEN 09)
+
+- Fixed the reported bug: a file found in the usual places (Documents ...)
+  was opened immediately even when same-named files existed elsewhere. The
+  default is now the requested behaviour: **search the whole PC** (common
+  folders, then every drive, time-budgeted), then
+  **one match -> open it, several -> ask which one**.
+- A named location still limits the search exactly there ("ouvre le fichier
+  rapport dans le dossier archives", "dans le disque d").
+- A named parent folder is itself located anywhere on the PC if needed.
+- Files deep in subfolders of a drive or of a Desktop folder are found.
+- UI build label: **COCKPIT 04 / OPEN 09**.
+
+ Unreleased — Which one? and open-all (OPEN 08)
 
 - When several files or folders share the requested name (e.g. a "rapport"
   in each of four doc folders on C:), KIRA no longer guesses: it answers with
