@@ -9,6 +9,7 @@ import inspect
 import re
 import time as _time
 import kira_language as languages
+import kira_open
 
 
 _MESSAGES = {
@@ -42,9 +43,14 @@ _MESSAGES = {
     "auto": {"en": "Automatic language selection is enabled. I’ll follow the language of your questions.", "fr": "La langue automatique est activée. Je suivrai la langue de vos questions.", "ar": "تم تفعيل اختيار اللغة تلقائياً. سأتبع لغة أسئلتك."},
     "action_failed": {"en": "I could not complete that action.", "fr": "Je n’ai pas pu effectuer cette action.", "ar": "لم أتمكن من تنفيذ هذا الإجراء."},
     "choose_open": {
-        "en": "I found {count} of them. Which one should I open?\n{list}",
-        "fr": "J’en ai trouvé {count}. Lequel veux-tu que j’ouvre ?\n{list}",
-        "ar": "وجدت {count}. أيّها تريد أن أفتح؟\n{list}",
+        "en": "I found {count} of them. Which one should I open? Reply with its number (1, 2, …), say “all” to open every one, or “cancel”.\n{list}",
+        "fr": "J’en ai trouvé {count}. Lequel veux-tu que j’ouvre ? Réponds avec son numéro (1, 2, …), « tous » pour tout ouvrir, ou « annule » pour ne rien faire.\n{list}",
+        "ar": "وجدت {count}. أيّها تريد أن أفتح؟ أجب برقمه (1، 2، …)، أو «الكل» لفتحها كلها، أو «إلغاء» لعدم فعل شيء.\n{list}",
+    },
+    "no_pending_choice": {
+        "en": "There is nothing to choose right now. Ask me to open a file first, and I will list the options if there are several.",
+        "fr": "Il n’y a rien à choisir pour le moment. Demande-moi d’ouvrir un fichier, et je te proposerai la liste s’il y en a plusieurs.",
+        "ar": "لا يوجد شيء للاختيار الآن. اطلب مني فتح ملفاً أولاً، وسأعرض القائمة إن وجدت عدة ملفات.",
     },
     "open_cancelled": {"en": "Okay, cancelled.", "fr": "D’accord, j’annule.", "ar": "حسناً، تم الإلغاء."},
     "opened_all": {"en": "I opened {count} of them.", "fr": "J’en ai ouvert {count}.", "ar": "فتحت {count}."},
@@ -103,7 +109,7 @@ def call_with_options(callback, text, **options):
 # ─────────────────────────────────────────────
 
 _PENDING_OPEN = None
-_PENDING_OPEN_TTL = 180.0
+_PENDING_OPEN_TTL = 600.0
 
 _CHOICE_WORDS = {
     "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "10": 10,
@@ -115,7 +121,8 @@ _CHOICE_WORDS = {
     "first": 1, "third": 3, "fourth": 4, "fifth": 5,
     "الأول": 1, "الثاني": 2, "الثالث": 3, "الرابع": 4, "الخامس": 5,
 }
-_CANCEL_WORDS = {"annule", "annuler", "cancel", "abandon", "laisse", "طغ", "الغاء", "إلغاء"}
+_CANCEL_WORDS = {"annule", "annuler", "cancel", "abandon", "laisse", "no", "non", "طغ", "الغاء", "إلغاء"}
+_CHOICE_PREFIXES = ("le", "la", "les", "num", "numero", "n", "no", "the", "number", "رقم")
 _ALL_WORDS = {"tous", "toutes", "tout", "all", "كل", "جميع"}
 
 
@@ -137,13 +144,23 @@ def pending_open():
 
 
 def match_open_choice(text, count):
-    """A pick (int), "all" or "cancel" from the user's answer, else None."""
-    for token in languages.fold(text).split():
+    """A pick (int), "all" or "cancel" from the user's answer, else None.
+
+    Tolerates "le 2", "n°2", "numero 2", "the second", "all", "annule" ...
+    """
+    for raw_token in languages.fold(text).replace("°", "").replace("_", " ").split():
+        token = raw_token.strip(".,!?;:»«()\"")
         if token in _CANCEL_WORDS:
             return "cancel"
         if token in _ALL_WORDS:
             return "all"
+        for prefix in _CHOICE_PREFIXES:
+            if token.startswith(prefix) and len(token) > len(prefix) and token[len(prefix):][:1].isdigit():
+                token = token[len(prefix):].lstrip("°.:-_ ")
+                break
         pick = _CHOICE_WORDS.get(token)
+        if pick is None and token.isdigit():
+            pick = int(token)
         if pick and 1 <= pick <= count:
             return pick
     return None
@@ -201,6 +218,13 @@ def process_command(backend, text, reply_language="auto", previous_language=None
             return {"action": action, "success": bool(success), "response": reply, **metadata}
         # Anything else is a new request; the old question expires.
         clear_pending_open()
+
+    if pending is None and not chat_only:
+        stray = match_open_choice(text, 10)
+        if stray is not None and len(text.split()) <= 3 and kira_open.parse_open_command(text) is None:
+            return {"action": "none",
+                    "response": message("no_pending_choice", choice.language) or message("no_pending_choice", "en"),
+                    **metadata}
 
     try:
         canned = builtin_reply(text, choice.language)

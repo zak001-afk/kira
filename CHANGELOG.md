@@ -1,6 +1,18 @@
 # KIRA Changelog
 
-## Unreleased — Whole-PC search is the default (OPEN 09)
+## Unreleased — The question now teaches how to answer (OPEN 10)
+
+- The "which one?" question now explains the options explicitly:
+  "Lequel veux-tu que j'ouvre ? Réponds avec son numéro (1, 2, …),
+  « tous » pour tout ouvrir, ou « annule » pour ne rien faire." (EN/FR/AR).
+- Answers are understood in many forms: "le 2", "n°2", "n2", "numero 2",
+  "le deuxième", "2", "tous", "annule", "no"/"cancel".
+- A number typed with no pending question no longer triggers anything odd:
+  KIRA explains there is nothing to choose and how to get the list.
+- The choice stays valid for 10 minutes instead of 3.
+- UI build label: **COCKPIT 04 / OPEN 10**.
+
+ Unreleased — Whole-PC search is the default (OPEN 09)
 
 - Fixed the reported bug: a file found in the usual places (Documents ...)
   was opened immediately even when same-named files existed elsewhere. The

@@ -126,9 +126,10 @@ build_kira.bat
   recycle bin.
 - By default KIRA searches **the whole PC** for files and folders, then
   opens directly when exactly one matches and asks which one when several
-  do ("2", "le deuxième", "tous", "annule" are valid answers). A named
-  location ("dans le dossier archives", "dans le disque d") limits the
-  search exactly there.
+  do. The question explains how to answer, and KIRA accepts "2", "le 2",
+  "n°2", "numero 2", "le deuxième", "tous" (open everything) or "annule" —
+  valid for 10 minutes. A named location ("dans le dossier archives",
+  "dans le disque d") limits the search exactly there.
 - "Ouvre tous les rapports" / "open all reports" opens every match at once.
 - "Ouvre le dossier projets" finds a folder by name on the PC; a bare
   "open folder" opens Documents. Nested requests work: "ouvre le dossier

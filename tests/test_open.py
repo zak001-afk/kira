@@ -698,6 +698,36 @@ class AskWhichOneTests(unittest.TestCase):
         names = [Path(path).name for path in result["candidates"]]
         self.assertEqual(names, sorted(names), "candidates must be listed in a stable order")
 
+    def test_the_question_explains_how_to_answer(self):
+        result = commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        self.assertIn("numéro", result["response"])
+        self.assertIn("tous", result["response"])
+        self.assertIn("annule", result["response"])
+
+    def test_answers_are_understood_in_many_forms(self):
+        for answer in ["le 2", "n°2", "n2", "numero 2", "le deuxième", "2"]:
+            commands.clear_pending_open()
+            commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+            self.opened.clear()
+            result = commands.process_command(self.backend, answer, reply_language="fr")
+            self.assertEqual(len(self.opened), 1, answer)
+            self.assertTrue(self.opened[0].endswith("rapport2.pdf"), answer)
+
+    def test_a_stray_choice_without_a_pending_question_is_explained(self):
+        commands.clear_pending_open()
+        result = commands.process_command(self.backend, "2", reply_language="fr")
+        self.assertEqual(result["action"], "none")
+        self.assertIn("rien à choisir", result["response"])
+        self.assertEqual(self.opened, [])
+
+    def test_the_choice_stays_available_for_ten_minutes(self):
+        commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        import time as time_module
+        stale = commands._PENDING_OPEN["time"] - 400  # 6-7 minutes old
+        commands._PENDING_OPEN["time"] = stale
+        result = commands.process_command(self.backend, "2", reply_language="fr")
+        self.assertEqual(len(self.opened), 1)
+
     def test_the_answer_opens_the_chosen_one(self):
         commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
         result = commands.process_command(self.backend, "2", reply_language="fr")
