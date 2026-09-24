@@ -117,6 +117,31 @@ class ParseOpenTests(unittest.TestCase):
         self.assertEqual(self.parse("ouvre disque dur"), {"action": "open_folder", "target": "disque dur"})
         self.assertEqual(self.parse("ouvre corbeille"), {"action": "open_folder", "target": "corbeille"})
 
+    def test_nested_folder_locations_are_understood(self):
+        self.assertEqual(
+            self.parse("ouvre le dossier projets dans documents"),
+            {"action": "open_folder", "target": "projets", "parent": "documents"},
+        )
+        self.assertEqual(
+            self.parse("ouvre le dossier missions dans le dossier travail"),
+            {"action": "open_folder", "target": "missions", "parent": "travail"},
+        )
+        self.assertEqual(
+            self.parse("open projects in documents"),
+            {"action": "open_folder", "target": "projects", "parent": "documents"},
+        )
+        self.assertEqual(
+            self.parse("ouvre le dossier missions sur le disque d"),
+            {"action": "open_folder", "target": "missions", "parent": "d"},
+        )
+        self.assertEqual(
+            self.parse("ouvre le fichier rapport dans le disque d"),
+            {"action": "open_file", "target": "rapport", "parent": "d"},
+        )
+
+    def test_a_filename_with_extension_is_never_split_at_in(self):
+        self.assertEqual(self.parse("open my notes in english.txt"), {"action": "open_file", "target": "notes in english.txt"})
+
     def test_a_bare_folder_request_opens_documents(self):
         self.assertEqual(self.parse("open folder"), {"action": "open_folder", "target": "documents"})
         self.assertEqual(self.parse("ouvre le dossier"), {"action": "open_folder", "target": "documents"})
@@ -557,6 +582,52 @@ class WholePcCoverageTests(unittest.TestCase):
     def test_available_drives_have_a_root_form(self):
         for drive in kira_open.available_drives():
             self.assertTrue(drive.endswith(":\\" ) or drive == os.sep, drive)
+
+
+class NestedLocationTests(unittest.TestCase):
+    """A folder inside a folder, possibly on another drive, must open."""
+
+    def test_resolve_parent_dir_from_path_alias_and_name(self):
+        with tempfile.TemporaryDirectory() as home:
+            documents = Path(home) / "Documents"
+            documents.mkdir()
+            parent = documents / "travail"
+            parent.mkdir()
+            self.assertEqual(kira_open.resolve_parent_dir(str(parent)), str(parent))
+            self.assertEqual(kira_open.resolve_parent_dir("documents", base_home=home), str(documents))
+            self.assertIsNone(kira_open.resolve_parent_dir("zzqq", base_home=home))
+
+    def test_folder_inside_a_named_parent_opens_directly(self):
+        with tempfile.TemporaryDirectory() as home:
+            missions = Path(home) / "missions"
+            missions.mkdir()
+            secretariat = missions / "secretariat"
+            secretariat.mkdir()
+            opened = []
+            with patch.object(kira_open, "open_path", side_effect=lambda path: opened.append(path) or True):
+                self.assertTrue(kira_open.open_folder("secretariat", base_home=home, parent="missions"))
+                self.assertTrue(str(opened[-1]).endswith("secretariat"))
+
+    def test_file_inside_a_named_parent_opens(self):
+        with tempfile.TemporaryDirectory() as home:
+            missions = Path(home) / "missions"
+            missions.mkdir()
+            report = missions / "rapport final.pdf"
+            report.write_text("x", encoding="utf-8")
+            opened = []
+            with patch.object(kira_open, "open_path", side_effect=lambda path: opened.append(path) or True):
+                self.assertTrue(kira_open.open_file("rapport final.pdf", base_home=home, parent="missions"))
+                self.assertTrue(str(opened[-1]).endswith("rapport final.pdf"))
+
+    def test_deep_folder_search_reaches_the_second_drive(self):
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            deep = Path(second) / "travail" / "missions" / "secretariat"
+            deep.mkdir(parents=True)
+            opened = []
+            with patch.object(kira_open, "deep_search_dirs", return_value=[first, second]), \
+                 patch.object(kira_open, "open_path", side_effect=lambda path: opened.append(path) or True):
+                self.assertTrue(kira_open.open_folder("secretariat"))
+                self.assertTrue(str(opened[-1]).endswith("secretariat"))
 
 
 if __name__ == "__main__":

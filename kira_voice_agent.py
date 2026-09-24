@@ -2184,13 +2184,14 @@ def switch_app():
         return False
 
 
-def open_folder(target: str):
-    return kira_open.open_folder(target)
+def open_folder(target: str, parent=None):
+    """Open a folder, optionally inside a parent location or drive."""
+    return kira_open.open_folder(target, parent=parent)
 
 
-def open_file(target: str):
-    """Open a document: direct path first, then the common folders."""
-    return kira_open.open_file(target)
+def open_file(target: str, parent=None):
+    """Open a document: direct path, parent location, common folders, drives."""
+    return kira_open.open_file(target, parent=parent)
 
 
 def take_screenshot():
@@ -2412,10 +2413,10 @@ def execute_action(action_data):
         return switch_app()
 
     if action == "open_folder":
-        return open_folder(str(action_data.get("target", "")))
+        return open_folder(str(action_data.get("target", "")), parent=action_data.get("parent"))
 
     if action == "open_file":
-        return open_file(str(action_data.get("target", "")))
+        return open_file(str(action_data.get("target", "")), parent=action_data.get("parent"))
 
     if action == "screenshot":
         return take_screenshot()

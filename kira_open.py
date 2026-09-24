@@ -913,8 +913,12 @@ def open_url(url, browser=None):
         return False
 
 
-def open_folder(target, base_home=None):
-    """Open "Ce PC", a drive, a well-known folder, a path or a folder by name."""
+def open_folder(target, base_home=None, parent=None):
+    """Open "Ce PC", a drive, a well-known folder, a path or a folder by name.
+
+    With a parent location ("dans le dossier X", "sur le disque D"), the
+    search starts inside it, which is both correct and fast.
+    """
     raw = str(target or "").strip()
     key = fold(raw)
     folder = FOLDER_ALIASES.get(key, raw)
@@ -941,19 +945,33 @@ def open_folder(target, base_home=None):
     if os.path.isdir(folder):
         return open_path(folder)
 
+    # A parent location ("dans le dossier X", "sur le disque D") narrows it.
+    if parent:
+        parent_dir = resolve_parent_dir(parent, base_home)
+        if parent_dir:
+            direct = os.path.join(parent_dir, raw)
+            if os.path.isdir(direct):
+                return open_path(direct)
+            found = find_folder(raw, search_dirs=[parent_dir], time_budget=8.0)
+            if found:
+                return open_path(found)
+
     # Otherwise search the PC for a folder with that name.
     search_dirs = common_file_dirs(base_home) if base_home else None
     found = find_folder(raw, search_dirs=search_dirs)
     if found:
         return open_path(found)
-    found = find_folder(raw, search_dirs=deep_search_dirs(), max_entries=300000, time_budget=12.0)
-    if found:
-        return open_path(found)
+    # Deep search, drive by drive, so a busy C: never hides what is on D:.
+    for drive in deep_search_dirs():
+        found = find_folder(raw, search_dirs=[drive], max_entries=200000, time_budget=8.0)
+        if found:
+            return open_path(found)
     return False
 
 
-def open_file(target, base_home=None, search_dirs=None):
-    """Open a local file: direct path first, then the common folders."""
+def open_file(target, base_home=None, search_dirs=None, parent=None):
+    """Open a local file: direct path, a parent location, the common folders,
+    then every drive."""
     name = strip_file_markers(target)
     if not name:
         return False
@@ -964,15 +982,27 @@ def open_file(target, base_home=None, search_dirs=None):
         if path.exists():
             return open_path(path)
         return False
+    # A parent location ("dans le dossier X", "sur le disque D") narrows it.
+    if parent:
+        parent_dir = resolve_parent_dir(parent, base_home)
+        if parent_dir:
+            direct = os.path.join(parent_dir, name)
+            if os.path.isfile(direct):
+                return open_path(direct)
+            found = find_file(name, search_dirs=[parent_dir], time_budget=8.0)
+            if found:
+                return open_path(found)
+
     if search_dirs is None:
         search_dirs = common_file_dirs(base_home) if base_home else None
     found = find_file(name, search_dirs=search_dirs)
     if found:
         return open_path(found)
-    # Not in the usual places: search every drive (time-limited).
-    found = find_file(name, search_dirs=deep_search_dirs(), max_entries=400000, time_budget=15.0)
-    if found:
-        return open_path(found)
+    # Deep search, drive by drive, so a busy C: never hides what is on D:.
+    for drive in deep_search_dirs():
+        found = find_file(name, search_dirs=[drive], max_entries=250000, time_budget=10.0)
+        if found:
+            return open_path(found)
     return False
 
 
@@ -1158,6 +1188,80 @@ def clean_open_target(target):
     return " ".join(words).strip()
 
 
+# "un dossier dans un dossier" / "sur le disque D" location phrases.
+LOCATION_SPLIT = re.compile(
+    r"\s+(?:dans|in)\s+(?:le\s+|la\s+|les\s+|l['’]\s*|the\s+)?"
+    r"(?:dossier|répertoire|repertoire|folder|fichier|file)?\s*"
+    r"|\s+sur\s+(?:le\s+|la\s+)?(?:disque|lecteur|drive|disk)\s+"
+    r"|\s+on\s+(?:the\s+)?(?:drive|disk)\s+",
+    re.IGNORECASE,
+)
+
+LOCATION_MARKER_WORDS = {
+    "dossier", "folders", "folder", "repertoire", "répertoire", "fichier",
+    "file", "disque", "lecteur", "drive", "disk", "the", "le", "la", "les",
+    "l", "my", "mon", "ma", "الملف", "المجلد", "القرص",
+}
+
+
+def clean_location_words(text):
+    """'le dossier documents' -> 'documents', 'le disque d' -> 'd'."""
+    words = str(text or "").strip().split()
+    while words and fold(words[0]) in LOCATION_MARKER_WORDS:
+        words.pop(0)
+    return " ".join(words).strip()
+
+
+def split_location(text):
+    """Split a nested request: 'projets dans le dossier documents' ->
+    ('projets', 'documents'); 'missions sur le disque d' -> ('missions', 'd').
+
+    A direct filename with an extension is never split.
+    """
+    cleaned = str(text or "").strip()
+    if _has_file_extension(cleaned):
+        return cleaned, None
+    match = LOCATION_SPLIT.search(cleaned)
+    if not match:
+        return cleaned, None
+    name = cleaned[: match.start()].strip().rstrip(" ,.!؟،؛:")
+    parent = cleaned[match.end():].strip().rstrip(" ,.!؟،؛:")
+    if not name or not parent:
+        return cleaned, None
+    parent = clean_location_words(parent)
+    if not parent:
+        return cleaned, None
+    return name, parent
+
+
+def resolve_parent_dir(parent, base_home=None):
+    """Turn a location phrase into an existing start directory."""
+    raw = str(parent or "").strip()
+    if not raw:
+        return None
+    letter = parse_drive(raw)
+    if letter:
+        drive = letter + ":\\"
+        if os.path.isdir(drive):
+            return drive
+        if os.path.isdir(letter + ":/"):
+            return letter + ":/"
+    key = fold(raw)
+    if key in FOLDER_ALIASES:
+        folder = FOLDER_ALIASES[key]
+        if base_home:
+            folder = folder.replace("~", str(base_home))
+        folder = os.path.expanduser(folder)
+        if os.path.isdir(folder):
+            return folder
+    candidate = Path(raw).expanduser()
+    if base_home and not candidate.is_absolute():
+        candidate = Path(base_home) / candidate
+    if candidate.is_dir():
+        return str(candidate)
+    return find_folder(raw, search_dirs=[base_home] if base_home else None)
+
+
 def parse_open_command(text):
     """Parse 'open X' / 'ouvre X' / 'شغل X' into an action dict, or None."""
     cleaned = str(text or "").strip()
@@ -1187,13 +1291,22 @@ def parse_open_command(text):
     if not target:
         return None
 
+    # A nested location ("dans le dossier X", "sur le disque D") narrows it.
+    target, parent = split_location(target)
+    if not target:
+        return None
+
     # "open folder X" is an explicit folder request.
     words = target.split()
     if words and fold(words[0]) in FOLDER_PREFIX_WORDS:
         rest = " ".join(words[1:]).strip()
+        if rest:
+            rest, _ = extract_browser(rest)
+        rest, nested = split_location(rest) if rest else ("documents", None)
         if not rest:
             rest = "documents"  # a bare "open folder" opens Documents
-        return {"action": "open_folder", "target": rest}
+        parent = parent or nested
+        return {"action": "open_folder", "target": rest, **({"parent": parent} if parent else {})}
 
     # "open X and search Y" is a combined command handled by the caller.
     if re.search(r"\s+and\s+search\s+", low) or re.search(r"\s+et\s+(?:cherche|recherche)\s+", low):
@@ -1216,6 +1329,8 @@ def parse_open_command(text):
     kind = resolved["kind"]
     if force_file and kind == "app":
         kind = "file"
+    if parent and kind == "app":
+        kind = "folder"
     # "ouvre spotify sur firefox": an app requested inside a named browser
     # becomes its web version.
     if browser and kind == "app" and fold(resolved["target"]) in SITES:
@@ -1230,4 +1345,6 @@ def parse_open_command(text):
         action = {"action": "open_app", "target": resolved["target"]}
     if browser and kind == "url":
         action["browser"] = browser
+    if parent and kind in {"folder", "file"}:
+        action["parent"] = parent
     return action

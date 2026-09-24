@@ -1,6 +1,20 @@
 # KIRA Changelog
 
-## Unreleased — Whole-PC coverage (OPEN 06)
+## Unreleased — Nested folders and no more parroting (OPEN 07)
+
+- Nested locations are understood: "ouvre le dossier missions dans le dossier
+  travail", "open projects in documents", "ouvre le fichier rapport dans le
+  disque d" split into a clean name plus a parent, so KIRA searches **inside
+  the parent** (a named folder, an alias, or a drive) instead of failing —
+  this was the real cause of "elle n'arrive pas à ouvrir un dossier dans un
+  dossier sur un disque", and of replies that repeated the whole request.
+- The whole-PC deep search now runs **drive by drive** with its own time
+  budget, so a busy C: can no longer hide what is on D:.
+- Replies only ever mention the clean name ("J'ouvre le dossier missions
+  maintenant"), never the raw request back.
+- UI build label: **COCKPIT 04 / OPEN 07**.
+
+ Unreleased — Whole-PC coverage (OPEN 06)
 
 - Files and folders are no longer limited to the standard folders: when the
   usual places miss, KIRA searches **every mounted drive** (C:\, D:\ ...),
