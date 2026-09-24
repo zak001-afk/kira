@@ -1,3 +1,22 @@
+# KIRA Changelog
+
+## Unreleased — Open flow and speed (OPEN 03)
+
+- Open requests now follow the expected flow: check whether the application
+  exists on the PC (aliases, Start Menu shortcut, install folders), and when
+  it does not, open a **correct** browser page — the known web version when
+  one exists, otherwise a Google search page for the requested name.
+  "ouvre facebook" opens Facebook; an unknown name opens its search results.
+- **Much faster opens**: open_app no longer scans the user's documents (the
+  old fallback could walk the whole home folder and even open an unrelated
+  file). File searches get a time budget, prune system folders (AppData,
+  Windows, node_modules ...) and stop early; the Start Menu walk is cached
+  for a minute so repeated opens are instant.
+- Open wishes are recognized as commands: "je veux que tu ouvres facebook",
+  "je veux ouvrir X", "j'aimerais ouvrir X", "i want you to open X" — while
+  real questions ("comment ouvrir un fichier pdf ?") still go to the model.
+- UI build label: **COCKPIT 04 / OPEN 03**.
+
 ## Unreleased — Open-command robustness (OPEN 02)
 
 - Filler and politeness no longer hide the target: **"ouvre moi le'aplication

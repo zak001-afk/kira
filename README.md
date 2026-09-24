@@ -109,9 +109,14 @@ build_kira.bat
 **Opening files, apps and web pages (EN/FR/AR):**
 - "Open google maps" / "Ouvre gmail" / "افتح يوتيوب" — known web pages and
   Google services open in the default browser.
-- "Open notepad" / "Lance spotify" — installed apps launch through their alias,
-  a direct launch, or a Windows Start Menu / install-folder search, with the
-  web version as a last resort (Spotify, Teams, Discord ...).
+- "Open notepad" / "Lance spotify" — KIRA checks whether the app exists on the
+  PC (alias, direct launch, Windows Start Menu / install-folder search); when
+  it does not, it opens a correct browser page: the known web version when one
+  exists, otherwise a Google search page for the requested name.
+- Open wishes work as commands: "je veux que tu ouvres facebook",
+  "j'aimerais ouvrir google maps", "i want you to open youtube".
+- Opens are fast: no document scan on app opens, pruned/time-limited file
+  searches, cached Start Menu walk.
 - "Open my report.pdf" / "Ouvre le document budget" — files are found by direct
   path first, then searched in Desktop/Documents/Downloads/Pictures/Music/Videos
   and opened with their default application.

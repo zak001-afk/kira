@@ -16,9 +16,11 @@ import os
 import re
 import subprocess
 import sys
+import time
 import unicodedata
 import webbrowser
 from pathlib import Path
+from urllib.parse import quote_plus
 
 # ─────────────────────────────────────────────
 # Text normalisation
@@ -379,8 +381,25 @@ def common_file_dirs(base_home=None):
     return dirs
 
 
-def find_file(name, search_dirs=None, max_entries=50000):
-    """Locate a file by name in the common folders. Returns a path or None."""
+# Folders that must never be scanned when looking for a user file: they are
+# huge and never contain the user's documents. Kept lowercase (already folded).
+SKIP_DIR_NAMES = {
+    "appdata", "application data", "local settings", "program files",
+    "program files (x86)", "programdata", "windows", "library",
+    "node_modules", "__pycache__", ".git", "venv", ".venv",
+    "anaconda3", "miniconda3", "$recycle.bin", "system volume information",
+    "cookies", "recent", "sendto", "start menu", "templates",
+}
+
+
+def find_file(name, search_dirs=None, max_entries=50000, time_budget=4.0):
+    """Locate a file by name in the common folders. Returns a path or None.
+
+    Scanning stops after time_budget seconds or max_entries files, and
+    system/hidden folders are pruned, so a missing file fails fast instead
+    of blocking KIRA for minutes.
+    """
+    deadline = time.monotonic() + max(0.5, time_budget)
     cleaned = strip_file_markers(name)
     if not cleaned:
         return None
@@ -407,11 +426,12 @@ def find_file(name, search_dirs=None, max_entries=50000):
     scanned = 0
     for folder in (list(search_dirs) if search_dirs is not None else common_file_dirs()):
         try:
-            for root, _subdirs, files in os.walk(folder):
+            for root, subdirs, files in os.walk(folder):
+                subdirs[:] = [d for d in subdirs if fold(d) not in SKIP_DIR_NAMES and not d.startswith(".")]
                 depth = root[len(folder):].count(os.sep) + 1
                 for entry in files:
                     scanned += 1
-                    if scanned > max_entries:
+                    if scanned > max_entries or (scanned % 256 == 0 and time.monotonic() > deadline):
                         return best
                     label = fold(entry)
                     stem = label.rsplit(".", 1)[0] if "." in label else label
@@ -449,37 +469,52 @@ def start_menu_program_dirs():
     return [path for path in dirs if path and os.path.isdir(path)]
 
 
+_START_MENU_CACHE = {"key": None, "time": 0.0, "walks": ()}
+_START_MENU_CACHE_TTL = 60.0
+
+
 def find_start_menu_app(name, dirs=None):
-    """Best matching Start Menu shortcut (.lnk / .url) for an app name."""
+    """Best matching Start Menu shortcut (.lnk / .url) for an app name.
+
+    The directory walk is cached for one minute: opening several things in a
+    row must not re-scan the Start Menu every time.
+    """
     wanted = fold(name)
     if not wanted:
         return None
     roots = list(dirs) if dirs is not None else start_menu_program_dirs()
+    key = tuple(roots)
+    now = time.monotonic()
+    if _START_MENU_CACHE["key"] == key and now - _START_MENU_CACHE["time"] < _START_MENU_CACHE_TTL:
+        walks = _START_MENU_CACHE["walks"]
+    else:
+        walks = []
+        for base in roots:
+            try:
+                walks.extend(os.walk(base))
+            except OSError:
+                continue
+        _START_MENU_CACHE.update(key=key, time=now, walks=walks)
     best = None
     best_score = 0
-    for base in roots:
-        try:
-            walk = list(os.walk(base))
-        except OSError:
-            continue
-        for root, _subdirs, files in walk:
-            for entry in files:
-                if not entry.lower().endswith((".lnk", ".url")):
-                    continue
-                label = fold(entry.rsplit(".", 1)[0])
-                if not label:
-                    continue
-                if label == wanted:
-                    return os.path.join(root, entry)
-                score = 0
-                if label.startswith(wanted) and len(wanted) >= 3:
-                    score = 90 - len(label)
-                elif wanted in label and len(wanted) >= 4:
-                    score = 60 - len(label)
-                elif label in wanted and len(label) >= 4:
-                    score = 50 - len(label)
-                if score > best_score:
-                    best, best_score = os.path.join(root, entry), score
+    for root, _subdirs, files in walks:
+        for entry in files:
+            if not entry.lower().endswith((".lnk", ".url")):
+                continue
+            label = fold(entry.rsplit(".", 1)[0])
+            if not label:
+                continue
+            if label == wanted:
+                return os.path.join(root, entry)
+            score = 0
+            if label.startswith(wanted) and len(wanted) >= 3:
+                score = 90 - len(label)
+            elif wanted in label and len(wanted) >= 4:
+                score = 60 - len(label)
+            elif label in wanted and len(label) >= 4:
+                score = 50 - len(label)
+            if score > best_score:
+                best, best_score = os.path.join(root, entry), score
     return best
 
 
@@ -601,7 +636,9 @@ def open_app(name, start_menu_dirs=None, base_home=None):
     """Open an installed application.
 
     Order: alias (folder/exe/URI) -> direct launch -> Start Menu shortcut ->
-    same-named file -> web version if one is known.
+    install folders -> web version -> a browser page searching for the name.
+    Never scans the user's documents: open requests must stay fast and must
+    not open unrelated files.
     """
     key = str(name or "").strip()
     if not key:
@@ -657,15 +694,13 @@ def open_app(name, start_menu_dirs=None, base_home=None):
             except Exception:
                 pass
 
-    if base_home:
-        found = find_file(key, search_dirs=common_file_dirs(base_home))
-    else:
-        found = find_file(key)
-    if found and open_path(found):
-        return True
-
+    # Not installed: known web version, otherwise a browser page that
+    # searches for the requested name.
     site = SITES.get(fold(low))
     if site and open_url(site):
+        return True
+    query = quote_plus(key)
+    if query and open_url(f"https://www.google.com/search?q={query}"):
         return True
     return False
 
@@ -697,16 +732,19 @@ OPEN_PREFIXES = (
 
 FOLDER_PREFIX_WORDS = {"folder", "dossier", "مجلد"}
 
-# Politeness around the verb: "peux-tu m'ouvrir google", "please open X",
-# "stp ouvre X", "من فضلك افتح X". Group 1 = verb, group 2 = target.
+# Politeness and open wishes around the verb: "peux-tu m'ouvrir google",
+# "je veux que tu ouvres facebook", "j'aimerais ouvrir X", "please open X",
+# "i want you to open X", "من فضلك افتح X". Group 1 = verb, group 2 = target.
 POLITE_OPEN = re.compile(
     r"^(?:est[- ]ce que (?:tu |vous )?)?"
     r"(?:peux[- ]tu|pourrais[- ]tu|pouvez[- ]vous|tu peux|vous pouvez|"
-    r"can you|could you|would you|will you|"
+    r"je veux que (?:tu|vous)|je voudrais que (?:tu|vous)|j['’]aimerais que (?:tu|vous)|"
+    r"j['’ ]?(?:aimerais|aime)|je voudrais|je veux|"
+    r"can you|could you|would you|will you|i want (?:you )?to|i['’]?d like (?:you )?to|"
     r"s['’ ]?il (?:te|vous) pla[iî]t|stp|please|"
     r"ارجوك|أرجوك|من فضلك(?:م)?)"
-    r"[,!]?\s*(?:moi\s+|m(?:['’]\s*|\s+)|me\s+|nous\s+|لي\s+)?"
-    r"(ouvrir|ouvre|ouvrez|open|lancer|lance|lancez|start|run|launch|شغل|شغّل|تشغيل|افتح|فتح)\s+(.+)$",
+    r"[,!?]?\s*(?:bien\s+|moi\s+|m(?:['’]\s*|\s+)|me\s+|nous\s+|لي\s+)?"
+    r"(ouvrir|ouvres|ouvre|ouvrez|open|lancer|lances|lance|lancez|start|run|launch|شغل|شغّل|تشغيل|افتح|فتح)\s+(.+)$",
     re.IGNORECASE,
 )
 
@@ -755,19 +793,20 @@ def parse_open_command(text):
     """Parse 'open X' / 'ouvre X' / 'شغل X' into an action dict, or None."""
     cleaned = str(text or "").strip()
     polite = POLITE_OPEN.match(cleaned)
-    if polite:
-        cleaned = f"{polite.group(1).lower()} {polite.group(2).strip()}"
     low = cleaned.lower()
-    target = None
-    for prefix in OPEN_PREFIXES:
-        p = prefix.lower()
-        if low == p:
+    if polite:
+        target = polite.group(2).strip()
+    else:
+        target = None
+        for prefix in OPEN_PREFIXES:
+            p = prefix.lower()
+            if low == p:
+                return None
+            if low.startswith(p + " "):
+                target = cleaned[len(p):].strip()
+                break
+        if not target:
             return None
-        if low.startswith(p + " "):
-            target = cleaned[len(p):].strip()
-            break
-    if not target:
-        return None
 
     target = clean_open_target(target)
     target = strip_leading_words(target)

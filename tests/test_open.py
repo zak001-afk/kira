@@ -9,10 +9,11 @@ import ast
 import os
 import re
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import kira_open
 import kira_commands as commands
@@ -105,6 +106,14 @@ class ParseOpenTests(unittest.TestCase):
     def test_questions_about_opening_are_not_commands(self):
         self.assertIsNone(self.parse("comment ouvrir un fichier pdf ?"))
         self.assertIsNone(self.parse("open the folder"))
+
+    def test_open_wishes_are_recognized(self):
+        self.assertEqual(self.parse("je veux que tu ouvres facebook"), {"action": "open_url", "target": "https://www.facebook.com"})
+        self.assertEqual(self.parse("je veux ouvrir facebook"), {"action": "open_url", "target": "https://www.facebook.com"})
+        self.assertEqual(self.parse("j'aimerais ouvrir google maps"), {"action": "open_url", "target": "https://www.google.com/maps"})
+        self.assertEqual(self.parse("je veux bien ouvrir chrome"), {"action": "open_app", "target": "chrome"})
+        self.assertEqual(self.parse("i want you to open youtube"), {"action": "open_url", "target": "https://www.youtube.com"})
+        self.assertIsNone(self.parse("je veux que tu ouvriez gmail"))
 
     def test_folder_requests(self):
         self.assertEqual(self.parse("open folder downloads"), {"action": "open_folder", "target": "downloads"})
@@ -292,6 +301,74 @@ class OpenActionRoutingTests(unittest.TestCase):
     def test_builtin_help_mentions_files(self):
         for language, word in [("en", "files"), ("fr", "fichiers")]:
             self.assertIn(word, commands.builtin_reply("help", language))
+
+
+class OpenAppFallbackTests(unittest.TestCase):
+    """The requested flow: check the installed app first; never scan the
+    user's documents; otherwise open a correct browser page."""
+
+    def run_open_app(self, name):
+        opened = []
+        with patch.object(kira_open.subprocess, "Popen", side_effect=OSError("not installed")), \
+             patch.object(kira_open, "find_start_menu_app", return_value=None), \
+             patch.object(kira_open, "find_installed_exe", return_value=None), \
+             patch.object(kira_open.webbrowser, "open", side_effect=lambda url: opened.append(url) or True), \
+             patch.object(kira_open, "find_file", side_effect=AssertionError("open_app must not scan user files")):
+            result = kira_open.open_app(name)
+        return result, opened
+
+    def test_unknown_app_opens_a_browser_search_for_the_name(self):
+        result, opened = self.run_open_app("jardimage")
+        self.assertTrue(result)
+        self.assertEqual(opened, ["https://www.google.com/search?q=jardimage"])
+
+    def test_known_web_version_wins_over_the_generic_search(self):
+        result, opened = self.run_open_app("spotify")
+        self.assertTrue(result)
+        self.assertEqual(opened, ["https://open.spotify.com"])
+
+    def test_facebook_app_request_falls_back_to_the_facebook_page(self):
+        result, opened = self.run_open_app("facebook")
+        self.assertTrue(result)
+        self.assertEqual(opened, ["https://www.facebook.com"])
+
+    def test_installed_exe_lookup_in_given_roots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(kira_open.find_installed_exe("ghostapp", bases=[tmp]))
+            vendor = Path(tmp) / "Vendor"
+            vendor.mkdir()
+            (vendor / "ghostapp.exe").write_text("", encoding="utf-8")
+            found = kira_open.find_installed_exe("ghost app", bases=[tmp])
+            self.assertTrue(found and found.endswith("ghostapp.exe"), found)
+
+
+class FindFileSpeedTests(unittest.TestCase):
+    def test_system_folders_are_pruned_from_the_search(self):
+        with tempfile.TemporaryDirectory() as home:
+            noise = Path(home) / "AppData" / "Roaming" / "deep"
+            noise.mkdir(parents=True)
+            (noise / "rapport.pdf").write_text("x", encoding="utf-8")
+            self.assertIsNone(kira_open.find_file("rapport", search_dirs=[home], time_budget=2.0))
+
+    def test_user_documents_are_found_quickly(self):
+        with tempfile.TemporaryDirectory() as home:
+            documents = Path(home) / "Documents"
+            documents.mkdir()
+            (documents / "rapport.pdf").write_text("x", encoding="utf-8")
+            started = time.monotonic()
+            found = kira_open.find_file("rapport", search_dirs=[home])
+            self.assertLess(time.monotonic() - started, 3.0)
+            self.assertTrue(found and found.endswith("rapport.pdf"), found)
+
+    def test_time_budget_stops_a_hopeless_search(self):
+        with tempfile.TemporaryDirectory() as home:
+            for index in range(300):
+                folder = Path(home) / f"folder{index:03d}"
+                folder.mkdir()
+                (folder / f"file{index}.txt").write_text("x", encoding="utf-8")
+            started = time.monotonic()
+            self.assertIsNone(kira_open.find_file("zzzznope", search_dirs=[home], time_budget=0.5))
+            self.assertLess(time.monotonic() - started, 3.0)
 
 
 if __name__ == "__main__":
