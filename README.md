@@ -121,6 +121,11 @@ build_kira.bat
   path first, then searched in Desktop/Documents/Downloads/Pictures/Music/Videos
   and opened with their default application.
 - "Open folder downloads" / "Ouvre le dossier documents" — opens folders.
+- "Open this pc" / "Ouvre ce pc" — the Windows "This PC" view; "ouvre le
+  disque c", "open c drive", "disque dur" open drives; "corbeille" opens the
+  recycle bin.
+- "Ouvre le dossier projets" finds a folder by name on the PC; a bare
+  "open folder" opens Documents.
 - Nicknames and typos resolve to the real thing: "ouvre insta",
   "instagrame", "facebok", "yutube" work.
 - Pages and searches open in **Chrome by default**. Name another browser for

@@ -105,7 +105,21 @@ class ParseOpenTests(unittest.TestCase):
 
     def test_questions_about_opening_are_not_commands(self):
         self.assertIsNone(self.parse("comment ouvrir un fichier pdf ?"))
-        self.assertIsNone(self.parse("open the folder"))
+        self.assertIsNone(self.parse("how do I open a pdf file ?"))
+
+    def test_this_pc_and_drives(self):
+        self.assertEqual(self.parse("ouvre ce pc"), {"action": "open_folder", "target": "ce pc"})
+        self.assertEqual(self.parse("open this pc"), {"action": "open_folder", "target": "this pc"})
+        self.assertEqual(self.parse("ouvre mon pc"), {"action": "open_folder", "target": "pc"})
+        self.assertEqual(self.parse("ouvre le disque c"), {"action": "open_folder", "target": "disque c"})
+        self.assertEqual(self.parse("open c drive"), {"action": "open_folder", "target": "c drive"})
+        self.assertEqual(self.parse("ouvre c:"), {"action": "open_folder", "target": "c"})
+        self.assertEqual(self.parse("ouvre disque dur"), {"action": "open_folder", "target": "disque dur"})
+        self.assertEqual(self.parse("ouvre corbeille"), {"action": "open_folder", "target": "corbeille"})
+
+    def test_a_bare_folder_request_opens_documents(self):
+        self.assertEqual(self.parse("open folder"), {"action": "open_folder", "target": "documents"})
+        self.assertEqual(self.parse("ouvre le dossier"), {"action": "open_folder", "target": "documents"})
 
     def test_open_wishes_are_recognized(self):
         self.assertEqual(self.parse("je veux que tu ouvres facebook"), {"action": "open_url", "target": "https://www.facebook.com"})
@@ -323,6 +337,55 @@ class OpenActionRoutingTests(unittest.TestCase):
     def test_builtin_help_mentions_files(self):
         for language, word in [("en", "files"), ("fr", "fichiers")]:
             self.assertIn(word, commands.builtin_reply("help", language))
+
+
+class DriveParsingTests(unittest.TestCase):
+    def test_drive_phrases(self):
+        for phrase, letter in [
+            ("c", "c"), ("C:", "c"), ("c:\\", "c"), ("disque c", "c"),
+            ("le disque c", "c"), ("lecteur d", "d"), ("c drive", "c"),
+            ("drive e", "e"), ("disque dur", "c"), ("hard drive", "c"),
+            ("hard disk", "c"), ("disque local", "c"), ("قرص سي", "c"),
+            ("القرص دي", "d"),
+        ]:
+            self.assertEqual(kira_open.parse_drive(phrase), letter, phrase)
+
+    def test_non_drive_phrases(self):
+        for phrase in ["chrome", "documents", "", "téléchargements"]:
+            self.assertIsNone(kira_open.parse_drive(phrase), phrase)
+
+    def test_drives_are_resolved_as_folders(self):
+        for phrase in ["ce pc", "this pc", "mon pc", "poste de travail", "disque c", "c:", "disque dur", "hard drive"]:
+            self.assertEqual(kira_open.resolve_open(phrase)["kind"], "folder", phrase)
+
+
+class FolderSearchTests(unittest.TestCase):
+    def test_find_folder_by_name_in_the_home(self):
+        with tempfile.TemporaryDirectory() as home:
+            documents = Path(home) / "Documents"
+            documents.mkdir()
+            projects = documents / "Projets Web"
+            projects.mkdir()
+            self.assertEqual(
+                kira_open.find_folder("projets web", search_dirs=[home]),
+                str(projects),
+            )
+            self.assertIsNone(kira_open.find_folder("zzzqqq", search_dirs=[home]))
+
+    def test_open_folder_routes_alias_search_and_documents(self):
+        with tempfile.TemporaryDirectory() as home:
+            documents = Path(home) / "Documents"
+            documents.mkdir()
+            projects = documents / "Projets Web"
+            projects.mkdir()
+            opened = []
+            with patch.object(kira_open, "open_path", side_effect=lambda path: opened.append(path) or True), \
+                 patch.object(kira_open, "common_file_dirs", return_value=[home]):
+                self.assertTrue(kira_open.open_folder("documents", base_home=home))
+                self.assertTrue(kira_open.open_folder("documents"))
+                opened.clear()
+                self.assertTrue(kira_open.open_folder("Projets Web", base_home=home))
+                self.assertTrue(str(opened[-1]).endswith("Projets Web"))
 
 
 class OpenAppFallbackTests(unittest.TestCase):

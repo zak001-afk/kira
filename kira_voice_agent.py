@@ -534,6 +534,8 @@ def build_reply(language: str, action: str, target: str = "") -> str:
             return f"J'ouvre le lien {target or 'maintenant'}, monsieur."
         if action == "open_file":
             return f"J'ouvre le fichier {target or 'demandé'} maintenant, monsieur."
+        if action == "open_folder":
+            return f"J'ouvre le dossier {target or 'demandé'} maintenant, monsieur."
         if action == "search":
             return f"Je cherche {target or 'la requête'} maintenant, monsieur."
         if action == "type":
@@ -595,6 +597,8 @@ def build_reply(language: str, action: str, target: str = "") -> str:
             return f"سأفتح الرابط {target or 'الآن'}، سيدي."
         if action == "open_file":
             return f"سأفتح الملف {target or 'المطلوب'} الآن، سيدي."
+        if action == "open_folder":
+            return f"سأفتح المجلد {target or 'المطلوب'} الآن، سيدي."
         if action == "search":
             return f"سأبحث عن {target or 'الاستعلام'} الآن، سيدي."
         if action == "type":
@@ -653,6 +657,8 @@ def build_reply(language: str, action: str, target: str = "") -> str:
         return f"Opening {target or 'the link'} now {user_title}."
     if action == "open_file":
         return f"Opening the file {target or 'you asked for'} now {user_title}."
+    if action == "open_folder":
+        return f"Opening the {target or 'requested'} folder now {user_title}."
     if action == "search":
         return f"Searching for {target or 'your request'} now {user_title}."
     if action == "type":

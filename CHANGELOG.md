@@ -1,6 +1,21 @@
 # KIRA Changelog
 
-## Unreleased — Approximate names and Chrome by default (OPEN 04)
+## Unreleased — This PC, drives and folders (OPEN 05)
+
+- **"ouvre ce pc" / "open this pc" / "ouvre mon pc"** now opens the Windows
+  "This PC" view (also "ordinateur", "poste de travail", "جهازي"); the
+  recycle bin moves to the same Windows-places handling.
+- **Drives**: "ouvre le disque c", "c:", "open c drive", "disque dur",
+  "hard drive", "قرص سي" open the drive in Explorer (D:, E: ... work too).
+  Paths like "C:\Users\me\doc.pdf" still open as files.
+- **Any folder by name**: "ouvre le dossier projets" searches the PC for the
+  folder (time-limited, system folders pruned) and opens it; a bare
+  "open folder" opens Documents.
+- Localized open_folder replies ("J'ouvre le dossier X maintenant");
+  ms-settings:/shell: opens now use the proper Windows mechanism.
+- UI build label: **COCKPIT 04 / OPEN 05**.
+
+ Unreleased — Approximate names and Chrome by default (OPEN 04)
 
 - KIRA now understands approximate and shortened names: "ouvre insta",
   "ouvre instagrame", "open facebok", "open yutube", "ouvre fb" resolve to the

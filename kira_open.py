@@ -184,8 +184,6 @@ APPS = {
     "parametres": "ms-settings:",
     "store": "ms-windows-store:",
     "microsoft store": "ms-windows-store:",
-    "corbeille": "shell:RecycleBinFolder",
-    "recycle bin": "shell:RecycleBinFolder",
     "camera": "microsoft.windows.camera:",
     "snipping tool": "SnippingTool.exe",
     "outils de capture": "SnippingTool.exe",
@@ -263,7 +261,26 @@ APPS = {
 # Well-known folders
 # ─────────────────────────────────────────────
 
+WINDOWS_THIS_PC = "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}"
+
 FOLDER_ALIASES = {
+    "ce pc": WINDOWS_THIS_PC,
+    "cepc": WINDOWS_THIS_PC,
+    "mon pc": WINDOWS_THIS_PC,
+    "pc": WINDOWS_THIS_PC,
+    "my pc": WINDOWS_THIS_PC,
+    "this pc": WINDOWS_THIS_PC,
+    "my computer": WINDOWS_THIS_PC,
+    "computer": WINDOWS_THIS_PC,
+    "ordinateur": WINDOWS_THIS_PC,
+    "poste de travail": WINDOWS_THIS_PC,
+    "poste": WINDOWS_THIS_PC,
+    "جهازي": WINDOWS_THIS_PC,
+    "هذا الكمبيوتر": WINDOWS_THIS_PC,
+    "cepc windows": WINDOWS_THIS_PC,
+    "corbeille": "shell:RecycleBinFolder",
+    "recycle bin": "shell:RecycleBinFolder",
+    "trash": "shell:RecycleBinFolder",
     "downloads": "~/Downloads",
     "telechargements": "~/Downloads",
     "documents": "~/Documents",
@@ -284,6 +301,45 @@ FOLDER_ALIASES = {
 # ─────────────────────────────────────────────
 # Files
 # ─────────────────────────────────────────────
+
+# Drive words ("disque c", "c:", "c drive", "disque dur" -> C:\).
+DRIVE_REMOVE_WORDS = {
+    "the", "le", "la", "les", "my", "mon", "ma",
+    "disque", "lecteur", "drive", "disk", "partition", "local",
+    "dur", "hard", "principal", "main", "system", "systeme",
+    "قرص", "القرص", "محرك", "الصلب", "صلب", "السيب",
+}
+DRIVE_LETTER_WORDS = {"سي": "c", "دي": "d", "إي": "e", "اف": "f", "جي": "g", "اتش": "h"}
+
+
+def parse_drive(text):
+    """A drive letter from a phrase: 'disque c', 'c:', 'C drive', 'disque dur'."""
+    low = fold(text)
+    if not low:
+        return None
+    # Bare letter or letter with a colon: "c", "c:", "c:\".
+    match = re.fullmatch(r"([a-z])\s*:?(?:\\+)?", low)
+    if match:
+        return match.group(1)
+    words = [word for word in low.split()]
+    letters = [word for word in words if len(word) == 1 and word.isalpha()]
+    if letters:
+        return letters[0]
+    had_drive_word = any(word in DRIVE_REMOVE_WORDS for word in words) or low in DRIVE_REMOVE_WORDS
+    words = [word for word in words if word not in DRIVE_REMOVE_WORDS]
+    if not words:
+        return "c" if had_drive_word else None
+    if len(words) == 1:
+        letter = DRIVE_LETTER_WORDS.get(words[0])
+        if letter:
+            return letter
+        word = words[0]
+        if re.fullmatch(r"[a-z]", word):
+            return word
+        if re.fullmatch(r"[a-z]:", word):
+            return word[0]
+    return None
+
 
 FILE_EXTENSIONS = {
     "pdf", "txt", "doc", "docx", "rtf", "odt", "xls", "xlsx", "csv", "ods",
@@ -458,6 +514,9 @@ def resolve_open(target):
     # 6. A filename with a known extension.
     if _has_file_extension(raw):
         return {"kind": "file", "target": strip_file_markers(raw)}
+    # 6bis. A drive: "le disque c", "c:", "c drive", "disque dur".
+    if parse_drive(raw):
+        return {"kind": "folder", "target": raw}
 
     # 7. A close name: "insta"/"instagrame" -> instagram, "facebok" -> facebook.
     if len(folded) >= 3:
@@ -563,6 +622,41 @@ def find_file(name, search_dirs=None, max_entries=50000, time_budget=4.0):
                         score = 70 - depth
                     elif wanted in label and len(wanted) >= 4:
                         score = 50 - depth
+                    if score > best_score:
+                        best, best_score = os.path.join(root, entry), score
+        except OSError:
+            continue
+    return best
+
+
+def find_folder(name, search_dirs=None, max_entries=40000, time_budget=2.5):
+    """Locate a folder by name (Desktop/Documents/... and the home folder)."""
+    deadline = time.monotonic() + max(0.5, time_budget)
+    wanted = fold(strip_leading_words(name))
+    if len(wanted) < 2:
+        return None
+    wanted_stem = wanted.rsplit(".", 1)[0]
+    folders = list(search_dirs) if search_dirs is not None else common_file_dirs()
+    best, best_score = None, 0
+    scanned = 0
+    for base in folders:
+        try:
+            for root, subdirs, _files in os.walk(base):
+                subdirs[:] = [d for d in subdirs if fold(d) not in SKIP_DIR_NAMES and not d.startswith(".")]
+                scanned += 1
+                if scanned > max_entries or (scanned % 256 == 0 and time.monotonic() > deadline):
+                    return best
+                for entry in subdirs:
+                    label = fold(entry)
+                    if label == wanted or label == wanted_stem:
+                        return os.path.join(root, entry)
+                    score = 0
+                    if label.startswith(wanted) and len(wanted) >= 3:
+                        score = 80 - len(label)
+                    elif wanted.startswith(label) and len(label) >= 3:
+                        score = 65 - len(label)
+                    elif wanted in label and len(wanted) >= 4:
+                        score = 50 - len(label)
                     if score > best_score:
                         best, best_score = os.path.join(root, entry), score
         except OSError:
@@ -777,15 +871,38 @@ def open_url(url, browser=None):
 
 
 def open_folder(target, base_home=None):
-    """Open a folder by alias (téléchargements, bureau ...) or by path."""
-    key = fold(target)
-    folder = FOLDER_ALIASES.get(key, str(target or "").strip())
+    """Open "Ce PC", a drive, a well-known folder, a path or a folder by name."""
+    raw = str(target or "").strip()
+    key = fold(raw)
+    folder = FOLDER_ALIASES.get(key, raw)
     if not folder:
         return False
-    if base_home:
+    if base_home and folder.startswith("~"):
         folder = folder.replace("~", str(base_home))
+
+    # Windows places: "Ce PC" (shell GUID) and shell: views.
+    if os.name == "nt" and (folder.startswith("::") or folder.lower().startswith("shell:")):
+        try:
+            os.startfile(folder)
+            return True
+        except Exception:
+            return False
+
+    # Drives: "disque c", "c:", "disque dur" ...
+    if not os.path.isdir(os.path.expanduser(folder)):
+        letter = parse_drive(folder) or parse_drive(key)
+        if letter and os.path.isdir(letter + ":\\"):
+            folder = letter + ":\\"
+
     folder = os.path.expanduser(folder)
-    return open_path(folder)
+    if os.path.isdir(folder):
+        return open_path(folder)
+
+    # Otherwise search the PC for a folder with that name.
+    found = find_folder(raw, search_dirs=common_file_dirs(base_home) if base_home else None)
+    if found:
+        return open_path(found)
+    return False
 
 
 def open_file(target, base_home=None, search_dirs=None):
@@ -826,11 +943,11 @@ def open_app(name, start_menu_dirs=None, base_home=None):
     if value and (os.path.isdir(value) or os.path.isfile(value)):
         return open_path(value)
 
-    # URI schemes (ms-settings:, ms-teams:, mailto: ...) and shell: links.
+    # URI schemes (ms-settings:, ms-teams:, mailto:, shell: ...).
     if re.fullmatch(r"[a-z][a-z0-9+.-]*:.*", value):
         if os.name == "nt":
             try:
-                subprocess.Popen(value, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                os.startfile(value)
                 return True
             except Exception:
                 pass
@@ -998,9 +1115,9 @@ def parse_open_command(text):
     words = target.split()
     if words and fold(words[0]) in FOLDER_PREFIX_WORDS:
         rest = " ".join(words[1:]).strip()
-        if rest:
-            return {"action": "open_folder", "target": rest}
-        return None
+        if not rest:
+            rest = "documents"  # a bare "open folder" opens Documents
+        return {"action": "open_folder", "target": rest}
 
     # "open X and search Y" is a combined command handled by the caller.
     if re.search(r"\s+and\s+search\s+", low) or re.search(r"\s+et\s+(?:cherche|recherche)\s+", low):
