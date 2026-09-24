@@ -1,6 +1,22 @@
 # KIRA Changelog
 
-## Unreleased — Nested folders and no more parroting (OPEN 07)
+## Unreleased — Which one? and open-all (OPEN 08)
+
+- When several files or folders share the requested name (e.g. a "rapport"
+  in each of four doc folders on C:), KIRA no longer guesses: it answers with
+  a numbered list of the real paths and asks which one to open. The reply
+  ("2", "le deuxième", "premier", "الثاني" ...) opens exactly that file;
+  "tous" opens every candidate; "annule" closes the question.
+- "ouvre tous les rapports" / "open all reports" / "ouvre tous les dossiers"
+  opens every match at once (up to ten) and says how many were opened.
+- Candidate lists are stable (alphabetical), the common folders are searched
+  first and the deep per-drive search only runs when needed, so simple opens
+  stay fast.
+- Plural file markers ("fichiers", "files", "documents", "docs") are now
+  recognized ("ouvre tous les fichiers rapport").
+- UI build label: **COCKPIT 04 / OPEN 08**.
+
+ Unreleased — Nested folders and no more parroting (OPEN 07)
 
 - Nested locations are understood: "ouvre le dossier missions dans le dossier
   travail", "open projects in documents", "ouvre le fichier rapport dans le

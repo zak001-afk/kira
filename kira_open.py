@@ -352,7 +352,7 @@ FILE_EXTENSIONS = {
 }
 
 # Generic words that mark the target as a file ("ouvre le fichier rapport.pdf").
-FILE_MARKER_WORDS = {"file", "fichier", "document", "doc", "lettre", "letter", "pdf", "ملف"}
+FILE_MARKER_WORDS = {"file", "files", "fichier", "fichiers", "document", "documents", "doc", "docs", "lettre", "letter", "pdf", "ملف", "ملفات"}
 
 # Leading articles / possessives dropped before a file or app name.
 LEADING_WORDS = {
@@ -586,37 +586,23 @@ def deep_search_dirs():
     return drives + [home] if home not in drives else drives
 
 
-def find_file(name, search_dirs=None, max_entries=50000, time_budget=4.0):
-    """Locate a file by name in the common folders. Returns a path or None.
-
-    Scanning stops after time_budget seconds or max_entries files, and
-    system/hidden folders are pruned, so a missing file fails fast instead
-    of blocking KIRA for minutes.
-    """
+def find_file_matches(name, search_dirs=None, max_entries=50000, time_budget=4.0, limit=10):
+    """Every plausible file for a name: all exact matches first, then the
+    scored approximations, best first. Used to ask the user which one."""
     deadline = time.monotonic() + max(0.5, time_budget)
     cleaned = strip_file_markers(name)
     if not cleaned:
-        return None
-
-    # Direct path?
+        return []
     if cleaned.startswith(("/", "~")) or "\\" in cleaned or re.match(r"^[a-z]:", cleaned, re.IGNORECASE):
         path = Path(cleaned).expanduser()
-        if path.exists():
-            return str(path)
-        if not path.is_absolute():
-            for base in (Path.home(), Path.cwd()):
-                candidate = (base / path).expanduser()
-                if candidate.exists():
-                    return str(candidate)
-        return None
+        return [str(path)] if path.exists() else []
 
     wanted = fold(cleaned)
     if not wanted:
-        return None
+        return []
     wanted_stem = wanted.rsplit(".", 1)[0] if "." in wanted else wanted
 
-    best = None
-    best_score = 0
+    exact, scored = [], []
     scanned = 0
     for folder in (list(search_dirs) if search_dirs is not None else common_file_dirs()):
         try:
@@ -626,11 +612,15 @@ def find_file(name, search_dirs=None, max_entries=50000, time_budget=4.0):
                 for entry in files:
                     scanned += 1
                     if scanned > max_entries or (scanned % 256 == 0 and time.monotonic() > deadline):
-                        return best
+                        return (exact or [path for _score, path in sorted(scored, reverse=True)])[:limit]
                     label = fold(entry)
                     stem = label.rsplit(".", 1)[0] if "." in label else label
+                    found = os.path.join(root, entry)
                     if label == wanted or stem == wanted:
-                        return os.path.join(root, entry)
+                        exact.append(found)
+                        if len(exact) >= limit:
+                            return exact
+                        continue
                     score = 0
                     if stem == wanted_stem and "." in wanted:
                         score = 90
@@ -638,22 +628,30 @@ def find_file(name, search_dirs=None, max_entries=50000, time_budget=4.0):
                         score = 70 - depth
                     elif wanted in label and len(wanted) >= 4:
                         score = 50 - depth
-                    if score > best_score:
-                        best, best_score = os.path.join(root, entry), score
+                    if score > 0:
+                        scored.append((score, found))
         except OSError:
             continue
-    return best
+    if exact:
+        return sorted(exact)[:limit]
+    return [path for _score, path in sorted(scored, key=lambda item: (-item[0], item[1]))][:limit]
 
 
-def find_folder(name, search_dirs=None, max_entries=40000, time_budget=2.5):
-    """Locate a folder by name (Desktop/Documents/... and the home folder)."""
+def find_file(name, search_dirs=None, max_entries=50000, time_budget=4.0):
+    """Best file for a name (kept for compatibility: first exact match wins)."""
+    matches = find_file_matches(name, search_dirs=search_dirs, max_entries=max_entries, time_budget=time_budget, limit=1)
+    return matches[0] if matches else None
+
+
+def find_folder_matches(name, search_dirs=None, max_entries=40000, time_budget=2.5, limit=10):
+    """Every plausible folder for a name: exact matches first, then scored."""
     deadline = time.monotonic() + max(0.5, time_budget)
     wanted = fold(strip_leading_words(name))
     if len(wanted) < 2:
-        return None
+        return []
     wanted_stem = wanted.rsplit(".", 1)[0]
     folders = list(search_dirs) if search_dirs is not None else common_file_dirs()
-    best, best_score = None, 0
+    exact, scored = [], []
     scanned = 0
     for base in folders:
         try:
@@ -661,11 +659,15 @@ def find_folder(name, search_dirs=None, max_entries=40000, time_budget=2.5):
                 subdirs[:] = [d for d in subdirs if fold(d) not in SKIP_DIR_NAMES and not d.startswith(".")]
                 scanned += 1
                 if scanned > max_entries or (scanned % 256 == 0 and time.monotonic() > deadline):
-                    return best
+                    return (exact or [path for _score, path in sorted(scored, reverse=True)])[:limit]
                 for entry in subdirs:
                     label = fold(entry)
+                    found = os.path.join(root, entry)
                     if label == wanted or label == wanted_stem:
-                        return os.path.join(root, entry)
+                        exact.append(found)
+                        if len(exact) >= limit:
+                            return exact
+                        continue
                     score = 0
                     if label.startswith(wanted) and len(wanted) >= 3:
                         score = 80 - len(label)
@@ -673,11 +675,19 @@ def find_folder(name, search_dirs=None, max_entries=40000, time_budget=2.5):
                         score = 65 - len(label)
                     elif wanted in label and len(wanted) >= 4:
                         score = 50 - len(label)
-                    if score > best_score:
-                        best, best_score = os.path.join(root, entry), score
+                    if score > 0:
+                        scored.append((score, found))
         except OSError:
             continue
-    return best
+    if exact:
+        return sorted(exact)[:limit]
+    return [path for _score, path in sorted(scored, key=lambda item: (-item[0], item[1]))][:limit]
+
+
+def find_folder(name, search_dirs=None, max_entries=40000, time_budget=2.5):
+    """Best folder for a name (kept for compatibility: first exact wins)."""
+    matches = find_folder_matches(name, search_dirs=search_dirs, max_entries=max_entries, time_budget=time_budget, limit=1)
+    return matches[0] if matches else None
 
 
 # ─────────────────────────────────────────────
@@ -911,6 +921,61 @@ def open_url(url, browser=None):
         return True
     except Exception:
         return False
+
+
+def file_matches(name, parent=None, base_home=None, limit=10, deep_always=False):
+    """Candidate files for a name: a parent location, the common folders,
+    then every drive (deep search only when needed or explicitly asked)."""
+    name = strip_file_markers(name)
+    if not name:
+        return []
+    if name.startswith(("/", "~")) or "\\" in name or re.match(r"^[a-z]:", name, re.IGNORECASE):
+        path = Path(name).expanduser()
+        if base_home:
+            path = Path(str(path).replace("~", str(base_home)))
+        return [str(path)] if path.exists() else []
+    if parent:
+        parent_dir = resolve_parent_dir(parent, base_home)
+        if parent_dir:
+            direct = os.path.join(parent_dir, name)
+            if os.path.isfile(direct):
+                return [direct]
+            return find_file_matches(name, search_dirs=[parent_dir], time_budget=8.0, limit=limit)
+        return []
+    matches = find_file_matches(name, search_dirs=common_file_dirs(base_home) if base_home else None, limit=limit)
+    if not deep_always and matches:
+        return matches
+    for drive in deep_search_dirs():
+        for path in find_file_matches(name, search_dirs=[drive], limit=limit, max_entries=250000, time_budget=10.0):
+            if path not in matches:
+                matches.append(path)
+        if len(matches) >= limit:
+            break
+    return matches[:limit]
+
+
+def folder_matches(name, parent=None, base_home=None, limit=10, deep_always=False):
+    """Candidate folders for a name (same strategy as file_matches)."""
+    if len(fold(strip_leading_words(name))) < 2:
+        return []
+    if parent:
+        parent_dir = resolve_parent_dir(parent, base_home)
+        if parent_dir:
+            direct = os.path.join(parent_dir, strip_leading_words(name))
+            if os.path.isdir(direct):
+                return [direct]
+            return find_folder_matches(name, search_dirs=[parent_dir], time_budget=8.0, limit=limit)
+        return []
+    matches = find_folder_matches(name, search_dirs=common_file_dirs(base_home) if base_home else None, limit=limit)
+    if not deep_always and matches:
+        return matches
+    for drive in deep_search_dirs():
+        for path in find_folder_matches(name, search_dirs=[drive], limit=limit, max_entries=200000, time_budget=8.0):
+            if path not in matches:
+                matches.append(path)
+        if len(matches) >= limit:
+            break
+    return matches[:limit]
 
 
 def open_folder(target, base_home=None, parent=None):
@@ -1296,6 +1361,19 @@ def parse_open_command(text):
     if not target:
         return None
 
+    # "ouvre tous les rapports" / "open all reports": open every match.
+    all_requested = False
+    words = target.split()
+    if words and fold(words[0]) in {"tous", "toutes", "tout", "toute", "all", "كل", "جميع"}:
+        rest = " ".join(words[1:]).strip()
+        if not rest:
+            return None  # "ouvre tous" alone is not a valid request
+        all_requested = True
+        target = strip_leading_words(rest)
+        words = target.split()
+        if not target:
+            return None
+
     # "open folder X" is an explicit folder request.
     words = target.split()
     if words and fold(words[0]) in FOLDER_PREFIX_WORDS:
@@ -1331,6 +1409,9 @@ def parse_open_command(text):
         kind = "file"
     if parent and kind == "app":
         kind = "folder"
+    if all_requested and kind == "app":
+        folder_noun = bool(words) and fold(words[0]) in FOLDER_PREFIX_WORDS | {"dossiers", "folders", "مجلدات"}
+        kind = "folder" if folder_noun else "file"
     # "ouvre spotify sur firefox": an app requested inside a named browser
     # becomes its web version.
     if browser and kind == "app" and fold(resolved["target"]) in SITES:
@@ -1347,4 +1428,6 @@ def parse_open_command(text):
         action["browser"] = browser
     if parent and kind in {"folder", "file"}:
         action["parent"] = parent
+    if all_requested and kind in {"folder", "file"}:
+        action["all"] = True
     return action

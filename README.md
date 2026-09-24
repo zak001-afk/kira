@@ -124,6 +124,9 @@ build_kira.bat
 - "Open this pc" / "Ouvre ce pc" — the Windows "This PC" view; "ouvre le
   disque c", "open c drive", "disque dur" open drives; "corbeille" opens the
   recycle bin.
+- Several same-named files? KIRA lists the real paths and asks which one
+  ("2", "le deuxième", "tous", "annule" are valid answers).
+- "Ouvre tous les rapports" / "open all reports" opens every match at once.
 - "Ouvre le dossier projets" finds a folder by name on the PC; a bare
   "open folder" opens Documents. Nested requests work: "ouvre le dossier
   missions dans le dossier travail", "ouvre le fichier rapport dans le

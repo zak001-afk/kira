@@ -117,6 +117,13 @@ class ParseOpenTests(unittest.TestCase):
         self.assertEqual(self.parse("ouvre disque dur"), {"action": "open_folder", "target": "disque dur"})
         self.assertEqual(self.parse("ouvre corbeille"), {"action": "open_folder", "target": "corbeille"})
 
+    def test_all_requests_ask_for_every_match(self):
+        self.assertEqual(self.parse("ouvre tous les rapports"), {"action": "open_file", "target": "rapports", "all": True})
+        self.assertEqual(self.parse("open all reports"), {"action": "open_file", "target": "reports", "all": True})
+        self.assertEqual(self.parse("ouvre toutes les photos"), {"action": "open_folder", "target": "photos", "all": True})
+        self.assertEqual(self.parse("ouvre tous les dossiers"), {"action": "open_folder", "target": "dossiers", "all": True})
+        self.assertIsNone(self.parse("ouvre tous"))
+
     def test_nested_folder_locations_are_understood(self):
         self.assertEqual(
             self.parse("ouvre le dossier projets dans documents"),
@@ -628,6 +635,113 @@ class NestedLocationTests(unittest.TestCase):
                  patch.object(kira_open, "open_path", side_effect=lambda path: opened.append(path) or True):
                 self.assertTrue(kira_open.open_folder("secretariat"))
                 self.assertTrue(str(opened[-1]).endswith("secretariat"))
+
+
+class AskWhichOneTests(unittest.TestCase):
+    """Several same-named files: KIRA asks, the answer opens the right one."""
+
+    def setUp(self):
+        commands.clear_pending_open()
+        self.drive_c = tempfile.mkdtemp()
+        self.drive_d = tempfile.mkdtemp()
+        for index in (4, 3, 2, 1):
+            folder = Path(self.drive_c) / f"doc{index}" / "notes"
+            folder.mkdir(parents=True)
+            (folder / f"rapport{index}.pdf").write_text("x", encoding="utf-8")
+        extra = Path(self.drive_d) / "archives" / "rapport5.pdf"
+        extra.parent.mkdir(parents=True)
+        extra.write_text("x", encoding="utf-8")
+        self.opened = []
+        self.backend = SimpleNamespace(
+            normalize_command=lambda text: text,
+            parse_simple_command=lambda text: kira_open.parse_open_command(text),
+            execute_action=lambda data: self._execute(data),
+            build_reply=lambda language, name, target: f"J'ouvre {target}.",
+            resolve_open_matches=lambda parsed: (
+                None if (parsed["action"] == "open_folder"
+                         and (kira_open.fold(parsed["target"]) in kira_open.FOLDER_ALIASES
+                              or kira_open.parse_drive(parsed["target"])))
+                else kira_open.file_matches(parsed["target"], parent=parsed.get("parent"))
+            ),
+        )
+        self.drive_home = tempfile.mkdtemp()  # empty "standard" folders
+        patcher = patch.multiple(kira_open, deep_search_dirs=lambda: [self.drive_c, self.drive_d],
+                                 common_file_dirs=lambda base_home=None: [self.drive_home])
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self._cleanup_dirs)
+
+    def _cleanup_dirs(self):
+        import shutil
+        for path in (self.drive_c, self.drive_d, self.drive_home):
+            shutil.rmtree(path, ignore_errors=True)
+
+    def _execute(self, data):
+        if data.get("all"):
+            matches = kira_open.file_matches(data["target"], parent=data.get("parent"), deep_always=True)
+            opened = 0
+            for path in matches[:10]:
+                self.opened.append(path)
+                opened += 1
+            return opened
+        self.opened.append(data.get("target"))
+        return True
+
+    def tearDown(self):
+        commands.clear_pending_open()
+
+    def test_multiple_matches_ask_which_one(self):
+        result = commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        self.assertTrue(result["needs_choice"])
+        self.assertIn("Lequel", result["response"])
+        self.assertEqual(len(result["candidates"]), 5)
+        names = [Path(path).name for path in result["candidates"]]
+        self.assertEqual(names, sorted(names), "candidates must be listed in a stable order")
+
+    def test_the_answer_opens_the_chosen_one(self):
+        commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        result = commands.process_command(self.backend, "2", reply_language="fr")
+        self.assertEqual(len(self.opened), 1)
+        self.assertTrue(self.opened[0].endswith(".pdf"))
+        self.assertIsNone(commands.pending_open())
+
+    def test_all_answer_opens_every_candidate(self):
+        commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        result = commands.process_command(self.backend, "tous", reply_language="fr")
+        self.assertEqual(len(self.opened), 5)
+        self.assertTrue(result["success"])
+
+    def test_cancel_answer_closes_the_question(self):
+        commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        result = commands.process_command(self.backend, "annule", reply_language="fr")
+        self.assertIn("annule", result["response"])
+        self.assertIsNone(commands.pending_open())
+        self.assertEqual(self.opened, [])
+
+    def test_ordinal_words_pick_too(self):
+        commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        commands.process_command(self.backend, "le premier", reply_language="fr")
+        self.assertEqual(len(self.opened), 1)
+        self.assertTrue(self.opened[0].endswith("rapport1.pdf"))
+
+    def test_all_request_opens_everything_at_once(self):
+        result = commands.process_command(self.backend, "ouvre tous les fichiers rapport", reply_language="fr")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["response"], commands.message("opened_all", "fr", count=5))
+        self.assertEqual(len(self.opened), 5)
+
+    def test_aliases_and_drives_are_never_disambiguated(self):
+        result = commands.process_command(self.backend, "ouvre téléchargements", reply_language="fr")
+        self.assertFalse(result.get("needs_choice"))
+        self.assertEqual(len(self.opened), 1)
+
+    def test_a_single_match_opens_without_asking(self):
+        for index in (2, 3, 4):
+            (Path(self.drive_c) / f"doc{index}" / "notes" / f"rapport{index}.pdf").unlink()
+        (Path(self.drive_d) / "archives" / "rapport5.pdf").unlink()
+        result = commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        self.assertFalse(result.get("needs_choice"))
+        self.assertEqual(len(self.opened), 1)
 
 
 if __name__ == "__main__":

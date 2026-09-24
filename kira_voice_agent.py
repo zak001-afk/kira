@@ -2184,6 +2184,31 @@ def switch_app():
         return False
 
 
+def resolve_open_matches(action_data):
+    """Existing candidate paths for an open request (empty list if none).
+
+    Used to ask the user which one when several files or folders share the
+    same name, and to open every one of them on an "all" request.
+    """
+    if not isinstance(action_data, dict):
+        return []
+    action = str(action_data.get("action", "")).strip().lower()
+    target = str(action_data.get("target", "")).strip()
+    parent = action_data.get("parent")
+    try:
+        if action == "open_file":
+            if kira_open.fold(target) in kira_open.FOLDER_ALIASES:
+                return None  # a known place: nothing to disambiguate
+            return kira_open.file_matches(target, parent=parent)
+        if action == "open_folder":
+            if kira_open.fold(target) in kira_open.FOLDER_ALIASES or kira_open.parse_drive(target):
+                return None
+            return kira_open.folder_matches(target, parent=parent)
+    except Exception:
+        logging.exception("resolve_open_matches failed")
+    return []
+
+
 def open_folder(target: str, parent=None):
     """Open a folder, optionally inside a parent location or drive."""
     return kira_open.open_folder(target, parent=parent)
@@ -2411,6 +2436,18 @@ def execute_action(action_data):
 
     if action == "switch_app":
         return switch_app()
+
+    if action in {"open_folder", "open_file"} and action_data.get("all"):
+        target = str(action_data.get("target", "")).strip()
+        parent = action_data.get("parent")
+        if action == "open_folder" and kira_open.fold(target) in kira_open.FOLDER_ALIASES and not parent:
+            return bool(open_folder(target))
+        matches = resolve_open_matches(action_data)
+        opened = 0
+        for path in matches[:10]:
+            if kira_open.open_path(path):
+                opened += 1
+        return opened
 
     if action == "open_folder":
         return open_folder(str(action_data.get("target", "")), parent=action_data.get("parent"))

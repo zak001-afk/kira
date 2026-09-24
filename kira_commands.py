@@ -4,8 +4,10 @@ Language selection is per request, not global. Conversational replies are not
 cached across turns/languages; desktop actions are never retried for translation.
 """
 from datetime import datetime
+from pathlib import Path
 import inspect
 import re
+import time as _time
 import kira_language as languages
 
 
@@ -39,6 +41,13 @@ _MESSAGES = {
     },
     "auto": {"en": "Automatic language selection is enabled. I’ll follow the language of your questions.", "fr": "La langue automatique est activée. Je suivrai la langue de vos questions.", "ar": "تم تفعيل اختيار اللغة تلقائياً. سأتبع لغة أسئلتك."},
     "action_failed": {"en": "I could not complete that action.", "fr": "Je n’ai pas pu effectuer cette action.", "ar": "لم أتمكن من تنفيذ هذا الإجراء."},
+    "choose_open": {
+        "en": "I found {count} of them. Which one should I open?\n{list}",
+        "fr": "J’en ai trouvé {count}. Lequel veux-tu que j’ouvre ?\n{list}",
+        "ar": "وجدت {count}. أيّها تريد أن أفتح؟\n{list}",
+    },
+    "open_cancelled": {"en": "Okay, cancelled.", "fr": "D’accord, j’annule.", "ar": "حسناً، تم الإلغاء."},
+    "opened_all": {"en": "I opened {count} of them.", "fr": "J’en ai ouvert {count}.", "ar": "فتحت {count}."},
     "open_failed": {
         "en": "I could not open {target} on this computer. Check that it exists or is installed, then try again.",
         "fr": "Je n’ai pas pu ouvrir {target} sur cet ordinateur. Vérifie que le fichier existe ou que l’application est installée, puis réessaie.",
@@ -88,6 +97,79 @@ def call_with_options(callback, text, **options):
     return callback(text, **kwargs)
 
 
+# ─────────────────────────────────────────────
+# Open choices: when several files/folders share a name, KIRA asks which
+# one; the answer ("2", "deuxième", "tous", "annule") is handled here.
+# ─────────────────────────────────────────────
+
+_PENDING_OPEN = None
+_PENDING_OPEN_TTL = 180.0
+
+_CHOICE_WORDS = {
+    "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "10": 10,
+    "un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5,
+    "six": 6, "sept": 7, "huit": 8, "neuf": 9, "dix": 10,
+    "premier": 1, "premiere": 1, "1er": 1, "1ere": 1, "2e": 2, "3e": 3,
+    "deuxieme": 2, "second": 2, "seconde": 2, "troisieme": 3,
+    "quatrieme": 4, "cinquieme": 5, "sixieme": 6, "septieme": 7,
+    "first": 1, "third": 3, "fourth": 4, "fifth": 5,
+    "الأول": 1, "الثاني": 2, "الثالث": 3, "الرابع": 4, "الخامس": 5,
+}
+_CANCEL_WORDS = {"annule", "annuler", "cancel", "abandon", "laisse", "طغ", "الغاء", "إلغاء"}
+_ALL_WORDS = {"tous", "toutes", "tout", "all", "كل", "جميع"}
+
+
+def set_pending_open(action, paths, name=""):
+    global _PENDING_OPEN
+    _PENDING_OPEN = {"action": action, "paths": list(paths), "name": name, "time": _time.monotonic()}
+
+
+def clear_pending_open():
+    global _PENDING_OPEN
+    _PENDING_OPEN = None
+
+
+def pending_open():
+    """A fresh pending choice, or None."""
+    if _PENDING_OPEN and _time.monotonic() - _PENDING_OPEN["time"] < _PENDING_OPEN_TTL:
+        return _PENDING_OPEN
+    return None
+
+
+def match_open_choice(text, count):
+    """A pick (int), "all" or "cancel" from the user's answer, else None."""
+    for token in languages.fold(text).split():
+        if token in _CANCEL_WORDS:
+            return "cancel"
+        if token in _ALL_WORDS:
+            return "all"
+        pick = _CHOICE_WORDS.get(token)
+        if pick and 1 <= pick <= count:
+            return pick
+    return None
+
+
+def _shorten_path(path):
+    home = str(Path.home()) if Path.home().exists() else ""
+    return path.replace(home, "~", 1) if home and path.startswith(home) else path
+
+
+def _open_all(backend, action, paths, language, metadata):
+    clear_pending_open()
+    opened = 0
+    for path in paths[:10]:
+        try:
+            result = backend.execute_action({"action": action, "target": path})
+            if type(result) is int:
+                opened += max(0, result)
+            elif result:
+                opened += 1
+        except Exception:
+            continue
+    reply = message("opened_all", language, count=opened) or message("opened_all", "en", count=opened)
+    return {"action": action, "success": opened > 0, "opened": opened, "response": reply, **metadata}
+
+
 def process_command(backend, text, reply_language="auto", previous_language=None, interface_language="en", chat_only=False):
     text = str(text or "").strip()
     choice = languages.resolve_reply_language(text, reply_language, previous_language, interface_language)
@@ -99,6 +181,27 @@ def process_command(backend, text, reply_language="auto", previous_language=None
     if choice.language_only:
         reply = message("auto" if choice.preference == "auto" else "language", choice.language)
         return {"action": "language", "response": reply or languages.LANGUAGES[choice.language]["native_name"] + " ✓", **metadata}
+    pending = pending_open()
+    if pending and not chat_only and backend is not None:
+        pick = match_open_choice(text, len(pending["paths"]))
+        if pick == "cancel":
+            clear_pending_open()
+            return {"action": "none", "response": message("open_cancelled", choice.language) or message("open_cancelled", "en"), **metadata}
+        if pick == "all":
+            return _open_all(backend, pending["action"], pending["paths"], choice.language, metadata)
+        if isinstance(pick, int):
+            path = pending["paths"][pick - 1]
+            action = pending["action"]
+            clear_pending_open()
+            success = bool(backend.execute_action({"action": action, "target": path}))
+            if success and hasattr(backend, "build_reply"):
+                reply = backend.build_reply(choice.language, action, Path(path).name)
+            else:
+                reply = message("open_failed", choice.language, target=Path(path).name) or message("action_failed", choice.language) or message("action_failed", "en")
+            return {"action": action, "success": bool(success), "response": reply, **metadata}
+        # Anything else is a new request; the old question expires.
+        clear_pending_open()
+
     try:
         canned = builtin_reply(text, choice.language)
         if canned:
@@ -109,7 +212,30 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         parsed = None if chat_only else backend.parse_simple_command(cleaned)
         if parsed and parsed.get("action", "none") != "none":
             action = parsed["action"]
-            success = backend.execute_action(parsed)  # Exactly once, before any translation.
+            matches = None
+            if action in {"open_file", "open_folder"} and hasattr(backend, "resolve_open_matches"):
+                try:
+                    matches = backend.resolve_open_matches(parsed)
+                except Exception:
+                    matches = None
+            if matches is not None and parsed.get("all"):
+                result = backend.execute_action(parsed)  # Exactly once.
+                success = bool(result)
+                opened = result if type(result) is int else (1 if result else 0)
+                reply = message("opened_all", choice.language, count=opened) or message("opened_all", "en", count=opened)
+                return {"action": action, "success": opened > 0, "opened": opened, "response": reply, **metadata}
+            if matches is not None and len(matches) > 1:
+                set_pending_open(action, matches, name=str(parsed.get("target", "")))
+                listed = "\n".join(f"{index}. {_shorten_path(path)}" for index, path in enumerate(matches[:8], 1))
+                reply = message("choose_open", choice.language, count=len(matches), list=listed) or message("choose_open", "en", count=len(matches), list=listed)
+                return {"action": action, "needs_choice": True, "candidates": matches[:8], "response": reply, **metadata}
+            if matches is not None and len(matches) == 1:
+                # Open exactly the found path: no second scan, no ambiguity.
+                success = bool(backend.execute_action({"action": action, "target": matches[0]}))
+            elif matches is not None and len(matches) == 0:
+                success = False  # Already searched everywhere; fail honestly.
+            else:
+                success = backend.execute_action(parsed)  # Exactly once, before any translation.
             if not success:
                 reply = None
                 if action in {"open_app", "open_url", "open_file", "open_folder"}:
