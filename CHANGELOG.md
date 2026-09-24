@@ -1,5 +1,18 @@
 # KIRA Changelog
 
+## Unreleased — "Find … and open each" runs as a real search (OPEN 11)
+
+- Sentences like "cherche moi les dossier dell sur le c et ouvre chaque
+  dossier qui porte le nom dell" are now parsed as an action: KIRA searches
+  the named drive (or the whole PC) and opens **every** match, answering
+  "J'en ai ouvert 4." — the request is never sent to the chat model.
+- On a drive root ("sur le c", "sur le disque d") the search now also looks
+  inside system folders (Program Files, Windows, Users, ProgramData…).
+- The search runs exactly once; the result is reused for opening.
+- Phrases understood (EN/FR, plus Arabic forms): cherche/trouve (moi) …,
+  find/locate …, followed by "et/puis ouvre …", "ouvre chaque/tous …",
+  "… qui porte le nom de X", "nommé X", "named/called X", "every X named Y".
+
 ## Unreleased — The question now teaches how to answer (OPEN 10)
 
 - The "which one?" question now explains the options explicitly:

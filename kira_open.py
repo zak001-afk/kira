@@ -586,7 +586,7 @@ def deep_search_dirs():
     return drives + [home] if home not in drives else drives
 
 
-def find_file_matches(name, search_dirs=None, max_entries=50000, time_budget=4.0, limit=10):
+def find_file_matches(name, search_dirs=None, max_entries=50000, time_budget=4.0, limit=10, prune_system=True):
     """Every plausible file for a name: all exact matches first, then the
     scored approximations, best first. Used to ask the user which one."""
     deadline = time.monotonic() + max(0.5, time_budget)
@@ -607,7 +607,10 @@ def find_file_matches(name, search_dirs=None, max_entries=50000, time_budget=4.0
     for folder in (list(search_dirs) if search_dirs is not None else common_file_dirs()):
         try:
             for root, subdirs, files in os.walk(folder):
-                subdirs[:] = [d for d in subdirs if fold(d) not in SKIP_DIR_NAMES and not d.startswith(".")]
+                if prune_system:
+                    subdirs[:] = [d for d in subdirs if fold(d) not in SKIP_DIR_NAMES and not d.startswith(".")]
+                else:
+                    subdirs[:] = [d for d in subdirs if not d.startswith(".")]
                 depth = root[len(folder):].count(os.sep) + 1
                 for entry in files:
                     scanned += 1
@@ -643,7 +646,7 @@ def find_file(name, search_dirs=None, max_entries=50000, time_budget=4.0):
     return matches[0] if matches else None
 
 
-def find_folder_matches(name, search_dirs=None, max_entries=40000, time_budget=2.5, limit=10):
+def find_folder_matches(name, search_dirs=None, max_entries=40000, time_budget=2.5, limit=10, prune_system=True):
     """Every plausible folder for a name: exact matches first, then scored."""
     deadline = time.monotonic() + max(0.5, time_budget)
     wanted = fold(strip_leading_words(name))
@@ -656,7 +659,10 @@ def find_folder_matches(name, search_dirs=None, max_entries=40000, time_budget=2
     for base in folders:
         try:
             for root, subdirs, _files in os.walk(base):
-                subdirs[:] = [d for d in subdirs if fold(d) not in SKIP_DIR_NAMES and not d.startswith(".")]
+                if prune_system:
+                    subdirs[:] = [d for d in subdirs if fold(d) not in SKIP_DIR_NAMES and not d.startswith(".")]
+                else:
+                    subdirs[:] = [d for d in subdirs if not d.startswith(".")]
                 scanned += 1
                 if scanned > max_entries or (scanned % 256 == 0 and time.monotonic() > deadline):
                     return (exact or [path for _score, path in sorted(scored, reverse=True)])[:limit]
@@ -944,7 +950,10 @@ def file_matches(name, parent=None, base_home=None, limit=10, deep_always=True):
             direct = os.path.join(parent_dir, name)
             if os.path.isfile(direct):
                 return [direct]
-            return find_file_matches(name, search_dirs=[parent_dir], time_budget=8.0, limit=limit)
+            is_root = len(parent_dir) <= 3
+            return find_file_matches(name, search_dirs=[parent_dir], limit=limit,
+                                     max_entries=250000 if is_root else 40000,
+                                     time_budget=12.0 if is_root else 8.0)
         return []
     matches = find_file_matches(name, search_dirs=common_file_dirs(base_home) if base_home else None, limit=limit)
     # Already ambiguous in the usual places: asking now is correct and fast.
@@ -953,7 +962,8 @@ def file_matches(name, parent=None, base_home=None, limit=10, deep_always=True):
     # Otherwise complete the search across every drive before deciding.
     if deep_always or not matches:
         for drive in deep_search_dirs():
-            for path in find_file_matches(name, search_dirs=[drive], limit=limit, max_entries=250000, time_budget=10.0):
+            for path in find_file_matches(name, search_dirs=[drive], limit=limit,
+                                          prune_system=False, max_entries=250000, time_budget=10.0):
                 if path not in matches:
                     matches.append(path)
             if len(matches) >= limit:
@@ -971,14 +981,19 @@ def folder_matches(name, parent=None, base_home=None, limit=10, deep_always=True
             direct = os.path.join(parent_dir, strip_leading_words(name))
             if os.path.isdir(direct):
                 return [direct]
-            return find_folder_matches(name, search_dirs=[parent_dir], time_budget=8.0, limit=limit)
+            is_root = len(parent_dir) <= 3
+            return find_folder_matches(name, search_dirs=[parent_dir], limit=limit,
+                                       prune_system=not is_root,
+                                       max_entries=250000 if is_root else 40000,
+                                       time_budget=12.0 if is_root else 8.0)
         return []
     matches = find_folder_matches(name, search_dirs=common_file_dirs(base_home) if base_home else None, limit=limit)
     if len(matches) >= 2:
         return matches
     if deep_always or not matches:
         for drive in deep_search_dirs():
-            for path in find_folder_matches(name, search_dirs=[drive], limit=limit, max_entries=200000, time_budget=8.0):
+            for path in find_folder_matches(name, search_dirs=[drive], limit=limit,
+                                            prune_system=False, max_entries=200000, time_budget=8.0):
                 if path not in matches:
                     matches.append(path)
             if len(matches) >= limit:
@@ -1202,7 +1217,8 @@ OPEN_PREFIXES = (
     "افتح", "افتح لي", "فتح", "شغل", "تشغيل",
 )
 
-FOLDER_PREFIX_WORDS = {"folder", "dossier", "مجلد"}
+FOLDER_PREFIX_WORDS = {"folder", "folders", "dossier", "dossiers",
+                       "repertoire", "repertoires", "مجلد", "مجلدات"}
 
 # Politeness and open wishes around the verb: "peux-tu m'ouvrir google",
 # "je veux que tu ouvres facebook", "j'aimerais ouvrir X", "please open X",
@@ -1343,9 +1359,107 @@ def resolve_parent_dir(parent, base_home=None):
     return None
 
 
+# "cherche les dossiers dell sur le c et ouvre chaque dossier..." is an
+# open-all request: it must be executed, never sent to the chat model.
+FIND_OPEN_PATTERN = re.compile(
+    r"^\s*(?:cherche(?:z)?(?:\s+moi(?:\s+bien)?)?|trouve(?:z)?(?:\s+moi)?|"
+    r"donnez?\s+moi|find|locate)\s+(.+?)\s*,?\s*"
+    r"(?:et\s+|puis\s+|and\s+|then\s+)?(?:ouvre[sz]?|ouvrir|open|launch)\s+(.+)$",
+    re.IGNORECASE,
+)
+
+DRIVE_PARENT_PATTERN = re.compile(
+    r"\s+(?:sur|dans|on)\s+(?:le\s+|la\s+|the\s+)?(?:disque\s+|lecteur\s+|"
+    r"drive\s+|disk\s+)?([a-z])\s*:?\s*\\*(?=\s|$|[.,!?؟])",
+    re.IGNORECASE,
+)
+
+# "qui porte le nom de X" / "nommé X" / "named X" name the target.
+NAMED_PHRASES = (
+    "qui porte le nom de ", "qui porte le nom d'", "qui porte le nom ",
+    "qui portent le nom de ", "qui portent le nom d'", "qui portent le nom ",
+    "portant le nom de ", "portant le nom d'", "portant le nom ",
+    "dont le nom est ", "nommé ", "nommée ", "nommés ", "nommées ",
+    "appelé ", "appelée ", "appelés ", "appelées ",
+    "named ", "called ", "المسمى ", "التي تحمل اسم ", "الذي يحمل اسم ",
+)
+
+SEARCH_VERB_WORDS = {"porte", "portent", "portant", "nom", "named", "qui", "that", "les", "las", "the"}
+
+
+def extract_drive_parent(text):
+    """'les dossier dell sur le c' -> ('les dossier dell', 'c')."""
+    cleaned = str(text or "").strip()
+    match = DRIVE_PARENT_PATTERN.search(cleaned)
+    if not match:
+        return cleaned, None
+    letter = match.group(1).lower()
+    remaining = (cleaned[: match.start()] + " " + cleaned[match.end():]).strip()
+    return remaining, letter
+
+
+def strip_named_phrase(text):
+    """Remove 'qui porte le nom de/d'', 'nommé', 'named' ... Returns the
+    cleaned text; emptiness of the result tells the caller."""
+    cleaned = str(text or "").strip()
+    low = cleaned.lower()
+    changed = False
+    for phrase in NAMED_PHRASES:
+        index = low.find(phrase)
+        if index != -1:
+            cleaned = (cleaned[:index] + " " + cleaned[index + len(phrase):]).strip()
+            low = cleaned.lower()
+            changed = True
+    return cleaned, changed
+
+
+def _meaningful_name(part):
+    """The words left once fillers, folder/file nouns and name markers go."""
+    noun_words = FOLDER_PREFIX_WORDS | {"dossiers", "folders", "fichiers", "files",
+                                        "fichier", "file", "مجلدات", "ملفات"}
+    words = []
+    for word in str(part or "").split():
+        token = fold(word)
+        if not token or token in _NOISE_WORDS or token in noun_words or token in SEARCH_VERB_WORDS:
+            continue
+        if token in {"tous", "toutes", "tout", "toute", "all", "chaque", "chacun",
+                     "chacune", "each", "every", "كل", "جميع"}:
+            continue
+        words.append(word)
+    return " ".join(words).strip()
+
+
+def collapse_find_open(text):
+    """Turn a 'find ... and open ...' sentence into a plain open command."""
+    match = FIND_OPEN_PATTERN.match(str(text or "").strip())
+    if not match:
+        return None
+    search_part, search_parent = extract_drive_parent(match.group(1).strip())
+    open_part = extract_drive_parent(match.group(2).strip())[0].strip()
+    if _meaningful_name(open_part):
+        replacement = f"ouvre {open_part}"
+        if search_parent and not re.search(r"\b(?:dans|sur|in|on)\b", open_part, re.IGNORECASE):
+            replacement += f" sur le disque {search_parent}"
+        return replacement
+    name = _meaningful_name(search_part)
+    if not name:
+        return None
+    noun = next((word for word in search_part.split()
+                 if fold(word) in {"dossier", "dossiers", "fichier", "fichiers",
+                                   "folder", "folders", "file", "files",
+                                   "مجلد", "مجلدات", "ملف", "ملفات"}), "")
+    replacement = f"ouvre tous les {noun + ' ' if noun else ''}{name}"
+    if search_parent:
+        replacement += f" sur le disque {search_parent}"
+    return replacement
+
+
 def parse_open_command(text):
     """Parse 'open X' / 'ouvre X' / 'شغل X' into an action dict, or None."""
     cleaned = str(text or "").strip()
+    collapsed = collapse_find_open(cleaned)
+    if collapsed:
+        cleaned = collapsed
     polite = POLITE_OPEN.match(cleaned)
     low = cleaned.lower()
     if polite:
@@ -1377,10 +1491,16 @@ def parse_open_command(text):
     if not target:
         return None
 
+    # "dossier qui porte le nom dell" -> "dell".
+    target, had_named = strip_named_phrase(target)
+    if not target:
+        return None
+
     # "ouvre tous les rapports" / "open all reports": open every match.
-    all_requested = False
+    all_requested = had_named
     words = target.split()
-    if words and fold(words[0]) in {"tous", "toutes", "tout", "toute", "all", "كل", "جميع"}:
+    if words and fold(words[0]) in {"tous", "toutes", "tout", "toute", "all", "chaque",
+                                    "chacun", "chacune", "each", "every", "كل", "جميع"}:
         rest = " ".join(words[1:]).strip()
         if not rest:
             return None  # "ouvre tous" alone is not a valid request
@@ -1394,13 +1514,17 @@ def parse_open_command(text):
     words = target.split()
     if words and fold(words[0]) in FOLDER_PREFIX_WORDS:
         rest = " ".join(words[1:]).strip()
-        if rest:
-            rest, _ = extract_browser(rest)
-        rest, nested = split_location(rest) if rest else ("documents", None)
-        if not rest:
-            rest = "documents"  # a bare "open folder" opens Documents
-        parent = parent or nested
-        return {"action": "open_folder", "target": rest, **({"parent": parent} if parent else {})}
+        if rest or not all_requested:
+            if rest:
+                rest, _ = extract_browser(rest)
+            rest, nested = split_location(rest) if rest else ("documents", None)
+            if not rest:
+                rest = "documents"  # a bare "open folder" opens Documents
+            parent = parent or nested
+            return {"action": "open_folder", "target": rest,
+                    **({"parent": parent} if parent else {}),
+                    **({"all": True} if all_requested else {})}
+        # A bare "tous les dossiers" keeps "dossiers" as the searched name.
 
     # "open X and search Y" is a combined command handled by the caller.
     if re.search(r"\s+and\s+search\s+", low) or re.search(r"\s+et\s+(?:cherche|recherche)\s+", low):
@@ -1423,11 +1547,11 @@ def parse_open_command(text):
     kind = resolved["kind"]
     if force_file and kind == "app":
         kind = "file"
-    if parent and kind == "app":
-        kind = "folder"
     if all_requested and kind == "app":
         folder_noun = bool(words) and fold(words[0]) in FOLDER_PREFIX_WORDS | {"dossiers", "folders", "مجلدات"}
         kind = "folder" if folder_noun else "file"
+    if parent and kind == "app":
+        kind = "folder"
     # "ouvre spotify sur firefox": an app requested inside a named browser
     # becomes its web version.
     if browser and kind == "app" and fold(resolved["target"]) in SITES:

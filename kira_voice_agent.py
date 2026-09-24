@@ -2442,7 +2442,10 @@ def execute_action(action_data):
         parent = action_data.get("parent")
         if action == "open_folder" and kira_open.fold(target) in kira_open.FOLDER_ALIASES and not parent:
             return bool(open_folder(target))
-        matches = resolve_open_matches(action_data)
+        matches = action_data.get("candidates")
+        if not (isinstance(matches, list) and matches
+                and all(isinstance(path, str) for path in matches)):
+            matches = resolve_open_matches(action_data)
         opened = 0
         for path in matches[:10]:
             if kira_open.open_path(path):

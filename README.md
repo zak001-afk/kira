@@ -130,6 +130,10 @@ build_kira.bat
   "n°2", "numero 2", "le deuxième", "tous" (open everything) or "annule" —
   valid for 10 minutes. A named location ("dans le dossier archives",
   "dans le disque d") limits the search exactly there.
+- "Cherche moi les dossiers dell sur le c et ouvre chaque dossier" runs as
+  one command: KIRA finds every folder named "dell" on C: (system folders
+  included) and opens them all. "Find every file named rapport and open
+  them" works the same way on the whole PC.
 - "Ouvre tous les rapports" / "open all reports" opens every match at once.
 - "Ouvre le dossier projets" finds a folder by name on the PC; a bare
   "open folder" opens Documents. Nested requests work: "ouvre le dossier

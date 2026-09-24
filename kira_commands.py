@@ -243,7 +243,7 @@ def process_command(backend, text, reply_language="auto", previous_language=None
                 except Exception:
                     matches = None
             if matches is not None and parsed.get("all"):
-                result = backend.execute_action(parsed)  # Exactly once.
+                result = backend.execute_action({**parsed, "candidates": matches})  # Search runs exactly once.
                 success = bool(result)
                 opened = result if type(result) is int else (1 if result else 0)
                 reply = message("opened_all", choice.language, count=opened) or message("opened_all", "en", count=opened)

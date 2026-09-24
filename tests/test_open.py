@@ -813,3 +813,157 @@ class AskWhichOneTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FindOpenParseTests(unittest.TestCase):
+    """« Cherche/trouve … sur le disque X et ouvre chaque … » is an open-all
+    search command, not a chat message."""
+
+    def parse(self, text):
+        return kira_open.parse_open_command(text)
+
+    def test_dell_request_collapses_to_open_all_on_c(self):
+        self.assertEqual(
+            self.parse("cherche moi les dossier dell sur le c et ouvre chaque dossier qui porte le nom dell"),
+            {"action": "open_folder", "target": "dell", "parent": "c", "all": True})
+
+    def test_find_files_on_drive_and_open_each(self):
+        self.assertEqual(
+            self.parse("cherche les fichiers rapport sur le disque d et ouvre chaque fichier"),
+            {"action": "open_file", "target": "rapport", "parent": "d", "all": True})
+
+    def test_named_phrase_without_drive(self):
+        self.assertEqual(
+            self.parse("ouvre chaque dossier qui porte le nom dell"),
+            {"action": "open_folder", "target": "dell", "all": True})
+
+    def test_english_find_and_open(self):
+        self.assertEqual(
+            self.parse("open every folder named dell"),
+            {"action": "open_folder", "target": "dell", "all": True})
+
+    def test_bare_all_folders_keep_the_name(self):
+        self.assertEqual(
+            self.parse("ouvre tous les dossiers"),
+            {"action": "open_folder", "target": "dossiers", "all": True})
+
+    def test_ordinary_requests_are_unchanged(self):
+        self.assertEqual(self.parse("open folder downloads"), {"action": "open_folder", "target": "downloads"})
+        self.assertEqual(
+            self.parse("ouvre le dossier missions dans le dossier travail"),
+            {"action": "open_folder", "target": "missions", "parent": "travail"})
+        self.assertIsNone(self.parse("open chrome and search news"))
+
+
+class FindOpenPruneTests(unittest.TestCase):
+    """On a drive root (« sur le c ») system folders must be searched too;
+    inside a named folder, pruning stays on for speed."""
+
+    def setUp(self):
+        self.tree = tempfile.mkdtemp()
+        self.expected = []
+        for sub in ["Program Files", "Windows/Temp", "Users/test/AppData/Local", "travail"]:
+            folder = Path(self.tree) / sub / "dell"
+            folder.mkdir(parents=True)
+            self.expected.append(str(folder))
+        self.addCleanup(self._cleanup)
+
+    def _cleanup(self):
+        import shutil
+        shutil.rmtree(self.tree, ignore_errors=True)
+
+    def test_no_pruning_on_a_drive_root(self):
+        found = kira_open.find_folder_matches("dell", search_dirs=[self.tree], prune_system=False,
+                                              max_entries=100000, time_budget=10.0, limit=10)
+        self.assertEqual(sorted(found), sorted(self.expected))
+
+    def test_pruning_is_the_default_inside_a_folder(self):
+        found = kira_open.find_folder_matches("dell", search_dirs=[self.tree], limit=10)
+        self.assertIn(str(Path(self.tree) / "travail" / "dell"), found)
+        self.assertNotIn(str(Path(self.tree) / "Program Files" / "dell"), found)
+
+    def test_parent_branch_passes_the_right_prune_flag(self):
+        calls = []
+        real_find = kira_open.find_folder_matches
+
+        def spy(name, search_dirs=None, **kwargs):
+            calls.append(kwargs.get("prune_system"))
+            return real_find(name, search_dirs=search_dirs, **kwargs)
+
+        with patch.multiple(kira_open, find_folder_matches=spy,
+                            resolve_parent_dir=lambda parent, base_home=None: self.tree):
+            kira_open.folder_matches("dell", parent="c")
+        self.assertEqual(calls, [True], "a non-root parent keeps system folders pruned")
+
+        calls.clear()
+        with patch.multiple(kira_open, find_folder_matches=spy,
+                            resolve_parent_dir=lambda parent, base_home=None: "C:\\"):
+            kira_open.folder_matches("dell", parent="c")
+        self.assertEqual(calls, [False], "a drive root must search system folders")
+
+
+class FindOpenExecutionTests(unittest.TestCase):
+    """The whole sentence runs as one search and opens every match."""
+
+    def setUp(self):
+        commands.clear_pending_open()
+        self.folders_c = [
+            "C:\\Program Files\\dell",
+            "C:\\Users\\test\\AppData\\Local\\dell",
+            "C:\\Windows\\Temp\\dell",
+            "C:\\travail\\dell",
+        ]
+        self.searches = []
+        self.opened = []
+
+        def fake_folder_matches(name, parent=None, base_home=None, limit=10, deep_always=True):
+            self.searches.append({"name": name, "parent": parent})
+            return list(self.folders_c) if kira_open.fold(parent) == "c" else []
+
+        self.backend = SimpleNamespace(
+            normalize_command=lambda text: text,
+            parse_simple_command=lambda text: kira_open.parse_open_command(text),
+            execute_action=lambda data: self._execute(data),
+            build_reply=lambda language, name, target: f"J'ouvre {target}.",
+            resolve_open_matches=lambda parsed: (
+                None if (parsed["action"] == "open_folder"
+                         and (kira_open.fold(parsed["target"]) in kira_open.FOLDER_ALIASES
+                              or kira_open.parse_drive(parsed["target"])))
+                else kira_open.folder_matches(parsed["target"], parent=parsed.get("parent"))
+            ),
+        )
+        patcher = patch.object(kira_open, "folder_matches", fake_folder_matches)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(commands.clear_pending_open)
+
+    def _execute(self, data):
+        if data.get("all"):
+            matches = data.get("candidates")
+            if not (isinstance(matches, list) and matches
+                    and all(isinstance(path, str) for path in matches)):
+                matches = kira_open.folder_matches(data["target"], parent=data.get("parent"))
+            opened = 0
+            for path in matches[:10]:
+                self.opened.append(path)
+                opened += 1
+            return opened
+        self.opened.append(data.get("target"))
+        return True
+
+    def test_dell_sentence_opens_every_folder_on_c_once(self):
+        result = commands.process_command(
+            self.backend,
+            "cherche moi les dossier dell sur le c et ouvre chaque dossier qui porte le nom dell",
+            reply_language="fr")
+        self.assertTrue(result["success"])
+        self.assertIn("4", result["response"])
+        self.assertEqual(self.searches, [{"name": "dell", "parent": "c"}],
+                         "the search must run exactly once")
+        self.assertEqual(self.opened, self.folders_c)
+        self.assertTrue(all(path.startswith("C:\\") for path in self.opened))
+
+    def test_voice_agent_reuses_the_candidates(self):
+        source = (ROOT / "kira_voice_agent.py").read_text()
+        self.assertIn('action_data.get("candidates")', source,
+                      "the voice agent must reuse the single search result")
