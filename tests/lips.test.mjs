@@ -110,12 +110,12 @@ test("neutral geometry is unchanged and speech deforms actual lip vertices", () 
 
 test("mouth positioning follows object-fit contain including letterboxing", () => {
   const original = fitMouthRegion(896, 1200);
-  assert.deepEqual(original, { left: 296, top: 592, width: 304, height: 224 });
+  assert.deepEqual(original, { left: 296, top: 554, width: 304, height: 224 });
   const wide = fitMouthRegion(1000, 600);
   assert.equal(wide.left, (1000 - 448) / 2 + 148);
-  assert.equal(wide.top, 296);
+  assert.equal(wide.top, 277);
   const tall = fitMouthRegion(448, 800);
-  assert.equal(tall.top, 100 + 296);
+  assert.equal(tall.top, 100 + 277);
   assert.equal(tall.width, 152);
 });
 
