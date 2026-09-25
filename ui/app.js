@@ -43,6 +43,21 @@ let languageCatalog = [...FALLBACK_LANGUAGES];
 // CPU / memory share). Nothing here is simulated.
 const sessionActivity = { commands: 0, searches: 0, opens: 0, voice: false, tasks: 0, cpu: null, memory: null };
 
+const sparkData = { cpu: [], memory: [], disk: [], network: [] };
+
+function drawSpark(key) {
+  const line = $(`spark-${key}`);
+  if (!line) return;
+  const data = sparkData[key];
+  if (!data.length) { line.setAttribute("points", ""); return; }
+  const points = data.map((value, index) => {
+    const x = (index / Math.max(1, data.length - 1)) * 60;
+    const y = 13 - Math.max(0, Math.min(100, value)) / 100 * 12;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  line.setAttribute("points", points);
+}
+
 function updateAgentActivity() {
   const values = {
     system: sessionActivity.cpu,
@@ -72,16 +87,21 @@ function renderRecentTasks(tasks) {
     list.appendChild(empty);
     return;
   }
-  tasks.slice(0, 4).forEach((task) => {
+  tasks.slice(0, 5).forEach((task) => {
     const row = document.createElement("div");
     row.className = "recent-task";
     const dot = document.createElement("i");
+    const when = document.createElement("small");
+    when.className = "recent-time";
+    const created = Date.parse(task.created_at || "");
+    when.textContent = Number.isFinite(created)
+      ? new Date(created).toTimeString().slice(0, 5) : "--:--";
     const label = document.createElement("span");
     label.textContent = task.title;
     label.title = task.title;
     const who = document.createElement("small");
     who.textContent = "KIRA";
-    row.append(dot, label, who);
+    row.append(dot, when, label, who);
     list.appendChild(row);
   });
 }
@@ -459,6 +479,12 @@ document.addEventListener("keydown", (event) => {
     $("command").focus();
   }
 });
+document.querySelectorAll(".command-navbar .nav-item").forEach((item) => {
+  item.addEventListener("click", () => {
+    document.querySelectorAll(".command-navbar .nav-item").forEach((other) => other.classList.remove("active"));
+    item.classList.add("active");
+  });
+});
 $("nav-kira").addEventListener("click", () => $("mic").click());
 $("nav-home").addEventListener("click", () => { $("command").focus(); });
 $("nav-conv").addEventListener("click", () => { $("command").focus(); });
@@ -599,6 +625,12 @@ async function updateTelemetry() {
     paint("disk", data.disk_percent);
     sessionActivity.cpu = typeof data.cpu_percent === "number" ? data.cpu_percent : null;
     sessionActivity.memory = typeof data.memory_percent === "number" ? data.memory_percent : null;
+    for (const key of ["cpu", "memory", "disk"]) {
+      const value = key === "cpu" ? data.cpu_percent : key === "memory" ? data.memory_percent : data.disk_percent;
+      sparkData[key].push(typeof value === "number" ? value : 0);
+      if (sparkData[key].length > 24) sparkData[key].shift();
+      drawSpark(key);
+    }
     updateAgentActivity();
     const sub = (key, value) => writeText(`gauge-sub-${key}`, value);
     sub("cpu", typeof data.cpu_freq_mhz === "number" ? `${(data.cpu_freq_mhz / 1000).toFixed(2)} GHz` : "—");
@@ -606,15 +638,30 @@ async function updateTelemetry() {
       ? `${data.memory_used_gb} / ${data.memory_total_gb} GB` : "—");
     sub("disk", typeof data.disk_used_gb === "number" && typeof data.disk_total_gb === "number"
       ? `${data.disk_used_gb} / ${data.disk_total_gb} GB` : "—");
-    writeText("network", typeof data.net_down_mbps === "number" ? `${data.net_down_mbps} Mb/s` : "—");
+    const down = typeof data.net_down_mbps === "number" ? data.net_down_mbps : null;
+    const up = typeof data.net_up_mbps === "number" ? data.net_up_mbps : null;
+    writeText("network", down !== null ? `${down} Mb/s` : "—");
+    writeText("gauge-sub-network", down !== null ? `\u2193 ${down} \u00b7 \u2191 ${up ?? "—"} Mb/s` : "—");
     const gaugeNetwork = $("gauge-network");
     if (gaugeNetwork) {
-      const net = typeof data.net_down_mbps === "number" ? Math.min(100, data.net_down_mbps * 2) : 0;
+      const net = down !== null ? Math.min(100, down * 2) : 0;
       gaugeNetwork.style.strokeDashoffset = String((100 - net) / 100 * 125.7);
     }
+    sparkData.network.push(down ?? 0);
+    if (sparkData.network.length > 24) sparkData.network.shift();
+    drawSpark("network");
     const parts = [`${commandCount} ${t("commands")}`, `${sessionActivity.searches} ${t("searches")}`,
       `${sessionActivity.opens} ${t("opens")}`, `${sessionActivity.tasks} ${t("pending tasks")}`];
     writeText("agent-activity-summary", parts.join(" · "));
+    const cpuNow = typeof data.cpu_percent === "number" ? Math.round(data.cpu_percent) : null;
+    const memNow = typeof data.memory_percent === "number" ? Math.round(data.memory_percent) : null;
+    writeText("agent-sub-system", cpuNow !== null ? `CPU ${cpuNow}% · RAM ${memNow}%` : "—");
+    writeText("agent-sub-data", typeof data.memory_used_gb === "number"
+      ? `${data.memory_used_gb} / ${data.memory_total_gb} GB` : "—");
+    writeText("agent-sub-research", `${sessionActivity.searches} ${t("searches")}`);
+    writeText("agent-sub-web", `${sessionActivity.opens} ${t("opens")}`);
+    writeText("agent-sub-content", sessionActivity.voice ? t("ACTIVE") : t("STANDBY"));
+    writeText("agent-sub-automation", `${sessionActivity.tasks} ${t("pending tasks")}`);
     writeText("gpu", data.gpu || t("UNAVAILABLE"));
     $("gpu").title = data.gpu || t("Graphics telemetry is unavailable");
     writeText("telemetry-live", t("LIVE"));
@@ -629,7 +676,9 @@ async function updateTelemetry() {
     updateAgentActivity();
     ["cpu", "memory", "disk"].forEach((key) => writeText(`gauge-sub-${key}`, "—"));
     writeText("network", "—");
+    writeText("gauge-sub-network", "—");
     writeText("agent-activity-summary", "—");
+    for (const key of ["cpu", "memory", "disk", "network"]) { sparkData[key].length = 0; drawSpark(key); }
   } finally { telemetryPending = false; }
 }
 

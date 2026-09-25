@@ -662,3 +662,41 @@ html[data-motion="on"] .agent-chip { animation: chip-float 7s ease-in-out infini
 .gauge-sub { font-size: 9px; letter-spacing: 0.06em; color: var(--muted); min-height: 11px; }
 .chev { margin-left: auto; color: var(--gold-deep); font-weight: 500; }
 .agent-row:hover .chev { color: var(--gold-hi); }
+
+/* ── Reference details: sparks, agent subs, crown ring, light rays, active nav ── */
+.spark { width: 100%; height: 13px; margin-top: 1px; }
+.spark polyline { fill: none; stroke: var(--gold); stroke-width: 1.4; opacity: 0.85; filter: drop-shadow(0 0 3px rgba(246, 183, 60, 0.5)); }
+.agent-who { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.agent-who .icon { width: 13px; height: 13px; color: var(--gold); flex: none; }
+.agent-who-text { display: flex; flex-direction: column; line-height: 1.18; min-width: 0; }
+.agent-who-text b { font-size: 11.5px; font-weight: 500; color: var(--ink); }
+.agent-who-text small { font-size: 9px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-meter-row { grid-template-columns: minmax(120px, 46%) minmax(0, 1fr) 34px; }
+.recent-time { color: var(--gold); letter-spacing: 0.08em; flex: none; }
+.recent-task { gap: 7px; }
+.recent-task small:not(.recent-time) { margin-left: auto; }
+.nav-item.active {
+  color: var(--bg-deep);
+  background: linear-gradient(160deg, var(--gold-hi), var(--gold) 60%, var(--gold-deep));
+  border-color: var(--gold-hi);
+  box-shadow: 0 0 18px rgba(246, 183, 60, 0.5);
+}
+.crown-ring {
+  position: absolute; top: 3%; left: 50%; transform: translateX(-50%);
+  width: 52%; height: 9%;
+  border: 2px solid rgba(255, 205, 95, 0.85);
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  box-shadow: 0 0 26px rgba(246, 183, 60, 0.55), inset 0 4px 18px rgba(246, 183, 60, 0.35);
+  z-index: 1;
+  pointer-events: none;
+}
+.light-rays {
+  position: absolute; inset: -4%;
+  background: repeating-linear-gradient(90deg, rgba(255, 205, 95, 0.05) 0 2px, transparent 2px 30px);
+  mask-image: radial-gradient(58% 46% at 50% 38%, black, transparent 76%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 0;
+}
+@media (prefers-reduced-motion:reduce) { .crown-ring, .light-rays { animation: none; } }

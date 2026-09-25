@@ -98,10 +98,10 @@
               </div>
               <span class="command-label" data-i18n="COMMAND">COMMAND</span>
               <form id="command-form" class="command-box">
-                <button id="mic" class="icon-button mic-button" type="button" aria-label="Start voice input" title="Voice input" data-i18n-aria-label="Start voice input" data-i18n-title="Voice input"><svg class="icon"><use href="#i-mic" /></svg></button>
                 <label for="command" class="sr-only" data-i18n="Your command to KIRA">Your command to KIRA</label>
                 <input id="command" dir="auto" type="text" placeholder="Type a command…" autocomplete="off" maxlength="8000" data-i18n-placeholder="Type a command…" />
                 <button id="send" type="submit" aria-label="Send command" title="Send command" data-i18n-aria-label="Send command" data-i18n-title="Send command"><svg class="icon"><use href="#i-send" /></svg></button>
+                <button id="mic" class="icon-button mic-button" type="button" aria-label="Start voice input" title="Voice input" data-i18n-aria-label="Start voice input" data-i18n-title="Voice input"><svg class="icon"><use href="#i-mic" /></svg></button>
               </form>
               <div class="command-hint"><span><kbd>↵</kbd> <span data-i18n="TO SEND">TO SEND</span></span><span><kbd>CTRL K</kbd> <span data-i18n="COMMAND">COMMAND</span></span></div>
             </div>
@@ -149,6 +149,8 @@
             <g class="orbit orbit-two"><ellipse cx="300" cy="300" rx="290" ry="94" /><circle cx="10" cy="300" r="2.5" /></g>
             <g class="neural-links"><path d="m128 185 82 52-23 136 98 80 117-57 63-162-93-96-162 99 192 159M128 185l59 188 185-235 30 258-274-211Z" /><circle cx="128" cy="185" r="2" /><circle cx="210" cy="237" r="2" /><circle cx="187" cy="373" r="2" /><circle cx="402" cy="396" r="2" /><circle cx="465" cy="234" r="2" /></g>
           </svg>
+          <div class="crown-ring" aria-hidden="true"></div>
+          <div class="light-rays" aria-hidden="true"></div>
           <div class="projection-beam" aria-hidden="true"></div>
           <div class="hologram-platform" aria-hidden="true"><img src="./assets/projector.svg" alt="" /><div class="projector-light"></div></div>
           <div class="agent-cards" aria-hidden="false">
@@ -179,6 +181,7 @@
                 <span class="gauge-label">CPU</span>
                 <small class="gauge-sub" id="gauge-sub-cpu">—</small>
                 <div class="stat-bar"><span id="cpu-bar"></span></div>
+                <svg class="spark" viewBox="0 0 60 14" preserveAspectRatio="none" aria-hidden="true"><polyline id="spark-cpu" points="" /></svg>
               </div>
               <div class="gauge">
                 <svg viewBox="0 0 48 48" aria-hidden="true"><circle class="gauge-bg" cx="24" cy="24" r="20" /><circle class="gauge-fg" id="gauge-memory" cx="24" cy="24" r="20" /></svg>
@@ -186,6 +189,7 @@
                 <span class="gauge-label">RAM</span>
                 <small class="gauge-sub" id="gauge-sub-memory">—</small>
                 <div class="stat-bar"><span id="memory-bar"></span></div>
+                <svg class="spark" viewBox="0 0 60 14" preserveAspectRatio="none" aria-hidden="true"><polyline id="spark-memory" points="" /></svg>
               </div>
               <div class="gauge">
                 <svg viewBox="0 0 48 48" aria-hidden="true"><circle class="gauge-bg" cx="24" cy="24" r="20" /><circle class="gauge-fg" id="gauge-disk" cx="24" cy="24" r="20" /></svg>
@@ -193,11 +197,14 @@
                 <span class="gauge-label" data-i18n="DISK">DISK</span>
                 <small class="gauge-sub" id="gauge-sub-disk">—</small>
                 <div class="stat-bar"><span id="disk-bar"></span></div>
+                <svg class="spark" viewBox="0 0 60 14" preserveAspectRatio="none" aria-hidden="true"><polyline id="spark-disk" points="" /></svg>
               </div>
               <div class="gauge">
                 <svg viewBox="0 0 48 48" aria-hidden="true"><circle class="gauge-bg" cx="24" cy="24" r="20" /><circle class="gauge-fg gauge-static" id="gauge-network" cx="24" cy="24" r="20" /></svg>
                 <strong id="network" class="gauge-value">—</strong>
                 <span class="gauge-label" data-i18n="NETWORK">NETWORK</span>
+                <small class="gauge-sub" id="gauge-sub-network">—</small>
+                <svg class="spark" viewBox="0 0 60 14" preserveAspectRatio="none" aria-hidden="true"><polyline id="spark-network" points="" /></svg>
               </div>
             </div>
             <div class="telemetry-body">
@@ -220,12 +227,12 @@
             <section class="agent-activity" aria-labelledby="agent-activity-heading">
               <h3 id="agent-activity-heading" data-i18n="AGENT ACTIVITY">AGENT ACTIVITY</h3>
               <p class="section-note" data-i18n="SESSION ACTIVITY">REAL SESSION ACTIVITY</p>
-              <div class="agent-meter-row"><span data-i18n="System Manager">System Manager</span><div class="agent-meter"><span id="agent-bar-system"></span></div><strong id="agent-val-system">—</strong></div>
-              <div class="agent-meter-row"><span data-i18n="Data Analyst">Data Analyst</span><div class="agent-meter"><span id="agent-bar-data"></span></div><strong id="agent-val-data">—</strong></div>
-              <div class="agent-meter-row"><span data-i18n="Research Agent">Research Agent</span><div class="agent-meter"><span id="agent-bar-research"></span></div><strong id="agent-val-research">0%</strong></div>
-              <div class="agent-meter-row"><span data-i18n="Web Developer">Web Developer</span><div class="agent-meter"><span id="agent-bar-web"></span></div><strong id="agent-val-web">0%</strong></div>
-              <div class="agent-meter-row"><span data-i18n="Content Creator">Content Creator</span><div class="agent-meter"><span id="agent-bar-content"></span></div><strong id="agent-val-content">0%</strong></div>
-              <div class="agent-meter-row"><span data-i18n="Automation Agent">Automation Agent</span><div class="agent-meter"><span id="agent-bar-automation"></span></div><strong id="agent-val-automation">0%</strong></div>
+              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-settings" /></svg><span class="agent-who-text"><b data-i18n="System Manager">System Manager</b><small id="agent-sub-system">—</small></span></span><div class="agent-meter"><span id="agent-bar-system"></span></div><strong id="agent-val-system">—</strong></div>
+              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-data" /></svg><span class="agent-who-text"><b data-i18n="Data Analyst">Data Analyst</b><small id="agent-sub-data">—</small></span></span><div class="agent-meter"><span id="agent-bar-data"></span></div><strong id="agent-val-data">—</strong></div>
+              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-search" /></svg><span class="agent-who-text"><b data-i18n="Research Agent">Research Agent</b><small id="agent-sub-research">—</small></span></span><div class="agent-meter"><span id="agent-bar-research"></span></div><strong id="agent-val-research">—</strong></div>
+              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-code" /></svg><span class="agent-who-text"><b data-i18n="Web Developer">Web Developer</b><small id="agent-sub-web">—</small></span></span><div class="agent-meter"><span id="agent-bar-web"></span></div><strong id="agent-val-web">—</strong></div>
+              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-pen" /></svg><span class="agent-who-text"><b data-i18n="Content Creator">Content Creator</b><small id="agent-sub-content">—</small></span></span><div class="agent-meter"><span id="agent-bar-content"></span></div><strong id="agent-val-content">—</strong></div>
+              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-nodes" /></svg><span class="agent-who-text"><b data-i18n="Automation Agent">Automation Agent</b><small id="agent-sub-automation">—</small></span></span><div class="agent-meter"><span id="agent-bar-automation"></span></div><strong id="agent-val-automation">—</strong></div>
               <p class="section-note" id="agent-activity-summary">—</p>
             </section>
 
@@ -250,7 +257,7 @@
     </main>
 
     <footer class="command-navbar" aria-label="Main navigation" data-i18n-aria-label="Main navigation">
-      <button type="button" id="nav-home" class="nav-item"><svg class="icon"><use href="#i-home" /></svg><span data-i18n="HOME">HOME</span></button>
+      <button type="button" id="nav-home" class="nav-item active"><svg class="icon"><use href="#i-home" /></svg><span data-i18n="HOME">HOME</span></button>
       <button type="button" id="nav-conv" class="nav-item"><svg class="icon"><use href="#i-terminal" /></svg><span data-i18n="CONVERSATION">CONVERSATION</span></button>
       <button type="button" id="nav-agents" class="nav-item"><svg class="icon"><use href="#i-nodes" /></svg><span data-i18n="AGENTS">AGENTS</span></button>
       <button type="button" id="nav-files" class="nav-item" data-command="open documents"><svg class="icon"><use href="#i-folder" /></svg><span data-i18n="FILES">FILES</span></button>
