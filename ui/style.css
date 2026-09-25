@@ -101,7 +101,7 @@ body {
   position: relative; z-index: 2;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(370px, 38.5vw) minmax(0, 1fr) minmax(320px, 26.5vw);
+  grid-template-columns: minmax(390px, 40vw) minmax(0, 1fr) minmax(300px, 25vw);
   gap: 14px;
   padding: 4px 18px 10px;
   align-items: stretch;
