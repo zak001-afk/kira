@@ -874,3 +874,30 @@ html[data-motion="on"] .agent-chip { animation: chip-float 7s ease-in-out infini
   background: radial-gradient(50% 46% at 50% 46%, rgba(4, 3, 1, 0.88), rgba(4, 3, 1, 0.45) 58%, transparent 76%);
   z-index: -1; pointer-events: none;
 }
+
+/* ── OPEN 25 : statuts réels, fin d'orchestration, responsive fin ── */
+.agent-row.busy .agent-state span { color: var(--gold-hi); }
+.agent-row.busy .online-dot { background: var(--gold-hi); box-shadow: 0 0 8px rgba(255, 215, 106, 0.8); }
+.orch-flow.done { border-color: var(--panel-edge); }
+.orch-flow.done .orch-state { color: var(--ink); letter-spacing: 0.14em; }
+.orch-flow.done .orch-state i, .orch-flow.failed .orch-state i { animation: none; }
+.orch-flow.done .orch-state i { background: var(--green); box-shadow: 0 0 8px rgba(69, 214, 127, 0.7); }
+.orch-flow.failed { border-color: rgba(255, 122, 107, 0.4); }
+.orch-flow.failed .orch-state { color: var(--danger); }
+.orch-flow.failed .orch-state i { background: var(--danger); }
+.message-block { animation: message-in 200ms ease; }
+@keyframes message-in { from { opacity: 0; transform: translateY(5px); } }
+@media (prefers-reduced-motion:reduce) { .message-block { animation: none; } }
+#telemetry-collapse { display: none; }
+#telemetry-collapse .icon { transition: transform 200ms ease; }
+.telemetry-panel.collapsed #telemetry-collapse .icon { transform: rotate(90deg); }
+@media (max-width: 1020px) {
+  #telemetry-collapse { display: inline-flex; }
+  /* La conversation reste la zone principale ; KIRA devient compact ; */
+  .neural-stage { order: 0; min-height: 320px; }
+  .agents-list { max-height: 38vh; overflow-y: auto; scrollbar-width: thin; }
+  .telemetry-panel.collapsed .telemetry-body,
+  .telemetry-panel.collapsed .agent-activity,
+  .telemetry-panel.collapsed .recent-tasks,
+  .telemetry-panel.collapsed .system-toolbar { display: none; }
+}

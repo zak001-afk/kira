@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="kira-ui-build" content="command-center-01-open-24" />
+    <meta name="kira-ui-build" content="command-center-01-open-25" />
     <meta name="theme-color" content="#0b0703" />
     <meta name="description" content="KIRA — your local neural computer agent." />
-    <title>KIRA // AI COMMAND CENTER 01 / OPEN 24</title>
+    <title>KIRA // AI COMMAND CENTER 01 / OPEN 25</title>
     <link rel="icon" href="./assets/kira-mark.svg" type="image/svg+xml" />
     <link rel="preload" href="./assets/fonts/rajdhani-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="./assets/kira-hologram.webp" as="image" />
     <link rel="preload" href="./assets/kira-chamber.webp" as="image" />
     <link rel="preload" href="./assets/kira-mouth-interior.webp" as="image" />
-    <link rel="stylesheet" href="./style.css?v=open-24" />
+    <link rel="stylesheet" href="./style.css?v=open-25" />
   </head>
   <body>
     <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -126,7 +126,7 @@
       </div>
 
       <section class="neural-stage" aria-label="KIRA holographic neural projection" data-i18n-aria-label="KIRA holographic neural projection">
-        <div class="stage-topline"><span><i class="tiny-light"></i> <span data-i18n="NEURAL COMPUTER AGENT">NEURAL COMPUTER AGENT</span></span><span id="ui-build">COMMAND CENTER 01 / OPEN 24</span></div>
+        <div class="stage-topline"><span><i class="tiny-light"></i> <span data-i18n="NEURAL COMPUTER AGENT">NEURAL COMPUTER AGENT</span></span><span id="ui-build">COMMAND CENTER 01 / OPEN 25</span></div>
 
         <div class="hologram" id="hologram">
           <div class="core-title" aria-hidden="true"><span class="core-title-name">KIRA</span><span class="core-title-sub" data-i18n="CENTRAL INTELLIGENCE">CENTRAL INTELLIGENCE</span></div>
@@ -168,6 +168,7 @@
             <div class="panel-heading">
               <h2 id="telemetry-heading" data-i18n="SYSTEM">SYSTEM</h2>
               <span class="live-indicator" id="telemetry-live" data-i18n="WAIT">WAIT</span>
+              <button id="telemetry-collapse" class="icon-button small" type="button" aria-expanded="true" aria-label="Collapse monitoring" data-i18n-aria-label="Collapse monitoring"><svg class="icon"><use href="#i-expand" /></svg></button>
             </div>
             <p class="panel-subheading" data-i18n="REAL-TIME PERFORMANCE">REAL-TIME PERFORMANCE</p>
             <div class="gauge-grid">
@@ -227,6 +228,7 @@
                 <div><dt data-i18n="TRANSPORT">TRANSPORT</dt><dd id="transport">—</dd></div>
                 <div><dt data-i18n="VOICE OUTPUT">VOICE OUTPUT</dt><dd id="voice-output" data-i18n="ENABLED">ENABLED</dd></div>
                 <div><dt data-i18n="GRAPHICS">GRAPHICS</dt><dd id="gpu">—</dd></div>
+                <div><dt data-i18n="TEMPERATURE">TEMPERATURE</dt><dd id="cpu-temp">—</dd></div>
               </dl>
               <div class="neural-load"><span data-i18n="NEURAL ACTIVITY">NEURAL ACTIVITY</span><div class="activity-segments" id="activity-segments" aria-hidden="true"></div></div>
             </div>
@@ -291,6 +293,6 @@
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
     <noscript><div class="noscript-notice" data-i18n="Enable JavaScript to connect to KIRA and use the command interface.">Enable JavaScript to connect to KIRA and use the command interface.</div></noscript>
-    <script type="module" src="./app.js?v=open-24"></script>
+    <script type="module" src="./app.js?v=open-25"></script>
   </body>
 </html>

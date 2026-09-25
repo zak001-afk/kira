@@ -237,6 +237,17 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             try:
+                if hasattr(psutil, "sensors_temperatures"):
+                    for entries in psutil.sensors_temperatures().values():
+                        for reading in entries:
+                            if reading.current:
+                                data["cpu_temp_c"] = round(float(reading.current))
+                                break
+                        if "cpu_temp_c" in data:
+                            break
+            except Exception:
+                pass
+            try:
                 counters = psutil.net_io_counters()
                 now = _time.monotonic()
                 if (self._last_net_io is not None and self._last_net_time

@@ -78,6 +78,12 @@ function updateAgentActivity() {
     writeText(`agent-val-${agent.id}`, valid ? `${Math.round(value)}%` : "—");
     const line = document.querySelector(`.agent-link[data-agent="${agent.id}"]`);
     if (line) line.classList.toggle("hot", valid && value > 0);
+    const row = agentRows.get(agent.id);
+    if (row) {
+      const state = row.querySelector(".agent-state span");
+      if (state) state.textContent = valid && value > 0 ? t("WORKING") : t("ONLINE");
+      row.classList.toggle("busy", valid && value > 0);
+    }
   }
 }
 
@@ -419,6 +425,7 @@ async function sendCommand(text, { shortcut = false } = {}) {
   updateAgentActivity();
   const thinking = addMessage("KIRA", t("Processing your request…"));
   thinking.classList.add("thinking");
+  let orchFlow = null;
   const delegatedId = delegateFor(text);
   if (delegatedId) {
     const agentDef = AGENTS.find((agent) => agent.id === delegatedId);
@@ -428,6 +435,7 @@ async function sendCommand(text, { shortcut = false } = {}) {
       flow.className = "orch-flow";
       flow.innerHTML = `<svg class="icon" aria-hidden="true"><use href="#${agentDef.icon}" /></svg><b>KIRA → ${t(agentDef.name)}</b><span class="orch-state"><i></i>${t("WORKING")}</span>`;
       thinking.querySelector(".message-content").appendChild(flow);
+      orchFlow = flow;
     }
   }
   const started = performance.now();
@@ -451,6 +459,12 @@ async function sendCommand(text, { shortcut = false } = {}) {
       languageRevision++;
     }
     updateLanguageControls();
+    if (orchFlow) {
+      const state = orchFlow.querySelector(".orch-state");
+      if (state) state.innerHTML = `<i></i>${t("DONE")}`;
+      orchFlow.classList.add("done");
+      orchFlow = null;
+    }
     writeText("response-time", `${((performance.now() - started) / 1000).toFixed(2)} s`);
     // Failed actions must never be labelled as successfully executed.
     const response = data.success === false ? t("KIRA could not complete: {action}.", { action: data.action || t("this action") }) + (data.response ? `\n${t("Backend response: {response}", { response: data.response })}` : "")
@@ -460,6 +474,12 @@ async function sendCommand(text, { shortcut = false } = {}) {
     if (data.language_warning) notify(t("The model could not use the requested language. Try a multilingual model."));
   } catch (error) {
     if (destroyed) return;
+    if (orchFlow) {
+      const state = orchFlow.querySelector(".orch-state");
+      if (state) state.innerHTML = `<i></i>${t("FAILED")}`;
+      orchFlow.classList.add("failed");
+      orchFlow = null;
+    }
     thinking.remove();
     addMessage("SYSTEM", friendlyError(error));
     setActivity("ERROR");
@@ -684,12 +704,14 @@ async function updateTelemetry() {
     writeText("agent-sub-content", sessionActivity.voice ? t("ACTIVE") : t("STANDBY"));
     writeText("agent-sub-automation", `${sessionActivity.tasks} ${t("pending tasks")}`);
     writeText("gpu", data.gpu || t("UNAVAILABLE"));
+    writeText("cpu-temp", typeof data.cpu_temp_c === "number" ? `${Math.round(data.cpu_temp_c)}\u00b0C` : "\u2014");
     $("gpu").title = data.gpu || t("Graphics telemetry is unavailable");
     writeText("telemetry-live", t("LIVE"));
     $("telemetry-live").classList.add("live");
   } catch {
     ["cpu", "memory", "disk"].forEach((key) => paint(key, null));
     writeText("gpu", t("UNAVAILABLE"));
+    writeText("cpu-temp", "\u2014");
     writeText("telemetry-live", t("OFFLINE"));
     $("telemetry-live").classList.remove("live");
     sessionActivity.cpu = null;
@@ -810,11 +832,14 @@ function wireAgentButton(button) {
   if (button.dataset.dialog) button.addEventListener("click", () => openPanel(button.dataset.dialog));
 }
 
+const agentRows = new Map();
+
 function renderAgents() {
   const list = $("agents-list");
   const cards = document.querySelector(".agent-cards");
   const meters = $("agent-meters");
   if (!list || !cards || !meters) return;
+  agentRows.clear();
   list.replaceChildren(); cards.replaceChildren(); meters.replaceChildren();
   for (const agent of AGENTS) {
     const attrs = agent.action.prompt ? `data-prompt="${agent.action.prompt}"`
@@ -824,6 +849,7 @@ function renderAgents() {
     row.type = "button"; row.className = "agent-row"; row.setAttribute("attrs", "");
     row.innerHTML = `<b class="chev">›</b><span class="agent-ico"><svg class="icon"><use href="#${agent.icon}" /></svg></span><span class="agent-id"><b>${t(agent.name)}</b><small>${t(agent.description)}</small></span><span class="agent-state"><i class="online-dot"></i><span>${t("ONLINE")}</span></span>`;
     Object.entries(agent.action).forEach(([k, v]) => { row.dataset[k] = v; });
+    agentRows.set(agent.id, row);
     list.appendChild(row); wireAgentButton(row);
 
     const chip = document.createElement("button");
@@ -876,6 +902,13 @@ document.querySelectorAll("[data-topnav]").forEach((button) => button.addEventLi
   const target = $(button.dataset.topnav);
   if (target) target.click();
 }));
+const telemetryCollapse = $("telemetry-collapse");
+if (telemetryCollapse) telemetryCollapse.addEventListener("click", () => {
+  const panel = telemetryCollapse.closest(".telemetry-panel") || document.querySelector(".telemetry-panel");
+  if (!panel) return;
+  const collapsed = panel.classList.toggle("collapsed");
+  telemetryCollapse.setAttribute("aria-expanded", collapsed ? "false" : "true");
+});
 renderAgents();
 $("close-dialog").addEventListener("click", () => $("system-dialog").close());
 $("system-dialog").addEventListener("click", (event) => {
