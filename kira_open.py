@@ -564,6 +564,10 @@ def common_file_dirs(base_home=None):
 
 # Folders that must never be scanned when looking for a user file: they are
 # huge and never contain the user's documents. Kept lowercase (already folded).
+# Hard ceiling for one search operation (all drives included): the user
+# waits at most this long before KIRA answers.
+SEARCH_TIME_BUDGET = 5.0
+
 SKIP_DIR_NAMES = {
     "appdata", "application data", "local settings", "program files",
     "program files (x86)", "programdata", "windows", "library",
@@ -961,7 +965,8 @@ def open_url(url, browser=None):
         return False
 
 
-def file_matches(name, parent=None, base_home=None, limit=10, deep_always=True):
+def file_matches(name, parent=None, base_home=None, limit=10, deep_always=True,
+                 time_budget=None):
     """Every matching file on the PC.
 
     Default: search the common folders first, then every drive, so the list
@@ -983,20 +988,30 @@ def file_matches(name, parent=None, base_home=None, limit=10, deep_always=True):
             if os.path.isfile(direct):
                 return [direct]
             is_root = len(parent_dir) <= 3
+            budget = 5.0 if is_root else 4.0
+            if time_budget:
+                budget = min(budget, time_budget)
             return find_file_matches(name, search_dirs=[parent_dir], limit=limit,
                                      prune_system=not is_root,
-                                     max_entries=500000 if is_root else 150000,
-                                     time_budget=45.0 if is_root else 20.0)
+                                     max_entries=300000 if is_root else 150000,
+                                     time_budget=budget)
         return []
-    matches = find_file_matches(name, search_dirs=common_file_dirs(base_home) if base_home else None, limit=limit)
+    deadline = time.monotonic() + (time_budget if time_budget else SEARCH_TIME_BUDGET)
+    matches = find_file_matches(name, search_dirs=common_file_dirs(base_home) if base_home else None,
+                                limit=limit, time_budget=min(1.5, SEARCH_TIME_BUDGET))
     # Already ambiguous in the usual places: asking now is correct and fast.
     if len(matches) >= 2:
         return matches
-    # Otherwise complete the search across every drive before deciding.
+    # Otherwise complete the search across every drive before deciding,
+    # within the same overall deadline (max 5 s for the whole operation).
     if deep_always or not matches:
         for drive in deep_search_dirs():
+            remaining = deadline - time.monotonic()
+            if remaining < 0.3:
+                break
             for path in find_file_matches(name, search_dirs=[drive], limit=limit,
-                                          prune_system=False, max_entries=300000, time_budget=20.0):
+                                          prune_system=False, max_entries=300000,
+                                          time_budget=min(4.0, remaining)):
                 if path not in matches:
                     matches.append(path)
             if len(matches) >= limit:
@@ -1005,7 +1020,7 @@ def file_matches(name, parent=None, base_home=None, limit=10, deep_always=True):
 
 
 def folder_matches(name, parent=None, base_home=None, limit=10, deep_always=True,
-                   direct_only=True):
+                   direct_only=True, time_budget=None):
     """Every matching folder on the PC (same policy as file_matches).
 
     direct_only: when the requested folder is a direct child of the named
@@ -1021,18 +1036,27 @@ def folder_matches(name, parent=None, base_home=None, limit=10, deep_always=True
             if direct_only and os.path.isdir(direct):
                 return [direct]
             is_root = len(parent_dir) <= 3
+            budget = 5.0 if is_root else 4.0
+            if time_budget:
+                budget = min(budget, time_budget)
             return find_folder_matches(name, search_dirs=[parent_dir], limit=limit,
                                        prune_system=not is_root,
-                                       max_entries=500000 if is_root else 150000,
-                                       time_budget=45.0 if is_root else 20.0)
+                                       max_entries=300000 if is_root else 150000,
+                                       time_budget=budget)
         return []
-    matches = find_folder_matches(name, search_dirs=common_file_dirs(base_home) if base_home else None, limit=limit)
+    deadline = time.monotonic() + (time_budget if time_budget else SEARCH_TIME_BUDGET)
+    matches = find_folder_matches(name, search_dirs=common_file_dirs(base_home) if base_home else None,
+                                  limit=limit, time_budget=min(1.5, SEARCH_TIME_BUDGET))
     if len(matches) >= 2:
         return matches
     if deep_always or not matches:
         for drive in deep_search_dirs():
+            remaining = deadline - time.monotonic()
+            if remaining < 0.3:
+                break
             for path in find_folder_matches(name, search_dirs=[drive], limit=limit,
-                                            prune_system=False, max_entries=250000, time_budget=15.0):
+                                            prune_system=False, max_entries=250000,
+                                            time_budget=min(4.0, remaining)):
                 if path not in matches:
                     matches.append(path)
             if len(matches) >= limit:
@@ -1045,9 +1069,11 @@ def mixed_matches(name, parent=None, base_home=None, limit=20, deep_always=True)
     like "cherche dell dans le c": the user does not know (or care) which
     kind it is. Exact-name matches come first; both kinds stay visible."""
     folders = folder_matches(name, parent=parent, base_home=base_home,
-                             limit=limit, deep_always=deep_always, direct_only=False)
+                             limit=limit, deep_always=deep_always, direct_only=False,
+                             time_budget=SEARCH_TIME_BUDGET / 2)
     files = file_matches(name, parent=parent, base_home=base_home,
-                         limit=limit, deep_always=deep_always)
+                         limit=limit, deep_always=deep_always,
+                         time_budget=SEARCH_TIME_BUDGET / 2)
     if not files:
         return folders[:limit]
     if not folders:

@@ -1,5 +1,16 @@
 # KIRA Changelog
 
+## Unreleased — every search answers in 5 seconds max (OPEN 16)
+
+- Hard ceiling: one search operation — whole PC included — takes at most
+  5 seconds before KIRA answers. The breadth-first scan spends those
+  seconds where the matches actually are (shallow folders first), so
+  root-level and near-root folders are still all found (verified: 3 dell
+  folders found instantly next to a 30 000-folder Program Files).
+- Budgets: 5 s on a drive root, 4 s inside a named folder, 2.5 s + 2.5 s
+  for mixed folder+file searches, 1.5 s for the common-places pass.
+- Replies were already template-based (no AI call on the open flow).
+
 ## Unreleased — "find everything containing dell, I'll choose" (OPEN 15)
 
 - The scenario "I know it's on C: but not in which folder": a bare search

@@ -1070,10 +1070,30 @@ class BreadthFirstSearchTests(unittest.TestCase):
 
     def test_drive_root_budgets_cover_system_folders(self):
         source = (ROOT / "kira_open.py").read_text()
-        self.assertIn("max_entries=500000 if is_root else 150000", source)
-        self.assertIn("time_budget=45.0 if is_root else 20.0", source)
-        self.assertIn("prune_system=not is_root,\n                                     max_entries=500000",
+        self.assertIn("SEARCH_TIME_BUDGET = 5.0", source,
+                      "every search operation is capped at 5 seconds")
+        self.assertIn("max_entries=300000 if is_root else 150000", source)
+        self.assertIn("budget = 5.0 if is_root else 4.0", source)
+        self.assertIn("prune_system=not is_root,\n                                     max_entries=300000",
                       source, "file searches on a drive root must include system folders too")
+        self.assertIn("time_budget=SEARCH_TIME_BUDGET / 2", source,
+                      "mixed searches share the 5 s across folders and files")
+
+    def test_time_budget_parameter_bounds_the_search(self):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        huge = root / "aaa_big"
+        huge.mkdir()
+        for index in range(4000):
+            (huge / f"pad{index:05d}").mkdir()
+        folder = root / "zzz" / "dell"
+        folder.mkdir(parents=True)
+        start = time.monotonic()
+        found = kira_open.find_folder_matches("dell", search_dirs=[str(root)], prune_system=False,
+                                              max_entries=10 ** 9, time_budget=0.4, limit=10)
+        elapsed = time.monotonic() - start
+        self.assertEqual(found, [str(folder)], "breadth-first finds the shallow match first")
+        self.assertLess(elapsed, 3.0, "the deadline must stop the walk early")
 
     def test_open_all_cap_is_twenty(self):
         source = (ROOT / "kira_voice_agent.py").read_text()

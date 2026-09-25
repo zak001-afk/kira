@@ -146,6 +146,7 @@ build_kira.bat
 - A bare "cherche dell dans le c" lists everything containing the word —
   folders AND files, typos tolerated ("delll", "dalle") — numbered; answer
   with the number to open that exact location, or "tous" to open all.
+  Every search answers in 5 seconds max, whole PC included.
 - "Ouvre tous les rapports" / "open all reports" opens every match at once.
 - "Ouvre le dossier projets" finds a folder by name on the PC; a bare
   "open folder" opens Documents. Nested requests work: "ouvre le dossier
