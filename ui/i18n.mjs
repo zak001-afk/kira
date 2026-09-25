@@ -8,6 +8,8 @@ export const TRANSLATIONS = {
   "pending tasks": { "fr": "tâches en attente", "ar": "مهام معلقة" },
   "AI COMMAND CENTER": { "fr": "CENTRE DE COMMANDE IA", "ar": "مركز قيادة الذكاء الاصطناعي" },
   "AGENTS": { "fr": "AGENTS", "ar": "الوكلاء" },
+  "CENTRAL INTELLIGENCE": { "fr": "INTELLIGENCE CENTRALE", "ar": "الذكاء المركزي" },
+  "WORKING": { "fr": "EN COURS", "ar": "قيد العمل" },
   "ADD": { "fr": "AJOUTER", "ar": "إضافة" },
   "ONLINE": { "fr": "EN LIGNE", "ar": "متصل" },
   "DISK": { "fr": "DISQUE", "ar": "القرص" },

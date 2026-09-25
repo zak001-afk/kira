@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="kira-ui-build" content="command-center-01-open-22" />
+    <meta name="kira-ui-build" content="command-center-01-open-24" />
     <meta name="theme-color" content="#0b0703" />
     <meta name="description" content="KIRA — your local neural computer agent." />
-    <title>KIRA // AI COMMAND CENTER 01 / OPEN 22</title>
+    <title>KIRA // AI COMMAND CENTER 01 / OPEN 24</title>
     <link rel="icon" href="./assets/kira-mark.svg" type="image/svg+xml" />
     <link rel="preload" href="./assets/fonts/rajdhani-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="./assets/kira-hologram.webp" as="image" />
     <link rel="preload" href="./assets/kira-chamber.webp" as="image" />
     <link rel="preload" href="./assets/kira-mouth-interior.webp" as="image" />
-    <link rel="stylesheet" href="./style.css?v=open-22" />
+    <link rel="stylesheet" href="./style.css?v=open-24" />
   </head>
   <body>
     <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -68,6 +68,13 @@
         <button id="nav-gear" class="top-icon" type="button" aria-label="Open settings" title="Settings" data-i18n-aria-label="Open settings" data-i18n-title="Settings"><svg class="icon"><use href="#i-settings" /></svg></button>
         <button id="nav-power" class="top-icon" type="button" aria-label="Power" title="Power" data-i18n-aria-label="Power" data-i18n-title="Power"><svg class="icon"><use href="#i-power" /></svg></button>
       </div>
+      <nav class="top-nav" aria-label="Primary sections" data-i18n-aria-label="Primary sections">
+        <button type="button" data-topnav="nav-home" data-i18n="HOME">HOME</button>
+        <button type="button" data-topnav="nav-agents" data-i18n="AGENTS">AGENTS</button>
+        <button type="button" data-topnav="nav-files" data-i18n="FILES">FILES</button>
+        <button type="button" data-topnav="nav-tools" data-i18n="TOOLS">TOOLS</button>
+        <button type="button" data-topnav="nav-settings" data-i18n="SETTINGS">SETTINGS</button>
+      </nav>
     </header>
 
     <main id="hud" aria-label="KIRA command center interface" data-i18n-aria-label="KIRA command center interface">
@@ -113,22 +120,17 @@
               <h2 id="agents-heading"><svg class="icon"><use href="#i-nodes" /></svg><span data-i18n="AGENTS">AGENTS</span></h2>
               <button id="add-agent" class="chip-button" type="button" data-i18n="ADD">ADD</button>
             </div>
-            <div class="agents-list" id="agents-list">
-              <button type="button" class="agent-row" data-prompt="analyse "<b class="chev">›</b><span class="agent-ico"><svg class="icon"><use href="#i-data" /></svg></span><span class="agent-id"><b data-i18n="Data Analyst">Data Analyst</b><small data-i18n="Analysis & reports">Analysis & reports</small></span><span class="agent-state"><i class="online-dot"></i><span data-i18n="ONLINE">ONLINE</span></span></button>
-              <button type="button" class="agent-row" data-command="open chrome"<b class="chev">›</b><span class="agent-ico"><svg class="icon"><use href="#i-code" /></svg></span><span class="agent-id"><b data-i18n="Web Developer">Web Developer</b><small data-i18n="Sites & applications">Sites & applications</small></span><span class="agent-state"><i class="online-dot"></i><span data-i18n="ONLINE">ONLINE</span></span></button>
-              <button type="button" class="agent-row" data-prompt="écris "<b class="chev">›</b><span class="agent-ico"><svg class="icon"><use href="#i-pen" /></svg></span><span class="agent-id"><b data-i18n="Content Creator">Content Creator</b><small data-i18n="Media & networks">Media & networks</small></span><span class="agent-state"><i class="online-dot"></i><span data-i18n="ONLINE">ONLINE</span></span></button>
-              <button type="button" class="agent-row" data-command="system info"<b class="chev">›</b><span class="agent-ico"><svg class="icon"><use href="#i-settings" /></svg></span><span class="agent-id"><b data-i18n="System Manager">System Manager</b><small data-i18n="System & maintenance">System & maintenance</small></span><span class="agent-state"><i class="online-dot"></i><span data-i18n="ONLINE">ONLINE</span></span></button>
-              <button type="button" class="agent-row" data-prompt="search for "<b class="chev">›</b><span class="agent-ico"><svg class="icon"><use href="#i-search" /></svg></span><span class="agent-id"><b data-i18n="Research Agent">Research Agent</b><small data-i18n="Information research">Information research</small></span><span class="agent-state"><i class="online-dot"></i><span data-i18n="ONLINE">ONLINE</span></span></button>
-              <button type="button" class="agent-row" data-dialog="tasks"<b class="chev">›</b><span class="agent-ico"><svg class="icon"><use href="#i-nodes" /></svg></span><span class="agent-id"><b data-i18n="Automation Agent">Automation Agent</b><small data-i18n="Task execution">Task execution</small></span><span class="agent-state"><i class="online-dot"></i><span data-i18n="ONLINE">ONLINE</span></span></button>
-            </div>
+            <div class="agents-list" id="agents-list"></div>
           </div>
         </section>
       </div>
 
       <section class="neural-stage" aria-label="KIRA holographic neural projection" data-i18n-aria-label="KIRA holographic neural projection">
-        <div class="stage-topline"><span><i class="tiny-light"></i> <span data-i18n="NEURAL COMPUTER AGENT">NEURAL COMPUTER AGENT</span></span><span id="ui-build">COMMAND CENTER 01 / OPEN 22</span></div>
+        <div class="stage-topline"><span><i class="tiny-light"></i> <span data-i18n="NEURAL COMPUTER AGENT">NEURAL COMPUTER AGENT</span></span><span id="ui-build">COMMAND CENTER 01 / OPEN 24</span></div>
 
         <div class="hologram" id="hologram">
+          <div class="core-title" aria-hidden="true"><span class="core-title-name">KIRA</span><span class="core-title-sub" data-i18n="CENTRAL INTELLIGENCE">CENTRAL INTELLIGENCE</span></div>
+          <svg class="agent-links" id="agent-links" aria-hidden="true"></svg>
           <div class="halo-glow"></div>
           <div class="halo" id="halo">
             <img class="reticle reticle-outer" src="./assets/reticle.svg" alt="" />
@@ -151,17 +153,11 @@
           <div class="grand-ring" aria-hidden="true"></div>
           <div class="crown-ring" aria-hidden="true"></div>
           <div class="light-rays" aria-hidden="true"></div>
+          <div class="core-orb" aria-hidden="true"></div>
           <div class="projection-beam" aria-hidden="true"></div>
           <div class="hologram-platform" aria-hidden="true"><img src="./assets/projector.svg" alt="" /><div class="projector-light"></div></div>
-          <div class="agent-cards" aria-hidden="false">
-            <button type="button" class="agent-chip chip-a" data-prompt="analyse "><span class="agent-ico"><svg class="icon"><use href="#i-data" /></svg></span><span data-i18n="Data Analyst">Data Analyst</span></button>
-            <button type="button" class="agent-chip chip-b" data-command="open chrome"><span class="agent-ico"><svg class="icon"><use href="#i-code" /></svg></span><span data-i18n="Web Developer">Web Developer</span></button>
-            <button type="button" class="agent-chip chip-c" data-prompt="écris "><span class="agent-ico"><svg class="icon"><use href="#i-pen" /></svg></span><span data-i18n="Content Creator">Content Creator</span></button>
-            <button type="button" class="agent-chip chip-d" data-prompt="cherche "><span class="agent-ico"><svg class="icon"><use href="#i-search" /></svg></span><span data-i18n="Research Agent">Research Agent</span></button>
-            <button type="button" class="agent-chip chip-e" data-command="system info"><span class="agent-ico"><svg class="icon"><use href="#i-settings" /></svg></span><span data-i18n="System Manager">System Manager</span></button>
-            <button type="button" class="agent-chip chip-f" data-dialog="tasks"><span class="agent-ico"><svg class="icon"><use href="#i-nodes" /></svg></span><span data-i18n="Automation Agent">Automation Agent</span></button>
+          <div class="agent-cards" aria-hidden="false"></div>
           </div>
-        </div>
         <div class="core-caption"><span class="caption-line"></span><span>KIRA <b>//</b> <span data-i18n="AI COMMAND CENTER">AI COMMAND CENTER</span></span><span class="caption-line"></span></div>
         <div class="stage-status"><span class="status-pill" id="connection-pill"><i class="status-dot"></i><span id="status-text" data-i18n="CONNECTING">CONNECTING</span></span><span class="stage-status-detail" data-i18n="AWAITING YOUR COMMAND">AWAITING YOUR COMMAND</span></div>
       </section>
@@ -209,12 +205,7 @@
             </div>
 <section class="agent-activity" aria-labelledby="agent-activity-heading">
               <div class="panel-heading compact"><h3 id="agent-activity-heading" data-i18n="AGENT ACTIVITY">AGENT ACTIVITY</h3><button type="button" class="link-button" data-dialog="tasks" data-i18n="SEE ALL">SEE ALL</button></div>
-              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-settings" /></svg><span class="agent-who-text"><b data-i18n="System Manager">System Manager</b><small id="agent-sub-system">—</small></span></span><div class="agent-meter"><span id="agent-bar-system"></span></div><strong id="agent-val-system">—</strong></div>
-              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-data" /></svg><span class="agent-who-text"><b data-i18n="Data Analyst">Data Analyst</b><small id="agent-sub-data">—</small></span></span><div class="agent-meter"><span id="agent-bar-data"></span></div><strong id="agent-val-data">—</strong></div>
-              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-search" /></svg><span class="agent-who-text"><b data-i18n="Research Agent">Research Agent</b><small id="agent-sub-research">—</small></span></span><div class="agent-meter"><span id="agent-bar-research"></span></div><strong id="agent-val-research">—</strong></div>
-              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-code" /></svg><span class="agent-who-text"><b data-i18n="Web Developer">Web Developer</b><small id="agent-sub-web">—</small></span></span><div class="agent-meter"><span id="agent-bar-web"></span></div><strong id="agent-val-web">—</strong></div>
-              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-pen" /></svg><span class="agent-who-text"><b data-i18n="Content Creator">Content Creator</b><small id="agent-sub-content">—</small></span></span><div class="agent-meter"><span id="agent-bar-content"></span></div><strong id="agent-val-content">—</strong></div>
-              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-nodes" /></svg><span class="agent-who-text"><b data-i18n="Automation Agent">Automation Agent</b><small id="agent-sub-automation">—</small></span></span><div class="agent-meter"><span id="agent-bar-automation"></span></div><strong id="agent-val-automation">—</strong></div>
+              <div id="agent-meters"></div>
               <p class="section-note" id="agent-activity-summary">—</p>
             </section>
 
@@ -300,6 +291,6 @@
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
     <noscript><div class="noscript-notice" data-i18n="Enable JavaScript to connect to KIRA and use the command interface.">Enable JavaScript to connect to KIRA and use the command interface.</div></noscript>
-    <script type="module" src="./app.js?v=open-22"></script>
+    <script type="module" src="./app.js?v=open-24"></script>
   </body>
 </html>

@@ -1,4 +1,5 @@
 import { I18n, UI_LANGUAGES, interfaceLanguage } from "./i18n.mjs";
+import { AGENTS, delegateFor } from "./agents.mjs";
 import { speechLocale, baseLanguage, FALLBACK_LANGUAGES, VOICE_SAMPLES } from "./locale.mjs";
 import { SpeechPlayer } from "./speech.mjs?v=open-19";
 import { lipDemoPose } from "./lips.mjs";
@@ -58,21 +59,25 @@ function drawSpark(key) {
   line.setAttribute("points", points);
 }
 
+const AGENT_METRICS = {
+  cpu: () => sessionActivity.cpu,
+  memory: () => sessionActivity.memory,
+  searches: () => Math.min(100, sessionActivity.searches * 25),
+  opens: () => Math.min(100, sessionActivity.opens * 30),
+  voice: () => (sessionActivity.voice ? 100 : 0),
+  tasks: () => Math.min(100, sessionActivity.tasks * 25),
+};
+
 function updateAgentActivity() {
-  const values = {
-    system: sessionActivity.cpu,
-    data: sessionActivity.memory,
-    research: Math.min(100, sessionActivity.searches * 25),
-    web: Math.min(100, sessionActivity.opens * 30),
-    content: sessionActivity.voice ? 100 : 0,
-    automation: Math.min(100, sessionActivity.tasks * 25),
-  };
-  for (const [name, value] of Object.entries(values)) {
-    const bar = $(`agent-bar-${name}`);
+  for (const agent of AGENTS) {
+    const bar = $(`agent-bar-${agent.id}`);
     if (!bar) continue;
+    const value = AGENT_METRICS[agent.metric] ? AGENT_METRICS[agent.metric]() : null;
     const valid = typeof value === "number" && Number.isFinite(value);
     bar.style.width = valid ? `${Math.max(2, Math.min(100, value))}%` : "0";
-    writeText(`agent-val-${name}`, valid ? `${Math.round(value)}%` : "—");
+    writeText(`agent-val-${agent.id}`, valid ? `${Math.round(value)}%` : "—");
+    const line = document.querySelector(`.agent-link[data-agent="${agent.id}"]`);
+    if (line) line.classList.toggle("hot", valid && value > 0);
   }
 }
 
@@ -414,6 +419,17 @@ async function sendCommand(text, { shortcut = false } = {}) {
   updateAgentActivity();
   const thinking = addMessage("KIRA", t("Processing your request…"));
   thinking.classList.add("thinking");
+  const delegatedId = delegateFor(text);
+  if (delegatedId) {
+    const agentDef = AGENTS.find((agent) => agent.id === delegatedId);
+    if (agentDef) {
+      thinking.classList.add("orch");
+      const flow = document.createElement("p");
+      flow.className = "orch-flow";
+      flow.innerHTML = `<svg class="icon" aria-hidden="true"><use href="#${agentDef.icon}" /></svg><b>KIRA → ${t(agentDef.name)}</b><span class="orch-state"><i></i>${t("WORKING")}</span>`;
+      thinking.querySelector(".message-content").appendChild(flow);
+    }
+  }
   const started = performance.now();
   try {
     const revision = languageRevision;
@@ -778,6 +794,89 @@ function openPanel(name) {
   if (name === "diagnostics") updateStatus();
 }
 document.querySelectorAll("[data-dialog]").forEach((button) => button.addEventListener("click", () => openPanel(button.dataset.dialog)));
+
+// Agent modules are rendered from the ui/agents.mjs registry: adding an
+// agent later means adding one configuration entry, not new UI code.
+function wireAgentButton(button) {
+  if (button.dataset.command) button.addEventListener("click", () => {
+    if (commandPending) return notify(t("KIRA is still processing your previous command."));
+    sendCommand(button.dataset.command, { shortcut: true });
+  });
+  if (button.dataset.prompt) button.addEventListener("click", () => {
+    $("command").value = button.dataset.prompt;
+    $("command").focus();
+    $("command").scrollIntoView({ block: "nearest" });
+  });
+  if (button.dataset.dialog) button.addEventListener("click", () => openPanel(button.dataset.dialog));
+}
+
+function renderAgents() {
+  const list = $("agents-list");
+  const cards = document.querySelector(".agent-cards");
+  const meters = $("agent-meters");
+  if (!list || !cards || !meters) return;
+  list.replaceChildren(); cards.replaceChildren(); meters.replaceChildren();
+  for (const agent of AGENTS) {
+    const attrs = agent.action.prompt ? `data-prompt="${agent.action.prompt}"`
+      : agent.action.command ? `data-command="${agent.action.command}"`
+      : `data-dialog="${agent.action.dialog}"`;
+    const row = document.createElement("button");
+    row.type = "button"; row.className = "agent-row"; row.setAttribute("attrs", "");
+    row.innerHTML = `<b class="chev">›</b><span class="agent-ico"><svg class="icon"><use href="#${agent.icon}" /></svg></span><span class="agent-id"><b>${t(agent.name)}</b><small>${t(agent.description)}</small></span><span class="agent-state"><i class="online-dot"></i><span>${t("ONLINE")}</span></span>`;
+    Object.entries(agent.action).forEach(([k, v]) => { row.dataset[k] = v; });
+    list.appendChild(row); wireAgentButton(row);
+
+    const chip = document.createElement("button");
+    chip.type = "button"; chip.className = `agent-chip chip-${agent.chip}`;
+    const chipAction = agent.chipAction || agent.action;
+    Object.entries(chipAction).forEach(([k, v]) => { chip.dataset[k] = v; });
+    chip.innerHTML = `<span class="agent-ico"><svg class="icon"><use href="#${agent.icon}" /></svg></span><span>${t(agent.name)}</span>`;
+    cards.appendChild(chip); wireAgentButton(chip);
+
+    const meter = document.createElement("div");
+    meter.className = "agent-meter-row";
+    meter.innerHTML = `<span class="agent-who"><svg class="icon"><use href="#${agent.icon}" /></svg><span class="agent-who-text"><b>${t(agent.name)}</b><small id="agent-sub-${agent.id}">—</small></span></span><div class="agent-meter"><span id="agent-bar-${agent.id}"></span></div><strong id="agent-val-${agent.id}">—</strong>`;
+    meters.appendChild(meter);
+  }
+  drawAgentLinks();
+  updateAgentActivity();
+}
+
+function drawAgentLinks() {
+  const stage = $(".hologram") || document.querySelector(".hologram");
+  const svg = $("agent-links");
+  if (!stage || !svg || typeof stage.getBoundingClientRect !== "function") return;
+  const box = stage.getBoundingClientRect();
+  if (!box || !box.width) return;
+  svg.setAttribute("viewBox", `0 0 ${Math.round(box.width)} ${Math.round(box.height)}`);
+  svg.replaceChildren();
+  const cx = box.width / 2, cy = box.height * 0.42;
+  for (const agent of AGENTS) {
+    const chip = document.querySelector(`.agent-chip.chip-${agent.chip}`);
+    if (!chip) continue;
+    const b = chip.getBoundingClientRect();
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", cx); line.setAttribute("y1", cy);
+    line.setAttribute("x2", b.left - box.left + b.width / 2);
+    line.setAttribute("y2", b.top - box.top + b.height / 2);
+    line.classList.add("agent-link");
+    line.dataset.agent = agent.id;
+    svg.appendChild(line);
+    const node = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    node.setAttribute("cx", b.left - box.left + b.width / 2);
+    node.setAttribute("cy", b.top - box.top + b.height / 2);
+    node.setAttribute("r", 2.4);
+    node.classList.add("agent-node");
+    svg.appendChild(node);
+  }
+}
+window.addEventListener("resize", drawAgentLinks);
+window.addEventListener("load", drawAgentLinks);
+document.querySelectorAll("[data-topnav]").forEach((button) => button.addEventListener("click", () => {
+  const target = $(button.dataset.topnav);
+  if (target) target.click();
+}));
+renderAgents();
 $("close-dialog").addEventListener("click", () => $("system-dialog").close());
 $("system-dialog").addEventListener("click", (event) => {
   if (event.target !== $("system-dialog")) return;

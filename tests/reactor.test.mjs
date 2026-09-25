@@ -7,6 +7,7 @@ import { speechLocale, baseLanguage, FALLBACK_LANGUAGES, VOICE_SAMPLES } from ".
 import { SpeechPlayer } from "../ui/speech.mjs";
 import { Hologram, projectionFrame, waveformPath } from "../ui/hologram.mjs";
 import { lipDemoPose } from "../ui/lips.mjs";
+import { AGENTS, delegateFor } from "../ui/agents.mjs";
 import { playerRig } from "./support/speech-fakes.mjs";
 
 // Run the actual cockpit controller with DOM/audio doubles. Rendering now uses
@@ -67,7 +68,7 @@ function appRig(options = {}) {
     addEventListener(name, callback) { listeners.set(`document:${name}`, callback); },
   };
   const context = vm.createContext({
-    ...rig.env, Hologram, lipDemoPose, I18n, UI_LANGUAGES, interfaceLanguage, speechLocale, baseLanguage, FALLBACK_LANGUAGES, VOICE_SAMPLES,
+    ...rig.env, Hologram, lipDemoPose, I18n, UI_LANGUAGES, interfaceLanguage, speechLocale, baseLanguage, FALLBACK_LANGUAGES, VOICE_SAMPLES, AGENTS, delegateFor,
     SpeechPlayer: class extends SpeechPlayer {
       constructor(options) { super({ ...options, env: rig.env }); }
     },
