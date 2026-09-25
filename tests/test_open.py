@@ -867,7 +867,8 @@ class FindOpenParseTests(unittest.TestCase):
 
     def test_bare_find_whole_pc_and_polite_forms(self):
         self.assertEqual(self.parse("cherche le dossier dell"), {"action": "open_folder", "target": "dell"})
-        self.assertEqual(self.parse("cherche dell dans le c"), {"action": "open_folder", "target": "dell", "parent": "c"})
+        self.assertEqual(self.parse("cherche dell dans le c"),
+                         {"action": "open_folder", "target": "dell", "parent": "c", "any_kind": True})
         self.assertEqual(self.parse("peux-tu chercher le dossier dell dans le local c"),
                          {"action": "open_folder", "target": "dell", "parent": "c"})
         self.assertEqual(self.parse("find the dell folder on my pc"), {"action": "open_folder", "target": "dell"})
@@ -1077,7 +1078,8 @@ class BreadthFirstSearchTests(unittest.TestCase):
     def test_open_all_cap_is_twenty(self):
         source = (ROOT / "kira_voice_agent.py").read_text()
         self.assertIn("for path in matches[:20]:", source)
-        self.assertIn("kira_open.folder_matches(target, parent=parent, limit=20)", source)
+        self.assertIn("kira_open.folder_matches(target, parent=parent, limit=20,\n"
+                      "                                            direct_only=not full_list)", source)
 
 
 class ScopeOrderTests(unittest.TestCase):
@@ -1108,3 +1110,109 @@ class ScopeOrderTests(unittest.TestCase):
 
     def test_diagnostic_helper_exists(self):
         self.assertTrue((ROOT / "voir_action.py").exists())
+
+
+class ContainsSearchTests(unittest.TestCase):
+    """« Je cherche dell, je sais qu'il est dans le C mais pas dans quel
+    dossier » : KIRA liste tout ce qui contient le mot (dossiers + fichiers,
+    fautes comprises), l'utilisateur choisit un numéro, KIRA ouvre
+    exactement cet emplacement."""
+
+    def setUp(self):
+        commands.clear_pending_open()
+        self.drive_c = tempfile.mkdtemp()
+        for sub in ["dell", "programme/dell", "mm/dell", "dell sauvegarde"]:
+            Path(self.drive_c, sub).mkdir(parents=True)
+        Path(self.drive_c, "documents").mkdir(parents=True)
+        (Path(self.drive_c, "documents") / "dell prix.txt").write_text("x", encoding="utf-8")
+        Path(self.drive_c, "autre").mkdir()
+        (Path(self.drive_c, "autre") / "rapport.txt").write_text("x", encoding="utf-8")
+        self.opened = []
+        backend = SimpleNamespace(
+            normalize_command=lambda text: text,
+            parse_simple_command=lambda text: kira_open.parse_open_command(text),
+            execute_action=lambda data: self._execute(data),
+            build_reply=lambda language, name, target: f"J'ouvre {target}.",
+            resolve_open_matches=lambda parsed: (
+                None if (parsed["action"] == "open_folder"
+                         and (kira_open.fold(parsed["target"]) in kira_open.FOLDER_ALIASES
+                              or kira_open.parse_drive(parsed["target"])))
+                else (kira_open.mixed_matches(parsed["target"], parent=parsed.get("parent"), limit=20)
+                      if parsed.get("any_kind")
+                      else (kira_open.folder_matches(parsed["target"], parent=parsed.get("parent"),
+                                                     direct_only=not parsed.get("all"))
+                            if parsed["action"] == "open_folder"
+                            else kira_open.file_matches(parsed["target"], parent=parsed.get("parent"))))
+            ),
+        )
+        self.backend = backend
+        patcher = patch.object(kira_open, "resolve_parent_dir",
+                               lambda parent, base_home=None: self.drive_c if kira_open.fold(parent) == "c" else None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self._cleanup)
+        self.addCleanup(commands.clear_pending_open)
+
+    def _cleanup(self):
+        shutil.rmtree(self.drive_c, ignore_errors=True)
+
+    def _execute(self, data):
+        if data.get("all"):
+            matches = data.get("candidates")
+            if not (isinstance(matches, list) and matches):
+                matches = []
+            for path in matches[:20]:
+                self.opened.append(path)
+            return len(matches[:20])
+        self.opened.append(data.get("target"))
+        return True
+
+    def tearDown(self):
+        commands.clear_pending_open()
+
+    def test_bare_search_lists_everything_then_opens_the_choice(self):
+        result = commands.process_command(self.backend, "cherche dell dans le c", reply_language="fr")
+        self.assertTrue(result["needs_choice"])
+        self.assertNotEqual(result.get("action"), "chat")
+        labels = [path.replace(self.drive_c + "/", "") for path in result["candidates"]]
+        self.assertEqual(labels, ["dell", "mm/dell", "programme/dell",
+                                  "dell sauvegarde", "documents/dell prix.txt"])
+        picked = commands.process_command(self.backend, "3", reply_language="fr")
+        self.assertTrue(picked["success"])
+        self.assertEqual(self.opened, [str(Path(self.drive_c, "programme/dell"))])
+
+    def test_plural_contains_opens_all_folders_without_the_file(self):
+        result = commands.process_command(
+            self.backend,
+            "cherche tous les dossiers qui contiennent le mot dell dans le c",
+            reply_language="fr")
+        self.assertTrue(result["success"])
+        self.assertEqual(sorted(self.opened),
+                         sorted([str(Path(self.drive_c, "dell")),
+                                 str(Path(self.drive_c, "mm/dell")),
+                                 str(Path(self.drive_c, "programme/dell")),
+                                 str(Path(self.drive_c, "dell sauvegarde"))]))
+
+    def test_a_typo_in_the_name_still_finds(self):
+        result = commands.process_command(self.backend, "cherche le dossier delll dans le c", reply_language="fr")
+        self.assertTrue(result["needs_choice"])
+        self.assertGreaterEqual(len(result["candidates"]), 3)
+
+    def test_named_noun_direct_child_still_opens_fast(self):
+        result = commands.process_command(self.backend, "cherche le dossier dell dans le c", reply_language="fr")
+        self.assertFalse(result.get("needs_choice", False))
+        self.assertEqual(self.opened, [str(Path(self.drive_c, "dell"))])
+
+    def test_mixed_matches_return_both_kinds(self):
+        found = kira_open.mixed_matches("dell", parent="c", limit=20)
+        kinds = {("folder" if path.endswith(("dell", "sauvegarde")) else "file") for path in found}
+        self.assertIn("folder", kinds)
+        self.assertIn("file", kinds)
+        self.assertLess(found.index(str(Path(self.drive_c, "dell"))),
+                        found.index(str(Path(self.drive_c, "documents/dell prix.txt"))))
+
+    def test_contient_phrases_are_understood(self):
+        self.assertEqual(kira_open.parse_open_command("cherche tous les dossiers qui contiennent le mot dell"),
+                         {"action": "open_folder", "target": "dell", "all": True})
+        self.assertEqual(kira_open.parse_open_command("find folders containing dell"),
+                         {"action": "open_folder", "target": "dell", "all": True})

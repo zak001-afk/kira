@@ -1,5 +1,19 @@
 # KIRA Changelog
 
+## Unreleased — "find everything containing dell, I'll choose" (OPEN 15)
+
+- The scenario "I know it's on C: but not in which folder": a bare search
+  ("cherche dell dans le c") now lists **everything containing the word** —
+  C:\dell, programme\dell, mm\dell, "dell sauvegarde" AND files like
+  "dell prix.txt" — folders first, then files. You answer with the number
+  and KIRA opens exactly that location (or "tous", or you do it yourself).
+- "qui contient le mot dell" / "containing dell" phrases understood.
+- A bare name (no "dossier"/"fichier" noun) searches both kinds at once.
+- Typos in the name are tolerated: "delll", "delle", "dall" still find the
+  dell folders (approximate matching).
+- A named singular request keeps its fast path ("cherche le dossier dell
+  dans le c" opens the direct child directly).
+
 ## Unreleased — the place can come first (OPEN 14)
 
 - "cherche dans le C les dossiers dell" (place before the name, the natural

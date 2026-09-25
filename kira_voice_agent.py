@@ -2203,7 +2203,11 @@ def resolve_open_matches(action_data):
         if action == "open_folder":
             if kira_open.fold(target) in kira_open.FOLDER_ALIASES or kira_open.parse_drive(target):
                 return None
-            return kira_open.folder_matches(target, parent=parent, limit=20)
+            full_list = bool(action_data.get("any_kind") or action_data.get("all"))
+            if action_data.get("any_kind"):
+                return kira_open.mixed_matches(target, parent=parent, limit=20)
+            return kira_open.folder_matches(target, parent=parent, limit=20,
+                                            direct_only=not full_list)
     except Exception:
         logging.exception("resolve_open_matches failed")
     return []
@@ -2453,7 +2457,11 @@ def execute_action(action_data):
         return opened
 
     if action == "open_folder":
-        return open_folder(str(action_data.get("target", "")), parent=action_data.get("parent"))
+        target = str(action_data.get("target", "")).strip()
+        if action_data.get("any_kind") and target and os.path.exists(target):
+            # Mixed search: the picked candidate may be a file or a folder.
+            return kira_open.open_path(target)
+        return open_folder(target, parent=action_data.get("parent"))
 
     if action == "open_file":
         return open_file(str(action_data.get("target", "")), parent=action_data.get("parent"))

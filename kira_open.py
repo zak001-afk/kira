@@ -22,6 +22,7 @@ import unicodedata
 import webbrowser
 from pathlib import Path
 from collections import deque
+import difflib
 from urllib.parse import quote_plus
 
 # ─────────────────────────────────────────────
@@ -644,7 +645,8 @@ def find_file_matches(name, search_dirs=None, max_entries=50000, time_budget=4.0
         for entry in files:
             scanned += 1
             if scanned > max_entries or (scanned % 256 == 0 and time.monotonic() > deadline):
-                return (sorted(exact) or [path for _score, path in sorted(scored, reverse=True)])[:limit]
+                scored_paths = [path for _score, path in sorted(scored, key=lambda item: (-item[0], item[1]))]
+                return (sorted(exact) + scored_paths)[:limit]
             label = fold(entry)
             stem = label.rsplit(".", 1)[0] if "." in label else label
             found = os.path.join(root, entry)
@@ -658,12 +660,17 @@ def find_file_matches(name, search_dirs=None, max_entries=50000, time_budget=4.0
                 score = 90
             elif stem.startswith(wanted) and len(wanted) >= 2:
                 score = 70 - depth
-            elif wanted in label and len(wanted) >= 4:
+            elif wanted in label and len(wanted) >= 3:
                 score = 50 - depth
+            if score == 0 and len(wanted) >= 3:
+                ratio = difflib.SequenceMatcher(None, label, wanted).ratio()
+                if ratio >= 0.75:  # typos: "delll", "delle", "dall"...
+                    score = int(ratio * 60)
             if score > 0:
                 scored.append((score, found))
-    if exact:
-        return sorted(exact)[:limit]
+    if exact or scored:
+        scored_paths = [path for _score, path in sorted(scored, key=lambda item: (-item[0], item[1]))]
+        return (sorted(exact) + scored_paths)[:limit]
     return [path for _score, path in sorted(scored, key=lambda item: (-item[0], item[1]))][:limit]
 
 
@@ -686,7 +693,8 @@ def find_folder_matches(name, search_dirs=None, max_entries=40000, time_budget=2
     for directory, subdirs, _files, _depth in _walk_bfs(folders, prune_system):
         scanned += 1
         if scanned > max_entries or (scanned % 256 == 0 and time.monotonic() > deadline):
-            return (sorted(exact) or [path for _score, path in sorted(scored, key=lambda item: (-item[0], item[1]))])[:limit]
+            scored_paths = [path for _score, path in sorted(scored, key=lambda item: (-item[0], item[1]))]
+            return (sorted(exact) + scored_paths)[:limit]
         for entry in subdirs:
             label = fold(entry)
             found = os.path.join(directory, entry)
@@ -700,12 +708,17 @@ def find_folder_matches(name, search_dirs=None, max_entries=40000, time_budget=2
                 score = 80 - len(label)
             elif wanted.startswith(label) and len(label) >= 3:
                 score = 65 - len(label)
-            elif wanted in label and len(wanted) >= 4:
+            elif wanted in label and len(wanted) >= 3:
                 score = 50 - len(label)
+            if score == 0 and len(wanted) >= 3:
+                ratio = difflib.SequenceMatcher(None, label, wanted).ratio()
+                if ratio >= 0.75:  # typos: "delll", "delle", "dall"...
+                    score = int(ratio * 60)
             if score > 0:
                 scored.append((score, found))
-    if exact:
-        return sorted(exact)[:limit]
+    if exact or scored:
+        scored_paths = [path for _score, path in sorted(scored, key=lambda item: (-item[0], item[1]))]
+        return (sorted(exact) + scored_paths)[:limit]
     return [path for _score, path in sorted(scored, key=lambda item: (-item[0], item[1]))][:limit]
 
 
@@ -991,15 +1004,21 @@ def file_matches(name, parent=None, base_home=None, limit=10, deep_always=True):
     return matches[:limit]
 
 
-def folder_matches(name, parent=None, base_home=None, limit=10, deep_always=True):
-    """Every matching folder on the PC (same policy as file_matches)."""
+def folder_matches(name, parent=None, base_home=None, limit=10, deep_always=True,
+                   direct_only=True):
+    """Every matching folder on the PC (same policy as file_matches).
+
+    direct_only: when the requested folder is a direct child of the named
+    place, return it immediately. A full listing request ("cherche dell
+    dans le c", "tous les dossiers qui contiennent…") passes False so the
+    user sees every match, not just the first one."""
     if len(fold(strip_leading_words(name))) < 2:
         return []
     if parent:
         parent_dir = resolve_parent_dir(parent, base_home)
         if parent_dir:
             direct = os.path.join(parent_dir, strip_leading_words(name))
-            if os.path.isdir(direct):
+            if direct_only and os.path.isdir(direct):
                 return [direct]
             is_root = len(parent_dir) <= 3
             return find_folder_matches(name, search_dirs=[parent_dir], limit=limit,
@@ -1019,6 +1038,22 @@ def folder_matches(name, parent=None, base_home=None, limit=10, deep_always=True
             if len(matches) >= limit:
                 break
     return matches[:limit]
+
+
+def mixed_matches(name, parent=None, base_home=None, limit=20, deep_always=True):
+    """Folders AND files whose name contains the words, for a bare search
+    like "cherche dell dans le c": the user does not know (or care) which
+    kind it is. Exact-name matches come first; both kinds stay visible."""
+    folders = folder_matches(name, parent=parent, base_home=base_home,
+                             limit=limit, deep_always=deep_always, direct_only=False)
+    files = file_matches(name, parent=parent, base_home=base_home,
+                         limit=limit, deep_always=deep_always)
+    if not files:
+        return folders[:limit]
+    if not folders:
+        return files[:limit]
+    file_cap = max(1, limit // 2)
+    return folders[:limit - file_cap] + files[:file_cap]
 
 
 def open_folder(target, base_home=None, parent=None):
@@ -1401,6 +1436,12 @@ NAMED_PHRASES = (
     "portant le nom de ", "portant le nom d'", "portant le nom ",
     "dont le nom est ", "nommé ", "nommée ", "nommés ", "nommées ",
     "appelé ", "appelée ", "appelés ", "appelées ",
+    "qui contient le mot ", "qui contient les mots ", "qui contient le texte ",
+    "qui contiennent le mot ", "contenant le mot ", "contenant les mots ",
+    "contient le mot ", "contiennent le mot ", "contient le texte ",
+    "qui contient ", "qui contiennent ", "contenant ", "contient ",
+    "containing the word ", "that contains the word ", "with the word ",
+    "containing ", "that contains ", "that contain ",
     "named ", "called ", "المسمى ", "التي تحمل اسم ", "الذي يحمل اسم ",
 )
 
@@ -1577,9 +1618,11 @@ def parse_find_command(text):
         return None
     if kind is None and not parent and not had_named:
         return None  # a generic search/question, not a local find
+    action = {"action": "open_folder" if kind != "file" else "open_file", "target": name}
     if kind is None:
-        kind = "file" if "." in name else "folder"
-    action = {"action": "open_folder" if kind == "folder" else "open_file", "target": name}
+        # No noun said: search folders AND files ("cherche dell dans le c"),
+        # the user does not know which kind it is.
+        action["any_kind"] = True
     if parent:
         action["parent"] = parent
     if plural:

@@ -143,6 +143,9 @@ build_kira.bat
   place can be said first: "cherche dans le c les dossiers dell" searches
   C: exactly. Run `python voir_action.py <phrase>` to see the parsed
   action for any sentence.
+- A bare "cherche dell dans le c" lists everything containing the word —
+  folders AND files, typos tolerated ("delll", "dalle") — numbered; answer
+  with the number to open that exact location, or "tous" to open all.
 - "Ouvre tous les rapports" / "open all reports" opens every match at once.
 - "Ouvre le dossier projets" finds a folder by name on the PC; a bare
   "open folder" opens Documents. Nested requests work: "ouvre le dossier

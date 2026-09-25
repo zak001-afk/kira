@@ -126,9 +126,15 @@ _CHOICE_PREFIXES = ("le", "la", "les", "num", "numero", "n", "no", "the", "numbe
 _ALL_WORDS = {"tous", "toutes", "tout", "all", "كل", "جميع"}
 
 
-def set_pending_open(action, paths, name=""):
+def set_pending_open(action, paths, name="", extra=None):
     global _PENDING_OPEN
-    _PENDING_OPEN = {"action": action, "paths": list(paths), "name": name, "time": _time.monotonic()}
+    _PENDING_OPEN = {"action": action, "paths": list(paths), "name": name,
+                     "extra": dict(extra or {}), "time": _time.monotonic()}
+
+
+def _parsed_extra(parsed):
+    """Parsing flags that must survive into the later choice/execution."""
+    return {key: parsed[key] for key in ("any_kind",) if key in parsed}
 
 
 def clear_pending_open():
@@ -171,12 +177,13 @@ def _shorten_path(path):
     return path.replace(home, "~", 1) if home and path.startswith(home) else path
 
 
-def _open_all(backend, action, paths, language, metadata):
+def _open_all(backend, action, paths, language, metadata, extra=None):
     clear_pending_open()
     opened = 0
-    for path in paths[:10]:
+    extra = extra or {}
+    for path in paths[:20]:
         try:
-            result = backend.execute_action({"action": action, "target": path})
+            result = backend.execute_action({**extra, "action": action, "target": path})
             if type(result) is int:
                 opened += max(0, result)
             elif result:
@@ -205,12 +212,13 @@ def process_command(backend, text, reply_language="auto", previous_language=None
             clear_pending_open()
             return {"action": "none", "response": message("open_cancelled", choice.language) or message("open_cancelled", "en"), **metadata}
         if pick == "all":
-            return _open_all(backend, pending["action"], pending["paths"], choice.language, metadata)
+            return _open_all(backend, pending["action"], pending["paths"], choice.language, metadata,
+                             extra=pending.get("extra", {}))
         if isinstance(pick, int):
             path = pending["paths"][pick - 1]
             action = pending["action"]
             clear_pending_open()
-            success = bool(backend.execute_action({"action": action, "target": path}))
+            success = bool(backend.execute_action({**pending.get("extra", {}), "action": action, "target": path}))
             if success and hasattr(backend, "build_reply"):
                 reply = backend.build_reply(choice.language, action, Path(path).name)
             else:
@@ -249,13 +257,14 @@ def process_command(backend, text, reply_language="auto", previous_language=None
                 reply = message("opened_all", choice.language, count=opened) or message("opened_all", "en", count=opened)
                 return {"action": action, "success": opened > 0, "opened": opened, "response": reply, **metadata}
             if matches is not None and len(matches) > 1:
-                set_pending_open(action, matches, name=str(parsed.get("target", "")))
+                set_pending_open(action, matches, name=str(parsed.get("target", "")),
+                                 extra=_parsed_extra(parsed))
                 listed = "\n".join(f"{index}. {_shorten_path(path)}" for index, path in enumerate(matches[:8], 1))
                 reply = message("choose_open", choice.language, count=len(matches), list=listed) or message("choose_open", "en", count=len(matches), list=listed)
                 return {"action": action, "needs_choice": True, "candidates": matches[:8], "response": reply, **metadata}
             if matches is not None and len(matches) == 1:
                 # Open exactly the found path: no second scan, no ambiguity.
-                success = bool(backend.execute_action({"action": action, "target": matches[0]}))
+                success = bool(backend.execute_action({**parsed, "target": matches[0]}))
             elif matches is not None and len(matches) == 0:
                 success = False  # Already searched everywhere; fail honestly.
             else:
