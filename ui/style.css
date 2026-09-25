@@ -35,6 +35,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+.icon-library { position: absolute; width: 0; height: 0; overflow: hidden; }
 html, body { overflow-x: clip; }
 body {
   min-height: 100vh;
@@ -100,7 +101,7 @@ body {
   position: relative; z-index: 2;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(350px, 35vw) minmax(0, 1fr) minmax(320px, 29vw);
+  grid-template-columns: minmax(370px, 38.5vw) minmax(0, 1fr) minmax(320px, 26.5vw);
   gap: 14px;
   padding: 4px 18px 10px;
   align-items: stretch;

@@ -7,7 +7,7 @@ export const PORTRAIT_SIZE = Object.freeze({ width: 896, height: 1200 });
 export const MOUTH_REGION = Object.freeze({ x: 296, y: 554, width: 304, height: 224 });
 const COUNT = 32;
 const CX = 447 - MOUTH_REGION.x;
-const CY = 666 - MOUTH_REGION.y;
+const CY = 649 - MOUTH_REGION.y;
 const bounded = n => Math.min(1, Math.max(0, Number.isFinite(n) ? n : 0));
 
 export function createMouthMesh() {
@@ -19,14 +19,14 @@ export function createMouthMesh() {
       const c = Math.cos(angle), s = Math.sin(angle);
       let x, y;
       if (ring === 0) {
-        x = CX + 89 * c;
+        x = CX + 52 * c;
         y = CY - Math.cos(2 * angle) + (s < 0 ? 1.8 : 2.1) * s;
       } else if (ring === 1) {
-        x = CX + 98 * c;
-        y = CY + (s < 0 ? 35 : 39) * s + (s < 0 ? 9 * Math.exp(-((c / 0.2) ** 2)) : 0);
+        x = CX + 62 * c;
+        y = CY + (s < 0 ? 22 : 26) * s + (s < 0 ? 6 * Math.exp(-((c / 0.2) ** 2)) : 0);
       } else if (ring === 2) {
-        x = CX + 136 * c;
-        y = CY + (s < 0 ? 62 : 99) * s;
+        x = CX + 90 * c;
+        y = CY + (s < 0 ? 40 : 66) * s;
       } else {
         const dx = Math.abs(c) < 1e-6 ? Infinity : (c > 0 ? MOUTH_REGION.width - CX : -CX) / c;
         const dy = Math.abs(s) < 1e-6 ? Infinity : (s > 0 ? MOUTH_REGION.height - CY : -CY) / s;
@@ -57,7 +57,7 @@ export function deformMouth(pose, output = new Float32Array(MESH.vertices.length
       const angle = i / COUNT * Math.PI * 2;
       const s = Math.sin(angle), c = Math.cos(angle);
       const influence = [1, 0.96, 0.25, 0][ring];
-      output[index] = CX + (x - CX) * (1 + (wide * 0.15 - round * 0.32 - press * 0.015) * influence);
+      output[index] = CX + (x - CX) * (1 + (wide * 0.15 - round * 0.42 - press * 0.015) * influence);
       let dy = 0;
       if (ring <= 1) {
         dy = open * (s >= 0 ? 3 + 28 * s : (ring === 0 ? 10 : 6) * s + 3 * c * c);
@@ -144,8 +144,8 @@ export class MouthRenderer {
     for (let i = 0; i < COUNT; i++) {
       const angle = i / COUNT * Math.PI * 2, s = Math.sin(angle);
       // Coordinates in the 180 × 62 oral photograph, not the full portrait.
-      this.innerSource[i * 2] = 90 + 80 * Math.cos(angle);
-      this.innerSource[i * 2 + 1] = 30 + (s < 0 ? 20 : 25) * s;
+      this.innerSource[i * 2] = 90 + 55 * Math.cos(angle);
+      this.innerSource[i * 2 + 1] = 30 + (s < 0 ? 15 : 18) * s;
     }
     this.innerSource[COUNT * 2] = 90; this.innerSource[COUNT * 2 + 1] = 30;
     this.buildMask();
