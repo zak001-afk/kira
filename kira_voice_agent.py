@@ -457,51 +457,80 @@ def call_ollama(messages, options):
 CHAT_ANSWER_BUDGET = 5.0
 
 
-def chat_answer_with_web(command, language, ask_model, ask_web=None, budget=None):
-    """Answer within the budget (max 5 s): the local model gets ~70 % of it,
-    then a quick web lookup, then whatever the model produced meanwhile.
-    Returns (answer_or_empty, "model" | "web" | "timeout")."""
-    budget = budget or CHAT_ANSWER_BUDGET
-    started = time.monotonic()
+def _run_bounded(function, timeout):
+    """Run function() in a thread, return its result or None after timeout."""
     box = []
 
-    def _run_model():
+    def _runner():
         try:
-            box.append((ask_model(command, language),))
+            box.append((function(),))
         except Exception:
             box.append((None,))
 
-    worker = threading.Thread(target=_run_model, daemon=True)
+    worker = threading.Thread(target=_runner, daemon=True)
+    worker.start()
+    worker.join(max(0.0, timeout))
+    return box[0][0] if box and box[0] else None
+
+
+def chat_answer_with_web(command, language, ask_model, ask_web=None, synthesize=None, budget=None):
+    """Answer within the budget (max 5 s): the local model gets ~70 % of it,
+    then a quick web lookup whose raw results are REFORMULATED to answer the
+    actual question (never a bare copy-paste) while the budget holds — the
+    raw text is the fallback, then whatever the model produced meanwhile.
+    Returns (answer_or_empty, "model" | "web" | "timeout")."""
+    budget = budget or CHAT_ANSWER_BUDGET
+    deadline = time.monotonic() + budget
+    started = time.monotonic()
+    box = []
+
+    def _model():
+        try:
+            return ask_model(command, language) or None
+        except Exception:
+            return None
+
+    worker = threading.Thread(target=lambda: box.append((_model(),)), daemon=True)
     worker.start()
     worker.join(max(0.5, budget * 0.7))
     if box and box[0][0]:
         return box[0][0], "model"
     if ask_web is not None:
-        try:
-            found = ask_web(command, language)
-        except Exception:
-            found = None
+        remaining = deadline - time.monotonic()
+        found = _run_bounded(lambda: ask_web(command, language), max(0.3, remaining))
         if found:
-            return found, "web"
-    worker.join(max(0.0, budget - (time.monotonic() - started)))
+            text, payload = found if isinstance(found, tuple) else (found, None)
+            if synthesize is not None and payload:
+                remaining = deadline - time.monotonic()
+                if remaining >= 0.5:
+                    synth = _run_bounded(lambda: synthesize(command, language, payload),
+                                         remaining * 0.85)
+                    if synth:
+                        return synth, "web"
+            return text, "web"
+    worker.join(max(0.0, deadline - time.monotonic()))
     if box and box[0][0]:
         return box[0][0], "model"
     return "", "timeout"
 
 
-def _web_answer(command, language):
-    """Quick web lookup when the local model is too slow or unavailable."""
+def _web_results(command):
+    """Raw web results (top 4) for the question, or an empty list."""
     try:
         from duckduckgo_search import DDGS
     except Exception:
         try:
             from ddgs import DDGS
         except Exception:
-            return None
+            return []
     try:
-        results = DDGS(timeout=2).text(str(command), max_results=4)
+        return list(DDGS(timeout=1.5).text(str(command), max_results=4) or [])
     except Exception:
-        return None
+        return []
+
+
+def _format_web_results(results, language):
+    """Readable fallback: the found pages, one short bullet each."""
     lines = []
     for item in list(results or [])[:4]:
         title = str(item.get("title") or "").strip()
@@ -522,6 +551,60 @@ def _web_answer(command, language):
     else:
         intro = "Here is what I found on the web:\n"
     return intro + "\n".join(lines)
+
+
+def _web_answer(command, language):
+    """Quick web lookup when the local model is too slow or unavailable."""
+    return _format_web_results(_web_results(command), language)
+
+
+def _web_lookup(command, language):
+    """Formatted text AND raw results, for the reformulation stage."""
+    results = _web_results(command)
+    formatted = _format_web_results(results, language)
+    if not formatted:
+        return None
+    return formatted, results
+
+
+WEB_SYNTHESIS_PROMPTS = {
+    "fr": ("Tu es KIRA, l'assistante de l'utilisateur. Réponds en français à sa question "
+           "en t'appuyant UNIQUEMENT sur les résultats web fournis. Reformule avec tes "
+           "propre mots pour répondre exactement au besoin : 2 à 4 phrases claires et "
+           "directes, sans recopier les titres ni les liens, sans dire « voici les résultats »."),
+    "ar": ("أنت KIRA، مساعدة المستخدم. أجب بالعربية على سؤاله اعتمادًا فقط على نتائج الويب "
+           "المعطاة. أعد الصياغة بكلماتك للإجابة عن الحاجة بدقة: جملتان إلى أربع جمل واضحة "
+           "ومباشرة، دون نسخ العناوين أو الروابط."),
+    "en": ("You are KIRA, the user's assistant. Answer the question in English using ONLY "
+           "the provided web results. Reformulate in your own words to answer the actual "
+           "need: 2 to 4 clear, direct sentences, no copied titles or links, no "
+           "\u201chere are the results\u201d phrasing."),
+}
+
+
+def _synthesize_web_answer(command, language, results):
+    """Reformulate the web results into a direct answer to the question."""
+    bullets = []
+    for item in list(results or [])[:4]:
+        title = str(item.get("title") or "").strip()
+        body = str(item.get("body") or "").strip()
+        if not body:
+            continue
+        bullets.append(f"- {title}: {body}" if title else f"- {body}")
+    if not bullets:
+        return None
+    system = WEB_SYNTHESIS_PROMPTS.get(language) or WEB_SYNTHESIS_PROMPTS["en"]
+    content = f"{command}\n\n" + "\n".join(bullets)
+    try:
+        response = call_ollama(
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": content}],
+            options={"num_predict": 180, "temperature": 0.4},
+        )
+    except Exception:
+        return None
+    text = clean_chat_response(str(response.get("message", {}).get("content", "")))
+    return text or None
 
 
 def select_voice(engine, language="en"):
@@ -1825,7 +1908,8 @@ def ask_chat(command: str, language=None):
     if language == "auto":
         language = detect_language(command)
     _LAST_REPLY_LANGUAGE = language
-    answer, source = chat_answer_with_web(command, language, _ask_chat_response, _web_answer)
+    answer, source = chat_answer_with_web(command, language, _ask_chat_response,
+                                          _web_lookup, _synthesize_web_answer)
     if not str(answer or "").strip():
         answer = {
             "fr": ("Je n'ai pas eu de réponse en 5 secondes : le modèle local est lent "

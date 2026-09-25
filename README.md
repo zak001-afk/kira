@@ -148,8 +148,9 @@ build_kira.bat
   with the number to open that exact location, or "tous" to open all.
   Every search answers in 5 seconds max, whole PC included.
 - Every question is answered in 5 s max too: the local model tries first,
-  and if it is too slow KIRA answers from a quick web search (with the
-  source links) instead of making you wait.
+  and if it is too slow KIRA answers from a quick web search — reformulated
+  into a direct answer to your question, never a bare copy-paste of
+  results (the clean list with sources is only the fallback).
 - "Ouvre tous les rapports" / "open all reports" opens every match at once.
 - "Ouvre le dossier projets" finds a folder by name on the PC; a bare
   "open folder" opens Documents. Nested requests work: "ouvre le dossier

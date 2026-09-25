@@ -1,5 +1,15 @@
 # KIRA Changelog
 
+## Unreleased — web answers are reformulated, never copy-pasted (OPEN 18)
+
+- When KIRA answers from the web, the raw results are now REFORMULATED by
+  the model into a direct answer to the exact question (2-4 clear
+  sentences, no copied titles, no pasted links) before she speaks — within
+  the same 5 s budget. If the reformulation does not make it in time, the
+  readable result list is the fallback; never a silent wait.
+- The model worker keeps its late answer: waiting for it no longer spawns
+  a second model call (a refactor bug caught by the tests).
+
 ## Unreleased — every QUESTION answered in 5 s max, with web help (OPEN 17)
 
 - Questions ("parle-moi du Soleil", "explique-moi…") no longer wait for a
