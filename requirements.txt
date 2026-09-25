@@ -24,5 +24,10 @@ duckduckgo-search>=6.0.0
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 
+# Shared knowledge base (Supabase) — anon/publishable key only,
+# never the service_role key (see SUPABASE_SCHEMA.sql and .env.example)
+supabase>=2.0.0
+python-dotenv>=1.0.0
+
 # Optional: Web API (already included in Python stdlib)
 # http.server is built-in, no extra dependency needed

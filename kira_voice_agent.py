@@ -24,6 +24,18 @@ import sounddevice as sd
 import numpy as np
 from ollama import chat
 
+# Shared Supabase knowledge base (non-personal web research and project
+# knowledge only). Personal data — conversations, names, preferences, tasks
+# and private notes — stays local in kira_memory and is never sent to
+# Supabase. The module uses the public anon key only; the service_role key
+# is never used.
+try:
+    import kira_shared_memory
+    SHARED_KNOWLEDGE_AVAILABLE = True
+except ImportError:
+    kira_shared_memory = None
+    SHARED_KNOWLEDGE_AVAILABLE = False
+
 DEFAULT_MODEL = "qwen3:0.6b"
 DEFAULT_VISION_MODEL = "qwen3-vl:2b"
 WAKE_WORD = "kira"
@@ -152,6 +164,67 @@ _SESSION_ID = kira_memory.new_session_id()
 _CHAT_HISTORY = kira_memory.load_recent_messages(
     limit=max(4, int(CONFIG.get("chat_history_limit", 12)))
 )
+
+
+def refresh_shared_private_terms() -> int:
+    """
+    Keep the shared-knowledge privacy guard in sync with LOCAL personal memory.
+
+    The user's name and identity facts are registered as terms that must never
+    be published to Supabase. This only reads local data — nothing is sent to
+    the network by this function.
+    """
+    if not SHARED_KNOWLEDGE_AVAILABLE or kira_shared_memory is None:
+        return 0
+
+    terms = {str(USER_MEMORY.get("name", "") or "").strip()}
+
+    try:
+        for memory in kira_memory.load_memories(category="identity"):
+            terms.add(str(memory.get("value", "") or "").strip())
+    except Exception:
+        pass
+
+    try:
+        return kira_shared_memory.set_private_terms(terms)
+    except Exception:
+        return 0
+
+
+refresh_shared_private_terms()
+
+
+def shared_context_for_chat(command: str) -> str:
+    """
+    Build the shared-knowledge system block for a chat question.
+
+    Reads non-personal shared knowledge only (web research and project
+    knowledge). Returns "" when shared knowledge is unavailable, disabled or
+    the question is too short to be worth a lookup.
+    """
+    if not SHARED_KNOWLEDGE_AVAILABLE or kira_shared_memory is None:
+        return ""
+
+    try:
+        if not kira_shared_memory.is_enabled():
+            return ""
+    except Exception:
+        return ""
+
+    text = str(command or "").strip()
+    words = [
+        word
+        for word in re.findall(r"[A-Za-zÀ-ÿ0-9_\-]+", text)
+        if len(word) >= 3
+    ]
+
+    if len(words) < 2:
+        return ""
+
+    try:
+        return kira_shared_memory.build_shared_context(text, limit=3)
+    except Exception:
+        return ""
 
 
 SYSTEM_PROMPT = """
@@ -660,11 +733,13 @@ def build_reply(language: str, action: str, target: str = "") -> str:
         if action == "help":
             return (
                 "Je peux ouvrir des applications et des sites web, saisir du texte, "
-                "effectuer des recherches, contrôler le volume et les médias, "
+                "effectuer des recherches, consulter notre base de connaissances "
+                "partagée, contrôler le volume et les médias, "
                 "gérer les fenêtres, utiliser le presse-papiers, prendre des captures, "
                 "analyser votre écran, localiser des éléments visibles, "
                 "fournir les informations système et répondre à vos questions "
-                "grâce à mon IA locale, monsieur."
+                "grâce à mon IA locale, monsieur. Les souvenirs personnels restent "
+                "sur cette machine."
             )
 
         if action == "system_info":
@@ -719,9 +794,11 @@ def build_reply(language: str, action: str, target: str = "") -> str:
         if action == "help":
             return (
                 "أستطيع فتح التطبيقات والمواقع، كتابة النصوص، البحث على الويب، "
+                "والبحث في قاعدة المعرفة المشتركة، "
                 "التحكم في الصوت والوسائط، إدارة النوافذ، استخدام الحافظة، "
                 "التقاط لقطات الشاشة، تحليل الشاشة، تحديد العناصر الظاهرة، "
-                "عرض معلومات النظام والإجابة عن أسئلتك باستخدام الذكاء الاصطناعي المحلي، سيدي."
+                "عرض معلومات النظام والإجابة عن أسئلتك باستخدام الذكاء الاصطناعي المحلي، سيدي. "
+                "تبقى الذكريات الشخصية على هذا الجهاز."
             )
         if action == "system_info":
             return "هذه معلومات النظام، سيدي."
@@ -775,9 +852,12 @@ def build_reply(language: str, action: str, target: str = "") -> str:
     if action == "help":
         return (
             "I can open applications and websites, type text, search the web, "
+            "search our shared knowledge base, "
             "control volume and media, manage windows, work with the clipboard, "
             "take screenshots, analyze your screen, locate visible elements, "
-            "report system information, and answer questions using my local AI."
+            "report system information, and answer questions using my local AI. "
+            "Personal memories stay on this machine; only shared web research "
+            "and project knowledge go to the shared knowledge base."
             f" {user_title}."
         )
     if action == "system_info":
@@ -797,6 +877,39 @@ def build_acknowledgement(language: str) -> str:
     if language == "ar":
         return "فهمت، سيدي. سأنفذ ذلك الآن."
     return f"Understood {address_for_language(language)}. I am doing that now."
+
+
+def _split_shared_payload(payload: str):
+    """
+    Split "topic: content" style shared-knowledge input into (topic, content).
+
+    Falls back to using the leading words as the topic when no separator is
+    present. Content is never altered beyond trimming.
+    """
+    payload = str(payload or "").strip().strip(" .,-")
+
+    if not payload:
+        return "", ""
+
+    for separator in (":", " - ", " — ", " – "):
+        if separator in payload:
+            topic, content = payload.split(separator, 1)
+            topic = topic.strip(" .,-")
+            content = content.strip()
+            if topic and content:
+                return topic[:160], content
+
+    # "the web UI is in ui/" -> topic "the web UI"
+    if " is " in payload:
+        topic, content = payload.split(" is ", 1)
+        topic = topic.strip(" .,-")
+        content = content.strip()
+        if topic and content and len(topic) <= 60:
+            return topic[:160], f"{topic} is {content}"
+
+    words = payload.split()
+    topic = " ".join(words[:6]).strip(" .,-")
+    return topic[:160] or payload[:160], payload
 
 
 def parse_simple_command(command: str):
@@ -837,6 +950,103 @@ def parse_simple_command(command: str):
 
     if lower in {"clear completed", "clear completed tasks", "delete completed"}:
         return {"action": "clear_completed_tasks"}
+
+    # ── Shared knowledge base (Supabase) ──
+    # Non-personal knowledge only. These patterns must run BEFORE plugin
+    # parsing and before the generic "search ..." handler below.
+    shared_match = re.match(
+        r"^(?:search|query|find|look ?up|check|show)\s+(?:me\s+)?"
+        r"(?:(?:in|inside|from)\s+)?"
+        r"(?:the\s+|our\s+|my\s+)?shared\s+"
+        r"(?:knowledge(?:\s+base)?|research|project\s+knowledge|facts?|memory|notes)"
+        r"(?:\s+(?:for|about|on|regarding))?\s+(.+)$",
+        lower,
+    )
+    if shared_match:
+        query = shared_match.group(1).strip().rstrip(".?!")
+        if query:
+            return {
+                "action": "search_shared_knowledge",
+                "query": query,
+            }
+
+    shared_match = re.match(
+        r"^(?:what|which)\s+(?:do\s+we|does\s+the\s+team|do\s+you|do\s+i)\s+"
+        r"know\s+about\s+(.+)$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if shared_match:
+        query = shared_match.group(1).strip().rstrip(".?!")
+        if query:
+            return {
+                "action": "search_shared_knowledge",
+                "query": query,
+            }
+
+    shared_match = re.match(
+        r"^(?:what|which|tell me what)\s+"
+        r"(?:shared\s+knowledge|shared\s+research|project\s+knowledge|shared\s+facts)"
+        r"\s+(?:do\s+we\s+have|is\s+there|have\s+we\s+got|we\s+have)\s+"
+        r"(?:about|on|for|regarding)\s+(.+)$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if shared_match:
+        query = shared_match.group(1).strip().rstrip(".?!")
+        if query:
+            return {
+                "action": "search_shared_knowledge",
+                "query": query,
+            }
+
+    shared_match = re.match(
+        r"^(?:what|which)\s+(?:does|do|did)\s+(?:the\s+|our\s+)?shared\s+"
+        r"(?:knowledge(?:\s+base)?|research|memory|notes)\s+(?:say|know)\s+"
+        r"(?:about|on|regarding)\s+(.+)$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if shared_match:
+        query = shared_match.group(1).strip().rstrip(".?!")
+        if query:
+            return {
+                "action": "search_shared_knowledge",
+                "query": query,
+            }
+
+    shared_match = re.match(
+        r"^(?:share|remember|store|save|add|publish)\s+(?:this\s+|the\s+)?"
+        r"(?:our\s+|shared\s+|new\s+)?project\s+(?:knowledge|info|information|notes?)"
+        r"(?:\s+(?:about|on|for|regarding))?\s*[:\-]?\s*(.+)$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if shared_match:
+        topic, content = _split_shared_payload(shared_match.group(1))
+        if topic and content:
+            return {
+                "action": "share_project_knowledge",
+                "kind": "project_knowledge",
+                "topic": topic,
+                "content": content,
+            }
+
+    shared_match = re.match(
+        r"^(?:share|publish|store|save|add)\s+(?:this\s+|the\s+)?"
+        r"(?:shared\s+)?knowledge\s*[:\-]\s*(.+)$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if shared_match:
+        topic, content = _split_shared_payload(shared_match.group(1))
+        if topic and content:
+            return {
+                "action": "share_project_knowledge",
+                "kind": "project_knowledge",
+                "topic": topic,
+                "content": content,
+            }
 
     # ── Plugin command parsing ──
     plugin_result = kira_plugins.try_parse_command(text)
@@ -2005,6 +2215,9 @@ def ask_chat(command: str):
         # Detect explicit high-confidence personal facts.
         kira_memory.remember_explicit_fact(command)
 
+        # Newly stored personal facts must never leak to the shared store.
+        refresh_shared_private_terms()
+
         # -----------------------------------------------------
         # LOAD STRUCTURED MEMORY
         # -----------------------------------------------------
@@ -2051,6 +2264,19 @@ def ask_chat(command: str):
                         "Never convert them into KIRA's own preferences.\n\n"
                         + "\n".join(memory_facts)
                     ),
+                }
+            )
+
+        # Shared (non-personal) knowledge from Supabase may help answer this
+        # question. Only shared web research and project knowledge are read;
+        # nothing personal is ever sent to the shared store.
+        shared_context = shared_context_for_chat(command)
+
+        if shared_context:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": shared_context,
                 }
             )
 
@@ -2229,6 +2455,139 @@ def search_web(query: str):
     return True
 
 
+def shared_knowledge_status() -> dict:
+    """Return the shared knowledge configuration status (empty when absent)."""
+    if not SHARED_KNOWLEDGE_AVAILABLE or kira_shared_memory is None:
+        return {"enabled": False, "configured": False, "installed": False}
+    try:
+        return kira_shared_memory.status()
+    except Exception:
+        return {"enabled": False, "configured": False, "installed": False}
+
+
+def search_shared_knowledge(query: str):
+    """
+    Search the shared Supabase knowledge base (non-personal knowledge only)
+    and speak the results.
+
+    Only READS shared knowledge — personal data such as conversations, names,
+    preferences, tasks and private notes never leaves local memory.
+    """
+    query = str(query or "").strip().rstrip(".?!")
+
+    if not query:
+        speak(personalize_address("What should I look up in shared knowledge, sir?"))
+        return False
+
+    if not SHARED_KNOWLEDGE_AVAILABLE or kira_shared_memory is None:
+        speak(
+            personalize_address(
+                "Shared knowledge is unavailable sir. Install the supabase "
+                "package and add SUPABASE_URL and SUPABASE_ANON_KEY to .env."
+            )
+        )
+        return True
+
+    if not kira_shared_memory.is_enabled():
+        speak(
+            personalize_address(
+                "Shared knowledge is not configured sir. Add SUPABASE_URL and "
+                "SUPABASE_ANON_KEY to the .env file, then try again."
+            )
+        )
+        return True
+
+    results = kira_shared_memory.search_shared_knowledge(query, limit=3)
+
+    if not results:
+        speak(
+            personalize_address(
+                f"I found nothing in shared knowledge about {query}, sir."
+            )
+        )
+        return True
+
+    count = len(results)
+    speak(
+        personalize_address(
+            f"I found {count} shared knowledge "
+            f"{'entry' if count == 1 else 'entries'} about {query}, sir."
+        )
+    )
+
+    for index, item in enumerate(results, start=1):
+        topic = str(item.get("topic", "")).replace("_", " ").strip() or "entry"
+        content = str(item.get("content", "")).strip()[:300]
+        speak(f"Number {index}. {topic}. {content}")
+
+    return True
+
+
+def share_project_knowledge(topic: str, content: str, kind: str = "project_knowledge"):
+    """
+    Publish NON-personal project knowledge to the shared knowledge base.
+
+    The shared memory module refuses payloads that look personal (names,
+    preferences, credentials, ...) so private data stays in kira_memory.db.
+    """
+    topic = str(topic or "").strip()
+    content = str(content or "").strip()
+
+    if not topic or not content:
+        speak(
+            personalize_address(
+                "Tell me the project knowledge as 'topic: detail', sir, "
+                "and I will share it."
+            )
+        )
+        return False
+
+    if not SHARED_KNOWLEDGE_AVAILABLE or kira_shared_memory is None:
+        speak(
+            personalize_address(
+                "The shared knowledge base is unavailable sir, so I kept that "
+                "local. Install the supabase package and add your Supabase "
+                "URL and anon key to .env to share it."
+            )
+        )
+        return True
+
+    if not kira_shared_memory.is_enabled():
+        speak(
+            personalize_address(
+                "Shared knowledge is not configured sir, so I kept that in "
+                "local memory. Add SUPABASE_URL and SUPABASE_ANON_KEY to .env "
+                "to share it."
+            )
+        )
+        return True
+
+    shared = kira_shared_memory.save_shared_knowledge(
+        kind=kind or "project_knowledge",
+        topic=topic,
+        content=content,
+        title=topic,
+        tags=["project"],
+    )
+
+    if shared:
+        speak(
+            personalize_address(
+                f"I have shared that project knowledge about {topic} with the "
+                "shared knowledge base, sir."
+            )
+        )
+        return True
+
+    speak(
+        personalize_address(
+            "I did not share that sir — it looks personal or private, so I "
+            "kept it in local memory."
+        )
+    )
+    return True
+
+
 def mouse_move(x, y):
     try:
         pyautogui.moveTo(int(float(x)), int(float(y)), duration=0.25)
@@ -2371,11 +2730,13 @@ def system_info():
 def help_command():
     return personalize_address(
         "I can open apps and websites, type text, search the web, "
+        "search our shared knowledge base, "
         "control volume and media, manage windows, read the clipboard, "
         "report system status, analyze your screen, locate things on screen, "
-        "and answer questions using my local AI, sir."
+        "and answer questions using my local AI, sir. "
+        "Personal memories stay on this machine; only shared web research and "
+        "project knowledge go to the shared knowledge base."
     )
-    return True
 
 
 def report_time():
@@ -2479,6 +2840,16 @@ def execute_action(action_data):
 
     if action == "search":
         return search_web(str(action_data.get("query", "")))
+
+    if action == "search_shared_knowledge":
+        return search_shared_knowledge(str(action_data.get("query", "")))
+
+    if action == "share_project_knowledge":
+        return share_project_knowledge(
+            str(action_data.get("topic", "")),
+            str(action_data.get("content", "")),
+            str(action_data.get("kind", "project_knowledge")),
+        )
 
     if action == "mouse_move":
         return mouse_move(action_data.get("x"), action_data.get("y"))
@@ -2652,6 +3023,14 @@ def describe_action(action_data):
     if action == "search":
         query = str(action_data.get("query", "search")).strip() or "search"
         return f"search the web for {query}"
+
+    if action == "search_shared_knowledge":
+        query = str(action_data.get("query", "")).strip() or "the topic"
+        return f"search the shared knowledge base for {query}"
+
+    if action == "share_project_knowledge":
+        topic = str(action_data.get("topic", "")).strip() or "the project"
+        return f"share project knowledge about {topic} with the shared knowledge base"
 
     if action == "mouse_move":
         x = action_data.get("x", 0)
@@ -2868,6 +3247,9 @@ def main():
                     "help",
                     "time",
                     "date",
+                    # These handlers speak their own results.
+                    "search_shared_knowledge",
+                    "share_project_knowledge",
                 }:
                     continue
                 target_text = ""

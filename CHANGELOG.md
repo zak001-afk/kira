@@ -1,5 +1,43 @@
 # KIRA Changelog
 
+## Unreleased — Shared knowledge base (Supabase)
+
+- Add **`kira_shared_memory.py`**: the only module that talks to Supabase, and
+  only for **non-personal** knowledge. Conversations, names, preferences,
+  tasks and private notes stay strictly local in `kira_memory.db`.
+- Add **`SUPABASE_SCHEMA.sql`**: `shared_knowledge` table (kinds
+  `web_research`, `web_page`, `project_knowledge`), Row Level
+  Security (public read/insert/refresh, deletions restricted to authenticated
+  users), a privacy-guard trigger, full-text + trigram indexes and a ranked
+  `search_shared_knowledge()` function.
+- Add **`.env.example`** (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, optional table
+  and kill-switch settings). KIRA only ever uses the public anon/publishable
+  key. The `service_role` key is never used: if one is detected in the
+  environment it is ignored and a warning is logged, and if a service_role or
+  `sb_secret_` key is placed in `SUPABASE_ANON_KEY` the client refuses to
+  connect.
+- **Privacy guard** — `save_shared_knowledge()` refuses content that looks
+  personal (identity, preferences, credentials, contact details, private
+  notes) and any locally registered private term (the user's name and identity
+  facts are registered from local memory at startup). Refusals keep the data
+  local instead of publishing it.
+- **`kira_web.py`**: learned web research (`search_and_learn`,
+  `learn_from_url`) is still saved locally first and is now also shared to
+  Supabase best-effort. Adds `search_shared_knowledge()` and
+  `share_project_knowledge()` helpers; local memory is never affected by a
+  share failure.
+- **`kira_voice_agent.py`**: new voice commands — "search shared knowledge
+  for …", "what do we know about …", "what does shared knowledge say about …",
+  "remember project knowledge: …", "share knowledge: …" — plus shared
+  knowledge context injected into chat answers and updated help text
+  (English, French, Arabic).
+- **`requirements.txt`**: add `supabase>=2.0.0` and `python-dotenv>=1.0.0`.
+  Without configuration KIRA degrades gracefully and keeps working fully
+  offline; existing local memory behaviour (personal facts, forget commands,
+  persistent user facts) is unchanged.
+- Add `tests/test_shared_memory.py` covering the privacy boundary, the
+  service_role refusal, search fallback and the schema/env invariants.
+
 ## Unreleased — Speech sync 02 follow-up
 
 - Add **Motion: Auto / On / Off** (remembered per browser). Auto still respects
