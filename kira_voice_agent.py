@@ -10,6 +10,7 @@ import kira_language
 import kira_commands
 import re
 import subprocess
+import threading
 import time
 import webbrowser
 import base64
@@ -441,14 +442,86 @@ def clean_json(text: str) -> str:
 
 def call_ollama(messages, options):
     last_error = None
-    for attempt in range(3):
+    merged = {**options}
+    merged["num_predict"] = min(int(merged.get("num_predict", 220)), 220)
+    for attempt in range(2):
         try:
-            return chat(model=MODEL, messages=messages, options=options)
+            return chat(model=MODEL, messages=messages, options=merged)
         except Exception as exc:
             last_error = exc
-            if attempt < 2:
-                time.sleep(0.7)
+            if attempt < 1:
+                time.sleep(0.3)
     raise last_error
+
+
+CHAT_ANSWER_BUDGET = 5.0
+
+
+def chat_answer_with_web(command, language, ask_model, ask_web=None, budget=None):
+    """Answer within the budget (max 5 s): the local model gets ~70 % of it,
+    then a quick web lookup, then whatever the model produced meanwhile.
+    Returns (answer_or_empty, "model" | "web" | "timeout")."""
+    budget = budget or CHAT_ANSWER_BUDGET
+    started = time.monotonic()
+    box = []
+
+    def _run_model():
+        try:
+            box.append((ask_model(command, language),))
+        except Exception:
+            box.append((None,))
+
+    worker = threading.Thread(target=_run_model, daemon=True)
+    worker.start()
+    worker.join(max(0.5, budget * 0.7))
+    if box and box[0][0]:
+        return box[0][0], "model"
+    if ask_web is not None:
+        try:
+            found = ask_web(command, language)
+        except Exception:
+            found = None
+        if found:
+            return found, "web"
+    worker.join(max(0.0, budget - (time.monotonic() - started)))
+    if box and box[0][0]:
+        return box[0][0], "model"
+    return "", "timeout"
+
+
+def _web_answer(command, language):
+    """Quick web lookup when the local model is too slow or unavailable."""
+    try:
+        from duckduckgo_search import DDGS
+    except Exception:
+        try:
+            from ddgs import DDGS
+        except Exception:
+            return None
+    try:
+        results = DDGS(timeout=2).text(str(command), max_results=4)
+    except Exception:
+        return None
+    lines = []
+    for item in list(results or [])[:4]:
+        title = str(item.get("title") or "").strip()
+        body = str(item.get("body") or "").strip()
+        link = str(item.get("href") or item.get("url") or "").strip()
+        if not body:
+            continue
+        line = f"• {title}: {body}" if title else f"• {body}"
+        if link:
+            line += f" ({link})"
+        lines.append(line)
+    if not lines:
+        return None
+    if language == "fr":
+        intro = "Voici ce que j'ai trouvé sur le web :\n"
+    elif language == "ar":
+        intro = "\u0625\u0644\u064a\u0643 \u0645\u0627 \u0648\u062c\u062f\u062a\u0647 \u0639\u0644\u0649 \u0627\u0644\u0648\u064a\u0628:\n"
+    else:
+        intro = "Here is what I found on the web:\n"
+    return intro + "\n".join(lines)
 
 
 def select_voice(engine, language="en"):
@@ -1742,13 +1815,30 @@ def ask_agent(command: str):
 
 
 def ask_chat(command: str, language=None):
-    """The caller's selected language wins over history and persona examples."""
+    """The caller's selected language wins over history and persona examples.
+
+    Every question is answered within CHAT_ANSWER_BUDGET (5 s): local model
+    first, quick web lookup if it is too slow, honest message if neither
+    made it in time."""
     global _LAST_REPLY_LANGUAGE
     language = kira_language.normalize_language(language) or detect_language(command)
     if language == "auto":
         language = detect_language(command)
     _LAST_REPLY_LANGUAGE = language
-    answer = _ask_chat_response(command, language)
+    answer, source = chat_answer_with_web(command, language, _ask_chat_response, _web_answer)
+    if not str(answer or "").strip():
+        answer = {
+            "fr": ("Je n'ai pas eu de réponse en 5 secondes : le modèle local est lent "
+                   "et le web n'a rien donné. Reformule ou réessaie."),
+            "ar": ("لم أحصل على رد خلال 5 ثوانٍ: النموذج المحلي بطيء والويب لم يعط شيئًا. "
+                   "أعد الصياغة أو حاول مرة أخرى."),
+            "en": ("I did not get an answer within 5 seconds: the local model is slow "
+                   "and the web gave nothing. Rephrase or try again."),
+        }.get(language) or ("I did not get an answer within 5 seconds: the local model is slow "
+                            "and the web gave nothing. Rephrase or try again.")
+        return answer
+    if source == "web":
+        return answer  # already readable; translating snippets would waste the budget
     return kira_language.ensure_reply_language(answer, language, call_ollama)
 
 

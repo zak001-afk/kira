@@ -1,5 +1,18 @@
 # KIRA Changelog
 
+## Unreleased — every QUESTION answered in 5 s max, with web help (OPEN 17)
+
+- Questions ("parle-moi du Soleil", "explique-moi…") no longer wait for a
+  slow local model: the model gets ~3.5 s, then KIRA searches the web
+  (DuckDuckGo, top 4 results with sources) and answers with that — total
+  never over 5 s. If neither made it, she says so honestly and asks you to
+  rephrase.
+- The model's answers are capped at 220 tokens and one retry (was 3) so
+  the first answer comes faster.
+- Web answers are shown as found (no slow translation pass).
+- Local searches keep their 5 s ceiling (OPEN 16); the whole request —
+  search or question or action — now answers within 5 s.
+
 ## Unreleased — every search answers in 5 seconds max (OPEN 16)
 
 - Hard ceiling: one search operation — whole PC included — takes at most

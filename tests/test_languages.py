@@ -185,12 +185,16 @@ class VoiceLanguageTests(unittest.TestCase):
 class ModelPromptTests(unittest.TestCase):
     def namespace(self, model):
         tree = ast.parse((ROOT / "kira_voice_agent.py").read_text())
-        names = {"build_chat_system_prompt", "clean_chat_response", "ask_chat", "_ask_chat_response", "preferred_address", "address_for_language", "detect_language"}
+        names = {"build_chat_system_prompt", "clean_chat_response", "ask_chat", "_ask_chat_response", "preferred_address", "address_for_language", "detect_language", "chat_answer_with_web", "_web_answer"}
         nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
-        nodes += [node for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id in {"CHAT_SYSTEM_PROMPT", "ADDRESS_OPTIONS"} for target in node.targets)]
+        nodes += [node for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id in {"CHAT_SYSTEM_PROMPT", "ADDRESS_OPTIONS", "CHAT_ANSWER_BUDGET"} for target in node.targets)]
+        nodes.sort(key=lambda node: node.lineno)  # module order: constants before their users
         saved = []
+        import threading
+        import time as _time
         namespace = {"re": re, "logging": logging, "kira_language": language, "kira_commands": commands,
                      "CONFIG": {}, "_CHAT_HISTORY": [], "_SESSION_ID": "test", "call_ollama": model,
+                     "threading": threading, "time": _time,
                      "kira_memory": SimpleNamespace(save_message=lambda session, role, text: saved.append((role, text)),
                                                      remember_explicit_fact=lambda text: None, load_memories=lambda: [])}
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "voice_agent_language_subset", "exec"), namespace)
