@@ -1,5 +1,15 @@
 # KIRA Changelog
 
+## Unreleased — the place can come first (OPEN 14)
+
+- "cherche dans le C les dossiers dell" (place before the name, the natural
+  spoken order) used to drop the drive and search the whole PC — KIRA
+  looked lost and opened unexpected folders. The place is now understood
+  wherever it appears: "cherche dans le c …", "find on c the dell
+  folders", "dans tout le local …", as well as the older "… dans le c".
+- New diagnostic helper: `python voir_action.py <phrase>` prints exactly
+  which action KIRA understands for any sentence.
+
 ## Unreleased — A bare "cherche …" is a real local search (OPEN 13)
 
 - "cherche le dossier dell dans tous le local c" (no "ouvre" in the

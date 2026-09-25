@@ -1454,8 +1454,8 @@ def collapse_find_open(text):
     match = FIND_OPEN_PATTERN.match(str(text or "").strip())
     if not match:
         return None
-    search_part, search_parent = extract_drive_parent(match.group(1).strip())
-    open_part = extract_drive_parent(match.group(2).strip())[0].strip()
+    search_part, search_parent = _find_scope(match.group(1).strip())
+    open_part = _find_scope(match.group(2).strip())[0].strip()
     if _meaningful_name(open_part):
         replacement = f"ouvre {open_part}"
         if search_parent and not re.search(r"\b(?:dans|sur|in|on)\b", open_part, re.IGNORECASE):
@@ -1488,7 +1488,14 @@ _FIND_SCOPE_DRIVE = re.compile(
     r"\b(?:dans|sur|in|on|في)\s+(?:(?:tout|tous|toute|whole|entire|all|كل)\s+)?"
     r"(?:le\s+|la\s+|the\s+|my\s+|mon\s+|mes\s+)?"
     r"(?:(?:disque|lecteur|drive|disk|local(?:\s+disk)?|dur|قرص|القرص)\s+)?"
-    r"([a-z])\s*:?\s*\\*\s*[.,!?؟]*$", re.IGNORECASE)
+    r"\b([a-z])\b\s*:?\s*\\*\s*[.,!?؟]*$", re.IGNORECASE)
+
+# Same scope phrase but at the START: "dans le c les dossiers dell".
+_FIND_SCOPE_DRIVE_START = re.compile(
+    r"^(?:dans|sur|in|on|في)\s+(?:(?:tout|tous|toute|whole|entire|all|كل)\s+)?"
+    r"(?:le\s+|la\s+|the\s+|my\s+|mon\s+|mes\s+)?"
+    r"(?:(?:disque|lecteur|drive|disk|local(?:\s+disk)?|dur|قرص|القرص)\s+)?"
+    r"\b([a-z])\b\s*[:.]?\s*", re.IGNORECASE)
 
 _FIND_SCOPE_PC = re.compile(
     r"\b(?:partout|(?:dans|sur|in|on|في)?\s*(?:tout|tous|toute|whole|entire|all)?\s*"
@@ -1503,12 +1510,19 @@ _FIND_FILE_NOUNS = {"fichier", "fichiers", "file", "files", "ملف", "ملفا�
 
 
 def _find_scope(text):
-    """Split a trailing search scope: -> (rest, parent).
+    """Split a search scope placed before OR after the target.
 
     parent is a drive letter ("dans tous le local c" -> "c"), "" for the
-    whole PC ("tout le pc", "partout", "dans le local") or None.
+    whole PC ("tout le pc", "partout", "dans le local") or None. Both word
+    orders are understood: "cherche dans le c les dossiers dell" and
+    "cherche les dossiers dell dans le c".
     """
     cleaned = str(text or "").strip()
+    start = _FIND_SCOPE_DRIVE_START.match(cleaned)
+    if start:
+        rest = cleaned[start.end():].strip()
+        if rest:
+            return rest, start.group(1).lower()
     drive = _FIND_SCOPE_DRIVE.search(cleaned)
     if drive:
         return cleaned[:drive.start()].strip(), drive.group(1).lower()

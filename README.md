@@ -139,7 +139,10 @@ build_kira.bat
 - A bare "cherche le dossier dell dans tous le local c" (without "ouvre")
   is a real search too: singular finds ask which one when several match,
   plural finds ("cherche les dossiers dell…") open everything directly.
-  "cherche … sur internet" keeps searching the web, never the disk.
+  "cherche … sur internet" keeps searching the web, never the disk. The
+  place can be said first: "cherche dans le c les dossiers dell" searches
+  C: exactly. Run `python voir_action.py <phrase>` to see the parsed
+  action for any sentence.
 - "Ouvre tous les rapports" / "open all reports" opens every match at once.
 - "Ouvre le dossier projets" finds a folder by name on the PC; a bare
   "open folder" opens Documents. Nested requests work: "ouvre le dossier

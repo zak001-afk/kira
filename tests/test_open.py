@@ -874,6 +874,20 @@ class FindOpenParseTests(unittest.TestCase):
         self.assertEqual(self.parse("cherche les fichiers rapport sur le disque d"),
                          {"action": "open_file", "target": "rapport", "parent": "d", "all": True})
 
+    def test_scope_before_the_name(self):
+        self.assertEqual(
+            self.parse("cherche dans le C les dossiers dell"),
+            {"action": "open_folder", "target": "dell", "parent": "c", "all": True})
+        self.assertEqual(
+            self.parse("cherche dans le c les dossier dell et ouvre chaque dossier"),
+            {"action": "open_folder", "target": "dell", "parent": "c", "all": True})
+        self.assertEqual(
+            self.parse("cherche dans tout le local les dossiers dell"),
+            {"action": "open_folder", "target": "dell", "all": True})
+        self.assertEqual(
+            self.parse("find on c the dell folders"),
+            {"action": "open_folder", "target": "dell", "parent": "c", "all": True})
+
     def test_generic_searches_stay_out_of_the_local_finder(self):
         self.assertIsNone(self.parse("cherche la recette de gâteau"))
         self.assertIsNone(self.parse("cherche le dossier recette sur internet"))
@@ -1064,3 +1078,33 @@ class BreadthFirstSearchTests(unittest.TestCase):
         source = (ROOT / "kira_voice_agent.py").read_text()
         self.assertIn("for path in matches[:20]:", source)
         self.assertIn("kira_open.folder_matches(target, parent=parent, limit=20)", source)
+
+
+class ScopeOrderTests(unittest.TestCase):
+    """The user says the place first: « cherche dans le c les dossiers dell »
+    must search C: specifically, not wander across the whole PC."""
+
+    def test_real_pipeline_understands_place_first(self):
+        import os as _os
+        tree = ast.parse((ROOT / "kira_voice_agent.py").read_text())
+        node = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                    and n.name == "parse_simple_command")
+
+        class Stub:
+            def __getattr__(self, name):
+                return lambda *args, **kwargs: None
+
+        namespace = {
+            "re": re, "os": _os, "kira_open": kira_open,
+            "kira_tasks": Stub(), "kira_plugins": Stub(), "kira_memory": Stub(),
+            "USER_MEMORY": {}, "CONFIG": {"shortcuts": {}}, "ADDRESS_OPTIONS": {},
+            "WAKE_WORD": "kira", "APP_ALIASES": {},
+            "normalize_for_language": lambda text: text,
+        }
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "p", "exec"), namespace)
+        action = namespace["parse_simple_command"]("cherche dans le C les dossiers dell")
+        self.assertEqual(action, {"action": "open_folder", "target": "dell",
+                                  "parent": "c", "all": True})
+
+    def test_diagnostic_helper_exists(self):
+        self.assertTrue((ROOT / "voir_action.py").exists())
