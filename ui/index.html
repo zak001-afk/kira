@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="kira-ui-build" content="command-center-01-open-19" />
+    <meta name="kira-ui-build" content="command-center-01-open-20" />
     <meta name="theme-color" content="#0b0703" />
     <meta name="description" content="KIRA — your local neural computer agent." />
-    <title>KIRA // AI COMMAND CENTER 01 / OPEN 19</title>
+    <title>KIRA // AI COMMAND CENTER 01 / OPEN 20</title>
     <link rel="icon" href="./assets/kira-mark.svg" type="image/svg+xml" />
     <link rel="preload" href="./assets/fonts/rajdhani-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="./assets/kira-hologram.webp" as="image" />
     <link rel="preload" href="./assets/kira-mouth-interior.webp" as="image" />
-    <link rel="stylesheet" href="./style.css?v=open-19" />
+    <link rel="stylesheet" href="./style.css?v=open-20" />
   </head>
   <body>
     <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -79,8 +79,6 @@
                 <button class="icon-button small" id="clear-chat" type="button" aria-label="Clear displayed conversation" title="Clear displayed messages (saved history is kept)" data-i18n-aria-label="Clear displayed conversation" data-i18n-title="Clear displayed messages (saved history is kept)"><svg class="icon"><use href="#i-plus" /></svg></button>
               </div>
             </div>
-            <div class="channel-heading"><span><i class="tiny-light"></i> <span data-i18n="OPERATOR CHANNEL">OPERATOR CHANNEL</span></span><span>CH — 01</span></div>
-
             <div class="conversation" id="conversation" role="log" aria-label="Conversation with KIRA" aria-live="polite" aria-relevant="additions" data-i18n-aria-label="Conversation with KIRA">
               <article class="message-block">
                 <span class="message-avatar"><svg class="icon"><use href="#i-kira" /></svg></span>
@@ -90,12 +88,6 @@
             <div class="conversation-empty" id="conversation-empty" aria-hidden="true"><svg class="icon"><use href="#i-kira" /></svg><span><span data-i18n="YOUR NEXT COMMAND.">YOUR NEXT COMMAND.</span><br /><span data-i18n="A WORLD OF POSSIBILITIES.">A WORLD OF POSSIBILITIES.</span></span><div class="empty-rule"></div></div>
 
             <div class="command-area">
-              <div class="voice-channel">
-                <div class="voice-channel-label"><span><i class="tiny-light"></i> <span data-i18n="VOICE SYNC">VOICE SYNC</span></span><button id="mute" class="icon-button" type="button" aria-label="Mute voice output" aria-pressed="false" title="Mute voice output" data-i18n-aria-label="Mute voice output" data-i18n-title="Mute voice output"><svg class="icon"><use href="#i-volume" /></svg></button></div>
-                <svg class="voice-wave" viewBox="0 0 250 34" preserveAspectRatio="none" aria-hidden="true"><path class="wave-axis" d="M0 17h250" /><path id="voice-wave" d="M0 17h250" /></svg>
-                <div class="voice-meter" aria-hidden="true"><span id="voice-level"></span></div>
-                <span id="motion-status" class="motion-status" role="status" data-i18n="VOICE IDLE">VOICE IDLE</span>
-              </div>
               <span class="command-label" data-i18n="COMMAND">COMMAND</span>
               <form id="command-form" class="command-box">
                 <label for="command" class="sr-only" data-i18n="Your command to KIRA">Your command to KIRA</label>
@@ -103,7 +95,13 @@
                 <button id="send" type="submit" aria-label="Send command" title="Send command" data-i18n-aria-label="Send command" data-i18n-title="Send command"><svg class="icon"><use href="#i-send" /></svg></button>
                 <button id="mic" class="icon-button mic-button" type="button" aria-label="Start voice input" title="Voice input" data-i18n-aria-label="Start voice input" data-i18n-title="Voice input"><svg class="icon"><use href="#i-mic" /></svg></button>
               </form>
-              <div class="command-hint"><span><kbd>↵</kbd> <span data-i18n="TO SEND">TO SEND</span></span><span><kbd>CTRL K</kbd> <span data-i18n="COMMAND">COMMAND</span></span></div>
+              <div class="voice-channel">
+                <div class="voice-channel-label"><span><i class="tiny-light"></i> <span data-i18n="VOICE SYNC">VOICE SYNC</span></span><button id="mute" class="icon-button" type="button" aria-label="Mute voice output" aria-pressed="false" title="Mute voice output" data-i18n-aria-label="Mute voice output" data-i18n-title="Mute voice output"><svg class="icon"><use href="#i-volume" /></svg></button></div>
+                <svg class="voice-wave" viewBox="0 0 250 34" preserveAspectRatio="none" aria-hidden="true"><path class="wave-axis" d="M0 17h250" /><path id="voice-wave" d="M0 17h250" /></svg>
+                <div class="voice-meter" aria-hidden="true"><span id="voice-level"></span></div>
+                <span id="motion-status" class="motion-status" role="status" data-i18n="VOICE IDLE">VOICE IDLE</span>
+              </div>
+                          <div class="command-hint"><span><kbd>↵</kbd> <span data-i18n="TO SEND">TO SEND</span></span><span><kbd>CTRL K</kbd> <span data-i18n="COMMAND">COMMAND</span></span></div>
             </div>
           </div>
         </section>
@@ -149,6 +147,7 @@
             <g class="orbit orbit-two"><ellipse cx="300" cy="300" rx="290" ry="94" /><circle cx="10" cy="300" r="2.5" /></g>
             <g class="neural-links"><path d="m128 185 82 52-23 136 98 80 117-57 63-162-93-96-162 99 192 159M128 185l59 188 185-235 30 258-274-211Z" /><circle cx="128" cy="185" r="2" /><circle cx="210" cy="237" r="2" /><circle cx="187" cy="373" r="2" /><circle cx="402" cy="396" r="2" /><circle cx="465" cy="234" r="2" /></g>
           </svg>
+          <div class="grand-ring" aria-hidden="true"></div>
           <div class="crown-ring" aria-hidden="true"></div>
           <div class="light-rays" aria-hidden="true"></div>
           <div class="projection-beam" aria-hidden="true"></div>
@@ -207,7 +206,23 @@
                 <svg class="spark" viewBox="0 0 60 14" preserveAspectRatio="none" aria-hidden="true"><polyline id="spark-network" points="" /></svg>
               </div>
             </div>
-            <div class="telemetry-body">
+<section class="agent-activity" aria-labelledby="agent-activity-heading">
+              <div class="panel-heading compact"><h3 id="agent-activity-heading" data-i18n="AGENT ACTIVITY">AGENT ACTIVITY</h3><button type="button" class="link-button" data-dialog="tasks" data-i18n="SEE ALL">SEE ALL</button></div>
+              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-settings" /></svg><span class="agent-who-text"><b data-i18n="System Manager">System Manager</b><small id="agent-sub-system">—</small></span></span><div class="agent-meter"><span id="agent-bar-system"></span></div><strong id="agent-val-system">—</strong></div>
+              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-data" /></svg><span class="agent-who-text"><b data-i18n="Data Analyst">Data Analyst</b><small id="agent-sub-data">—</small></span></span><div class="agent-meter"><span id="agent-bar-data"></span></div><strong id="agent-val-data">—</strong></div>
+              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-search" /></svg><span class="agent-who-text"><b data-i18n="Research Agent">Research Agent</b><small id="agent-sub-research">—</small></span></span><div class="agent-meter"><span id="agent-bar-research"></span></div><strong id="agent-val-research">—</strong></div>
+              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-code" /></svg><span class="agent-who-text"><b data-i18n="Web Developer">Web Developer</b><small id="agent-sub-web">—</small></span></span><div class="agent-meter"><span id="agent-bar-web"></span></div><strong id="agent-val-web">—</strong></div>
+              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-pen" /></svg><span class="agent-who-text"><b data-i18n="Content Creator">Content Creator</b><small id="agent-sub-content">—</small></span></span><div class="agent-meter"><span id="agent-bar-content"></span></div><strong id="agent-val-content">—</strong></div>
+              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-nodes" /></svg><span class="agent-who-text"><b data-i18n="Automation Agent">Automation Agent</b><small id="agent-sub-automation">—</small></span></span><div class="agent-meter"><span id="agent-bar-automation"></span></div><strong id="agent-val-automation">—</strong></div>
+              <p class="section-note" id="agent-activity-summary">—</p>
+            </section>
+
+            <section class="recent-tasks" aria-labelledby="recent-tasks-heading">
+              <div class="panel-heading compact"><h3 id="recent-tasks-heading" data-i18n="RECENT TASKS">RECENT TASKS</h3><button type="button" class="link-button" data-dialog="tasks" data-i18n="SEE ALL">SEE ALL</button></div>
+              <div id="recent-tasks" class="recent-list"><p class="task-empty" data-i18n="No recent tasks.">No recent tasks.</p></div>
+            </section>
+
+                        <div class="telemetry-body">
               <dl class="data-rows">
                 <div><dt data-i18n="NEURAL ENGINE">NEURAL ENGINE</dt><dd id="model-name" class="model-name">—</dd></div>
                 <div><dt data-i18n="PROCESSING STATE">PROCESSING STATE</dt><dd class="activity"><i id="activity-dot" class="activity-dot"></i><span id="activity" data-i18n="STANDBY">STANDBY</span></dd></div>
@@ -223,23 +238,6 @@
               </dl>
               <div class="neural-load"><span data-i18n="NEURAL ACTIVITY">NEURAL ACTIVITY</span><div class="activity-segments" id="activity-segments" aria-hidden="true"></div></div>
             </div>
-
-            <section class="agent-activity" aria-labelledby="agent-activity-heading">
-              <h3 id="agent-activity-heading" data-i18n="AGENT ACTIVITY">AGENT ACTIVITY</h3>
-              <p class="section-note" data-i18n="SESSION ACTIVITY">REAL SESSION ACTIVITY</p>
-              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-settings" /></svg><span class="agent-who-text"><b data-i18n="System Manager">System Manager</b><small id="agent-sub-system">—</small></span></span><div class="agent-meter"><span id="agent-bar-system"></span></div><strong id="agent-val-system">—</strong></div>
-              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-data" /></svg><span class="agent-who-text"><b data-i18n="Data Analyst">Data Analyst</b><small id="agent-sub-data">—</small></span></span><div class="agent-meter"><span id="agent-bar-data"></span></div><strong id="agent-val-data">—</strong></div>
-              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-search" /></svg><span class="agent-who-text"><b data-i18n="Research Agent">Research Agent</b><small id="agent-sub-research">—</small></span></span><div class="agent-meter"><span id="agent-bar-research"></span></div><strong id="agent-val-research">—</strong></div>
-              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-code" /></svg><span class="agent-who-text"><b data-i18n="Web Developer">Web Developer</b><small id="agent-sub-web">—</small></span></span><div class="agent-meter"><span id="agent-bar-web"></span></div><strong id="agent-val-web">—</strong></div>
-              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-pen" /></svg><span class="agent-who-text"><b data-i18n="Content Creator">Content Creator</b><small id="agent-sub-content">—</small></span></span><div class="agent-meter"><span id="agent-bar-content"></span></div><strong id="agent-val-content">—</strong></div>
-              <div class="agent-meter-row"><span class="agent-who"><svg class="icon"><use href="#i-nodes" /></svg><span class="agent-who-text"><b data-i18n="Automation Agent">Automation Agent</b><small id="agent-sub-automation">—</small></span></span><div class="agent-meter"><span id="agent-bar-automation"></span></div><strong id="agent-val-automation">—</strong></div>
-              <p class="section-note" id="agent-activity-summary">—</p>
-            </section>
-
-            <section class="recent-tasks" aria-labelledby="recent-tasks-heading">
-              <div class="panel-heading compact"><h3 id="recent-tasks-heading" data-i18n="RECENT TASKS">RECENT TASKS</h3><button type="button" class="link-button" data-dialog="tasks" data-i18n="SEE ALL">SEE ALL</button></div>
-              <div id="recent-tasks" class="recent-list"><p class="task-empty" data-i18n="No recent tasks.">No recent tasks.</p></div>
-            </section>
 
             <nav class="system-toolbar" aria-label="System tools" data-i18n-aria-label="System tools">
               <button type="button" data-dialog="diagnostics"><svg class="icon"><use href="#i-activity" /></svg><span data-i18n="DIAGNOSTICS">DIAGNOSTICS</span></button>
@@ -301,6 +299,6 @@
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
     <noscript><div class="noscript-notice" data-i18n="Enable JavaScript to connect to KIRA and use the command interface.">Enable JavaScript to connect to KIRA and use the command interface.</div></noscript>
-    <script type="module" src="./app.js?v=open-19"></script>
+    <script type="module" src="./app.js?v=open-20"></script>
   </body>
 </html>

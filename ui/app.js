@@ -90,7 +90,9 @@ function renderRecentTasks(tasks) {
   tasks.slice(0, 5).forEach((task) => {
     const row = document.createElement("div");
     row.className = "recent-task";
-    const dot = document.createElement("i");
+    const icon = document.createElement("span");
+    icon.className = "task-ico";
+    icon.innerHTML = '<svg class="icon"><use href="#i-history" /></svg>';
     const when = document.createElement("small");
     when.className = "recent-time";
     const created = Date.parse(task.created_at || "");
@@ -100,8 +102,10 @@ function renderRecentTasks(tasks) {
     label.textContent = task.title;
     label.title = task.title;
     const who = document.createElement("small");
-    who.textContent = "KIRA";
-    row.append(dot, when, label, who);
+    const kind = `${task.kind || ""} ${task.title || ""}`.toLowerCase();
+    who.textContent = /(cherche|search|trouve|find|recherche)/.test(kind) ? t("Research Agent")
+      : /(ouvre|open|lance|launch|d\u00e9marre|start)/.test(kind) ? t("Automation Agent") : "KIRA";
+    row.append(icon, when, label, who);
     list.appendChild(row);
   });
 }
@@ -571,7 +575,7 @@ if (Recognition) {
 function updateClock() {
   const now = new Date();
   writeText("clock-time", now.toLocaleTimeString(i18n.language, { hour12: false }));
-  writeText("clock-date", now.toLocaleDateString(i18n.language, { day: "2-digit", month: "short", year: "2-digit" }).toUpperCase());
+  writeText("clock-date", now.toLocaleDateString(i18n.language, { weekday: "short", day: "2-digit", month: "short", year: "numeric" }).toUpperCase());
   const seconds = Math.floor((performance.now() - startedAt) / 1000);
   writeText("uptime", [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map((n) => String(n).padStart(2, "0")).join(":"));
 }
@@ -640,8 +644,9 @@ async function updateTelemetry() {
       ? `${data.disk_used_gb} / ${data.disk_total_gb} GB` : "—");
     const down = typeof data.net_down_mbps === "number" ? data.net_down_mbps : null;
     const up = typeof data.net_up_mbps === "number" ? data.net_up_mbps : null;
-    writeText("network", down !== null ? `${down} Mb/s` : "—");
-    writeText("gauge-sub-network", down !== null ? `\u2193 ${down} \u00b7 \u2191 ${up ?? "—"} Mb/s` : "—");
+    const rate = (v) => (v >= 10 ? Math.round(v) : Math.round(v * 10) / 10);
+    writeText("network", up !== null ? `\u2191 ${rate(up)}` : down !== null ? `\u2193 ${rate(down)}` : "—");
+    writeText("gauge-sub-network", down !== null || up !== null ? `\u2193 ${down ?? "—"} \u00b7 \u2191 ${up ?? "—"} Mb/s` : "—");
     const gaugeNetwork = $("gauge-network");
     if (gaugeNetwork) {
       const net = down !== null ? Math.min(100, down * 2) : 0;

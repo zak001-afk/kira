@@ -277,7 +277,7 @@ class CockpitBrowserTests(unittest.TestCase):
         self.page.locator("#interface-language").select_option("fr")
         expect(self.page.locator("html")).to_have_attribute("lang", "fr")
         expect(self.page.locator("#dialog-title")).to_have_text("PARAMÈTRES DE L’INTERFACE")
-        expect(self.page.locator("#command")).to_have_attribute("placeholder", "Écrivez votre demande…")
+        expect(self.page.locator("#command")).to_have_attribute("placeholder", "Tapez votre commande ici...")
         expect(self.page.locator(".message").last).to_contain_text("Here is literal text")
         self.page.reload(wait_until="networkidle")
         expect(self.page.locator("html")).to_have_attribute("lang", "fr")

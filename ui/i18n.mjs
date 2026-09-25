@@ -70,7 +70,7 @@ export const TRANSLATIONS = {
     "ar": "تم تهيئة الواجهة العصبية."
   },
   "How can I assist you today?": {
-    "fr": "Comment puis-je vous aider ?",
+    "fr": "Dites-moi ce dont vous avez besoin, je suis là pour vous accompagner.",
     "ar": "كيف يمكنني مساعدتك اليوم؟"
   },
   "YOUR NEXT COMMAND.": {
@@ -498,7 +498,7 @@ export const TRANSLATIONS = {
     "ar": "طلبك لكيرا"
   },
   "Type a command…": {
-    "fr": "Écrivez votre demande…",
+    "fr": "Tapez votre commande ici...",
     "ar": "اكتب طلبك…"
   },
   "Send command": {
