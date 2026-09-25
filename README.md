@@ -113,10 +113,16 @@ build_kira.bat
 - "List tasks"
 - "Clear completed tasks"
 
-**Memory:**
+**Memory (always local):**
 - "Remember that my favorite color is blue"
 - "Call me commander"
 - "My name is Zakaria"
+
+**Shared Knowledge (Supabase — non-personal only):**
+- "Search shared knowledge for python decorators"
+- "What do we know about row level security"
+- "Remember project knowledge: the HUD lives in kira_theme.py"
+- "Share knowledge: the web UI is served by main_window.py"
 
 **System:**
 - "System info"
@@ -186,7 +192,8 @@ listening test.
 
 - **kira_voice_agent.py** — Voice recognition, TTS, command parsing, action execution
 - **main_window.py** — Desktop UI with CustomTkinter and animated HUD
-- **kira_memory.py** — SQLite-based persistent memory system
+- **kira_memory.py** — SQLite-based persistent memory system (local only)
+- **kira_shared_memory.py** — Supabase shared knowledge (non-personal only)
 - **kira_tasks.py** — Task, reminder, and timer management
 - **kira_plugins.py** — Plugin discovery and registration system
 - **kira_api.py** — REST API bridge for web UI
@@ -213,6 +220,49 @@ KIRA uses SQLite with WAL mode for efficient concurrent access:
 - **conversations** — Chat history with session tracking
 - **memories** — User preferences and facts
 - **tasks** — Timers, reminders, todos
+
+Personal data (conversations, names, preferences, tasks, private notes)
+**always stays local** in `kira_memory.db`. It is never sent to Supabase.
+
+### Shared Knowledge (Supabase)
+
+KIRA can share **non-personal** knowledge with a Supabase project so several
+KIRA instances reuse the same knowledge base:
+
+- public web research (`search_and_learn`, `learn_from_url`) — kind `web_research`
+- learned public web pages (`learn_from_url`) — kind `web_page`
+- shared project knowledge ("remember project knowledge: …") — kind `project_knowledge`
+
+Setup:
+
+1. Run `SUPABASE_SCHEMA.sql` in the Supabase SQL editor. It creates the
+   `shared_knowledge` table with Row Level Security (public read, insert and
+   refresh; deletions restricted to authenticated users), a privacy-guard
+   trigger and a ranked search function.
+2. Copy `.env.example` to `.env` and fill in:
+   - `SUPABASE_URL` — your project URL
+   - `SUPABASE_ANON_KEY` — the **anon / publishable** key only
+
+Security and privacy:
+
+- KIRA only ever uses the public **anon** key. The `service_role` key
+  bypasses Row Level Security and is **never** used by KIRA: if KIRA detects
+  one in the environment it is ignored and a warning is logged, and if a
+  service_role key is placed in `SUPABASE_ANON_KEY` the client refuses to
+  connect.
+- Content that looks personal (names, preferences, credentials, contact
+  details, private notes) is refused by `kira_shared_memory.py` and stays
+  local. KIRA also registers the user's name and identity facts from local
+  memory as terms that can never be published.
+- The guard fails closed: when KIRA is unsure, the entry is kept local and
+  simply not shared (`SUPABASE_SCHEMA.sql` enforces the same rules again with
+  a trigger, even for privileged roles).
+- Without a `.env`, shared knowledge is simply disabled and KIRA works fully
+  offline exactly as before.
+
+Voice commands: "search shared knowledge for …", "what do we know about …",
+"remember project knowledge: …". Learned web research is saved locally
+**and** shared to Supabase best-effort.
 
 ### Animation System
 
