@@ -209,10 +209,14 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_json({"tasks": [], "error": str(e)})
 
+    _last_net_io = None
+    _last_net_time = None
+
     def _handle_system(self):
         """Return system telemetry."""
         try:
             import psutil
+            import time as _time
             data = {
                 "cpu_percent": psutil.cpu_percent(interval=None),
                 "memory_percent": psutil.virtual_memory().percent,
@@ -220,6 +224,34 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
                 "memory_total_gb": round(psutil.virtual_memory().total / (1024**3), 1),
                 "disk_percent": psutil.disk_usage("/").percent,
             }
+            try:
+                frequency = psutil.cpu_freq()
+                if frequency and frequency.current:
+                    data["cpu_freq_mhz"] = round(frequency.current)
+            except Exception:
+                pass
+            try:
+                usage = psutil.disk_usage("/")
+                data["disk_used_gb"] = round(usage.used / (1024**3), 1)
+                data["disk_total_gb"] = round(usage.total / (1024**3), 1)
+            except Exception:
+                pass
+            try:
+                counters = psutil.net_io_counters()
+                now = _time.monotonic()
+                if (self._last_net_io is not None and self._last_net_time
+                        and now > self._last_net_time):
+                    elapsed = now - self._last_net_time
+                    down = (counters.bytes_recv - self._last_net_io.bytes_recv) / elapsed
+                    up = (counters.bytes_sent - self._last_net_io.bytes_sent) / elapsed
+                    # Rates can spike when counters reset (sleep/resume): keep sane values.
+                    if 0 <= down < 2**31 and 0 <= up < 2**31:
+                        data["net_down_mbps"] = round(down * 8 / 1_000_000, 1)
+                        data["net_up_mbps"] = round(up * 8 / 1_000_000, 1)
+                self._last_net_io = counters
+                self._last_net_time = now
+            except Exception:
+                pass
             # GPU info (Windows)
             try:
                 import subprocess

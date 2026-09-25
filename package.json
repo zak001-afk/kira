@@ -1,0 +1,26 @@
+{
+  "name": "kira",
+  "version": "1.0.0",
+  "description": "**KIRA** is a sophisticated local AI assistant with voice control, computer automation, persistent memory, task management, and an extensible plugin system. Built for Windows with a cinematic HUD interface.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zak001-afk/kira.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/zak001-afk/kira/issues"
+  },
+  "homepage": "https://github.com/zak001-afk/kira#readme",
+  "dependencies": {
+    "@sparticuz/chromium": "^153.0.0"
+  }
+}

@@ -600,6 +600,21 @@ async function updateTelemetry() {
     sessionActivity.cpu = typeof data.cpu_percent === "number" ? data.cpu_percent : null;
     sessionActivity.memory = typeof data.memory_percent === "number" ? data.memory_percent : null;
     updateAgentActivity();
+    const sub = (key, value) => writeText(`gauge-sub-${key}`, value);
+    sub("cpu", typeof data.cpu_freq_mhz === "number" ? `${(data.cpu_freq_mhz / 1000).toFixed(2)} GHz` : "—");
+    sub("memory", typeof data.memory_used_gb === "number" && typeof data.memory_total_gb === "number"
+      ? `${data.memory_used_gb} / ${data.memory_total_gb} GB` : "—");
+    sub("disk", typeof data.disk_used_gb === "number" && typeof data.disk_total_gb === "number"
+      ? `${data.disk_used_gb} / ${data.disk_total_gb} GB` : "—");
+    writeText("network", typeof data.net_down_mbps === "number" ? `${data.net_down_mbps} Mb/s` : "—");
+    const gaugeNetwork = $("gauge-network");
+    if (gaugeNetwork) {
+      const net = typeof data.net_down_mbps === "number" ? Math.min(100, data.net_down_mbps * 2) : 0;
+      gaugeNetwork.style.strokeDashoffset = String((100 - net) / 100 * 125.7);
+    }
+    const parts = [`${commandCount} ${t("commands")}`, `${sessionActivity.searches} ${t("searches")}`,
+      `${sessionActivity.opens} ${t("opens")}`, `${sessionActivity.tasks} ${t("pending tasks")}`];
+    writeText("agent-activity-summary", parts.join(" · "));
     writeText("gpu", data.gpu || t("UNAVAILABLE"));
     $("gpu").title = data.gpu || t("Graphics telemetry is unavailable");
     writeText("telemetry-live", t("LIVE"));
@@ -612,6 +627,9 @@ async function updateTelemetry() {
     sessionActivity.cpu = null;
     sessionActivity.memory = null;
     updateAgentActivity();
+    ["cpu", "memory", "disk"].forEach((key) => writeText(`gauge-sub-${key}`, "—"));
+    writeText("network", "—");
+    writeText("agent-activity-summary", "—");
   } finally { telemetryPending = false; }
 }
 

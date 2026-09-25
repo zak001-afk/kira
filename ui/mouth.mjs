@@ -4,10 +4,10 @@ import { LipMotion, REST_MOUTH } from "./lips.mjs";
 // uploaded face. Only a small lower-face patch is composited, and only while
 // speaking. Original lip/skin pixels move on a mesh; the teeth are photographic.
 export const PORTRAIT_SIZE = Object.freeze({ width: 896, height: 1200 });
-export const MOUTH_REGION = Object.freeze({ x: 296, y: 688, width: 304, height: 224 });
+export const MOUTH_REGION = Object.freeze({ x: 296, y: 628, width: 304, height: 224 });
 const COUNT = 32;
 const CX = 447 - MOUTH_REGION.x;
-const CY = 761.8 - MOUTH_REGION.y;
+const CY = 740 - MOUTH_REGION.y;
 const bounded = n => Math.min(1, Math.max(0, Number.isFinite(n) ? n : 0));
 
 export function createMouthMesh() {

@@ -658,3 +658,7 @@ html[data-motion="on"] .agent-chip { animation: chip-float 7s ease-in-out infini
   .agent-meter-row { font-size: 11px; }
   .gauge-grid { gap: 6px; }
 }
+
+.gauge-sub { font-size: 9px; letter-spacing: 0.06em; color: var(--muted); min-height: 11px; }
+.chev { margin-left: auto; color: var(--gold-deep); font-weight: 500; }
+.agent-row:hover .chev { color: var(--gold-hi); }

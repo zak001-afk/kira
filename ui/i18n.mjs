@@ -2,6 +2,10 @@
 // replacing DOM strings; only marked labels and explicit UI messages use this.
 export const UI_LANGUAGES = ["en", "fr", "ar"];
 export const TRANSLATIONS = {
+  "commands": { "fr": "commandes", "ar": "أوامر" },
+  "searches": { "fr": "recherches", "ar": "بحوث" },
+  "opens": { "fr": "ouvertures", "ar": "فتحات" },
+  "pending tasks": { "fr": "tâches en attente", "ar": "مهام معلقة" },
   "AI COMMAND CENTER": { "fr": "CENTRE DE COMMANDE IA", "ar": "مركز قيادة الذكاء الاصطناعي" },
   "AGENTS": { "fr": "AGENTS", "ar": "الوكلاء" },
   "ADD": { "fr": "AJOUTER", "ar": "إضافة" },
