@@ -1,5 +1,20 @@
 # KIRA Changelog
 
+## Unreleased — A bare "cherche …" is a real local search (OPEN 13)
+
+- "cherche le dossier dell dans tous le local c" (no "ouvre" in the
+  sentence) used to fall through to the chat model, which answered with a
+  nonsense `find C:\dell` command. Every local-search phrasing is now
+  parsed as an action: singular requests follow the standard flow (one
+  match opens, several ask which one — answer "tous"), plural ones open
+  every match directly.
+- Places understood: "dans tous le local c", "dans le disque d",
+  "sur le c", "tout le pc", "partout", "on my pc"…
+- Verb forms: cherche/chercher/trouve/trouver/recherche, "peux-tu
+  chercher…", find/locate/search for (EN), ابحث عن (AR).
+- Web searches stay untouched: "cherche … sur internet/google/youtube"
+  and generic questions are not turned into local scans.
+
 ## Unreleased — The search no longer stops at the first folder found (OPEN 12)
 
 - On a real C: drive the search dove alphabetically into huge system trees

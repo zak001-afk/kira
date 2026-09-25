@@ -855,6 +855,29 @@ class FindOpenParseTests(unittest.TestCase):
             {"action": "open_folder", "target": "missions", "parent": "travail"})
         self.assertIsNone(self.parse("open chrome and search news"))
 
+    def test_bare_find_in_local_drive_c(self):
+        self.assertEqual(
+            self.parse("cherche le dossier dell dans tous le local c"),
+            {"action": "open_folder", "target": "dell", "parent": "c"})
+
+    def test_bare_find_plural_opens_all(self):
+        self.assertEqual(
+            self.parse("cherche les dossiers dell dans tout le local c"),
+            {"action": "open_folder", "target": "dell", "parent": "c", "all": True})
+
+    def test_bare_find_whole_pc_and_polite_forms(self):
+        self.assertEqual(self.parse("cherche le dossier dell"), {"action": "open_folder", "target": "dell"})
+        self.assertEqual(self.parse("cherche dell dans le c"), {"action": "open_folder", "target": "dell", "parent": "c"})
+        self.assertEqual(self.parse("peux-tu chercher le dossier dell dans le local c"),
+                         {"action": "open_folder", "target": "dell", "parent": "c"})
+        self.assertEqual(self.parse("find the dell folder on my pc"), {"action": "open_folder", "target": "dell"})
+        self.assertEqual(self.parse("cherche les fichiers rapport sur le disque d"),
+                         {"action": "open_file", "target": "rapport", "parent": "d", "all": True})
+
+    def test_generic_searches_stay_out_of_the_local_finder(self):
+        self.assertIsNone(self.parse("cherche la recette de gâteau"))
+        self.assertIsNone(self.parse("cherche le dossier recette sur internet"))
+
 
 class FindOpenPruneTests(unittest.TestCase):
     """On a drive root (« sur le c ») system folders must be searched too;
@@ -963,6 +986,26 @@ class FindOpenExecutionTests(unittest.TestCase):
                          "the search must run exactly once")
         self.assertEqual(self.opened, self.folders_c)
         self.assertTrue(all(path.startswith("C:\\") for path in self.opened))
+
+    def test_bare_find_singular_asks_with_the_list(self):
+        result = commands.process_command(
+            self.backend,
+            "cherche le dossier dell dans tous le local c",
+            reply_language="fr")
+        self.assertTrue(result["needs_choice"])
+        self.assertNotEqual(result.get("action"), "chat")
+        self.assertEqual(self.searches, [{"name": "dell", "parent": "c"}])
+        self.assertEqual(result["candidates"], self.folders_c)
+
+    def test_bare_find_plural_opens_all_once(self):
+        result = commands.process_command(
+            self.backend,
+            "cherche les dossiers dell dans tout le local c",
+            reply_language="fr")
+        self.assertTrue(result["success"])
+        self.assertIn("4", result["response"])
+        self.assertEqual(self.searches, [{"name": "dell", "parent": "c"}])
+        self.assertEqual(self.opened, self.folders_c)
 
     def test_voice_agent_reuses_the_candidates(self):
         source = (ROOT / "kira_voice_agent.py").read_text()

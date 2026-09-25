@@ -136,6 +136,10 @@ build_kira.bat
   them" works the same way on the whole PC. The drive scan is breadth-first
   with a generous budget, so matches behind huge system trees (Program
   Files, Windows…) are found too — up to 20 opened at once.
+- A bare "cherche le dossier dell dans tous le local c" (without "ouvre")
+  is a real search too: singular finds ask which one when several match,
+  plural finds ("cherche les dossiers dell…") open everything directly.
+  "cherche … sur internet" keeps searching the web, never the disk.
 - "Ouvre tous les rapports" / "open all reports" opens every match at once.
 - "Ouvre le dossier projets" finds a folder by name on the PC; a bare
   "open folder" opens Documents. Nested requests work: "ouvre le dossier

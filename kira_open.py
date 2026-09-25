@@ -1474,12 +1474,115 @@ def collapse_find_open(text):
     return replacement
 
 
+FIND_VERB_PATTERN = re.compile(
+    r"^\s*(?:(?:peux?[\s-]*tu|pourrais?[\s-]*tu|pourriez?[\s-]*vous|pouvez?[\s-]*vous|"
+    r"s'il\s+(?:te|vous)\s+pla[îi]t,?)\s+)?"
+    r"(?:cherche[sz]?(?:[\s-]+moi(?:[\s-]+bien)?)?|chercher|trouve[zs]?(?:[\s-]+moi)?|trouver|"
+    r"rechercher|recherche[sz]?(?:[\s-]+moi(?:[\s-]+bien)?)?|"
+    r"donnez?[\s-]+moi|find(?:[\s-]+me)?|locate|search(?:\s+for)?|"
+    r"ابحث\s+عن|بحث\s+عن)\s+(.+)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_FIND_SCOPE_DRIVE = re.compile(
+    r"\b(?:dans|sur|in|on|في)\s+(?:(?:tout|tous|toute|whole|entire|all|كل)\s+)?"
+    r"(?:le\s+|la\s+|the\s+|my\s+|mon\s+|mes\s+)?"
+    r"(?:(?:disque|lecteur|drive|disk|local(?:\s+disk)?|dur|قرص|القرص)\s+)?"
+    r"([a-z])\s*:?\s*\\*\s*[.,!?؟]*$", re.IGNORECASE)
+
+_FIND_SCOPE_PC = re.compile(
+    r"\b(?:partout|(?:dans|sur|in|on|في)?\s*(?:tout|tous|toute|whole|entire|all)?\s*"
+    r"(?:le\s+|la\s+|the\s+|my\s+|mon\s+|ma\s+|mes\s+)?"
+    r"(?:pc|ordinateur|computer|machine|local))\s*[.!؟?]*$", re.IGNORECASE)
+
+_FIND_PLURAL_MARKERS = {"tous", "toutes", "chaque", "chacun", "chacune", "every",
+                        "each", "all", "les", "des", "كل", "جميع"}
+_FIND_FOLDER_NOUNS = {"dossier", "dossiers", "folder", "folders",
+                      "repertoire", "repertoires", "مجلد", "مجلدات"}
+_FIND_FILE_NOUNS = {"fichier", "fichiers", "file", "files", "ملف", "ملفات"}
+
+
+def _find_scope(text):
+    """Split a trailing search scope: -> (rest, parent).
+
+    parent is a drive letter ("dans tous le local c" -> "c"), "" for the
+    whole PC ("tout le pc", "partout", "dans le local") or None.
+    """
+    cleaned = str(text or "").strip()
+    drive = _FIND_SCOPE_DRIVE.search(cleaned)
+    if drive:
+        return cleaned[:drive.start()].strip(), drive.group(1).lower()
+    pc = _FIND_SCOPE_PC.search(cleaned)
+    if pc:
+        return cleaned[:pc.start()].strip(), ""
+    return cleaned, None
+
+
+def parse_find_command(text):
+    """Bare 'cherche/trouve (le) dossier/fichier X [dans le local c / le pc]'.
+
+    A local search is an action, never a chat message: plural requests open
+    every match, singular ones follow the standard flow (one match opens,
+    several ask which one). Returns None for anything else (web search,
+    questions), so those keep their current path.
+    """
+    cleaned = str(text or "").strip()
+    low = cleaned.lower()
+    if re.search(r"\b(?:internet|google|youtube|chrome|edge|firefox|en\s+ligne|online|web)\b", low):
+        return None
+    match = FIND_VERB_PATTERN.match(cleaned)
+    if not match:
+        return None
+    rest, parent = _find_scope(match.group(1).strip())
+    words = rest.split()
+    kind, plural, noun_index = None, False, -1
+    for index, word in enumerate(words):
+        token = fold(word)
+        if token.startswith("ال") and len(token) > 4:
+            token = token[2:]
+        if token in _FIND_FOLDER_NOUNS:
+            kind = "folder"
+        elif token in _FIND_FILE_NOUNS:
+            kind = "file"
+        else:
+            continue
+        plural = plural or token in {"dossiers", "folders", "repertoires", "مجلدات",
+                                     "fichiers", "files", "ملفات"}
+        noun_index = index
+        break
+    if any(fold(word) in _FIND_PLURAL_MARKERS for word in words[:noun_index if noun_index > 0 else 0]):
+        plural = True
+    body = " ".join(words[noun_index + 1:]) if noun_index >= 0 else rest
+    named_part, had_named = strip_named_phrase(body)
+    name = _meaningful_name(named_part)
+    if not name and noun_index >= 0:
+        # English order: "find the dell folder" (name before the noun).
+        name = _meaningful_name(" ".join(words[:noun_index]))
+        had_named = had_named or bool(name)
+    if not name:
+        return None
+    if kind is None and not parent and not had_named:
+        return None  # a generic search/question, not a local find
+    if kind is None:
+        kind = "file" if "." in name else "folder"
+    action = {"action": "open_folder" if kind == "folder" else "open_file", "target": name}
+    if parent:
+        action["parent"] = parent
+    if plural:
+        action["all"] = True
+    return action
+
+
 def parse_open_command(text):
     """Parse 'open X' / 'ouvre X' / 'شغل X' into an action dict, or None."""
     cleaned = str(text or "").strip()
     collapsed = collapse_find_open(cleaned)
     if collapsed:
         cleaned = collapsed
+    else:
+        located = parse_find_command(cleaned)
+        if located:
+            return located
     polite = POLITE_OPEN.match(cleaned)
     low = cleaned.lower()
     if polite:
