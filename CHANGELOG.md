@@ -1,5 +1,25 @@
 # KIRA Changelog
 
+## Unreleased — the golden AI COMMAND CENTER interface (OPEN 19)
+
+- Complete redesign matching the reference: warm gold on black, top bar
+  with KIRA brand / clock / bell / gear / power, CONVERSATION + AGENTS on
+  the left, SYSTEM panel on the right, holographic portrait with orbiting
+  agent cards (Data Analyst, Web Developer, Content Creator, Research,
+  System Manager, Automation), and the bottom navigation bar
+  HOME·CONVERSATION·AGENTS·FILES·K·TOOLS·SETTINGS·HISTORY·SYSTEM.
+- SYSTEM now shows four circular gauges (CPU, RAM, DISK, NETWORK), the
+  familiar status rows, AGENT ACTIVITY bars driven by **real session
+  counters** (CPU/RAM share, searches, opens, voice, pending tasks —
+  nothing simulated) and the RECENT TASKS list (real tasks from memory).
+- Agents, agent cards and the bottom bar are all wired: an agent fills the
+  command line or runs its action, the central K button starts voice
+  input, FILES opens Documents, SYSTEM asks for system info, HISTORY jumps
+  to the top of the conversation.
+- Everything fits one screen on desktop, fully responsive, EN/FR/AR
+  (interface language, RTL included), reduced-motion respected.
+- Bundle renamed `command-center-01-open-19`; launcher validation updated.
+
 ## Unreleased — web answers are reformulated, never copy-pasted (OPEN 18)
 
 - When KIRA answers from the web, the raw results are now REFORMULATED by

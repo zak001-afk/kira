@@ -2,6 +2,41 @@
 // replacing DOM strings; only marked labels and explicit UI messages use this.
 export const UI_LANGUAGES = ["en", "fr", "ar"];
 export const TRANSLATIONS = {
+  "AI COMMAND CENTER": { "fr": "CENTRE DE COMMANDE IA", "ar": "مركز قيادة الذكاء الاصطناعي" },
+  "AGENTS": { "fr": "AGENTS", "ar": "الوكلاء" },
+  "ADD": { "fr": "AJOUTER", "ar": "إضافة" },
+  "ONLINE": { "fr": "EN LIGNE", "ar": "متصل" },
+  "DISK": { "fr": "DISQUE", "ar": "القرص" },
+  "NETWORK": { "fr": "RÉSEAU", "ar": "الشبكة" },
+  "REAL-TIME PERFORMANCE": { "fr": "PERFORMANCES EN TEMPS RÉEL", "ar": "أداء في الوقت الحقيقي" },
+  "AGENT ACTIVITY": { "fr": "ACTIVITÉ DES AGENTS", "ar": "نشاط الوكلاء" },
+  "SESSION ACTIVITY": { "fr": "ACTIVITÉ RÉELLE DE LA SESSION", "ar": "نشاط الجلسة الفعلي" },
+  "RECENT TASKS": { "fr": "TÂCHES RÉCENTES", "ar": "المهام الأخيرة" },
+  "SEE ALL": { "fr": "VOIR TOUT", "ar": "عرض الكل" },
+  "No recent tasks.": { "fr": "Aucune tâche récente.", "ar": "لا مهام حديثة." },
+  "HOME": { "fr": "ACCUEIL", "ar": "الرئيسية" },
+  "FILES": { "fr": "FICHIERS", "ar": "الملفات" },
+  "TOOLS": { "fr": "OUTILS", "ar": "الأدوات" },
+  "Data Analyst": { "fr": "Analyste de données", "ar": "محلل بيانات" },
+  "Web Developer": { "fr": "Développeur web", "ar": "مطور ويب" },
+  "Content Creator": { "fr": "Créateur de contenu", "ar": "صانع محتوى" },
+  "System Manager": { "fr": "Gestionnaire système", "ar": "مدير النظام" },
+  "Research Agent": { "fr": "Agent de recherche", "ar": "وكيل بحث" },
+  "Automation Agent": { "fr": "Agent d’automatisation", "ar": "وكيل أتمتة" },
+  "Analysis & reports": { "fr": "Analyse & rapports", "ar": "تحليل وتقارير" },
+  "Sites & applications": { "fr": "Sites & applications", "ar": "مواقع وتطبيقات" },
+  "Media & networks": { "fr": "Médias & réseaux", "ar": "إعلام وشبكات" },
+  "System & maintenance": { "fr": "Système & maintenance", "ar": "النظام والصيانة" },
+  "Information research": { "fr": "Recherche d’informations", "ar": "البحث عن المعلومات" },
+  "Task execution": { "fr": "Exécution des tâches", "ar": "تنفيذ المهام" },
+  "KIRA runs locally on this computer. Close the window to shut it down.": {
+    "fr": "KIRA tourne en local sur cet ordinateur. Fermez la fenêtre pour l’arrêter.",
+    "ar": "تعمل KIRA محليًا على هذا الحاسوب. أغلق النافذة لإيقافها."
+  },
+  "KIRA modules are built in. Pick one to fill the command line.": {
+    "fr": "Les modules de KIRA sont intégrés. Choisissez-en un pour remplir la ligne de commande.",
+    "ar": "وحدات KIRA مدمجة. اختر واحدة لتعبئة سطر الأوامر."
+  },
   "NEURAL INTERFACE": {
     "fr": "INTERFACE NEURONALE",
     "ar": "الواجهة العصبية"

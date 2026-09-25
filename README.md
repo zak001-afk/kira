@@ -252,7 +252,12 @@ The launcher rejects a missing or older UI bundle instead of quietly mixing vers
 Keep your `.venv`, configuration and local database; do not use a destructive reset
 to get past a Git warning about local edits.
 
-### Interface language, automatic replies and multilingual voices
+### Interface
+
+The golden **AI COMMAND CENTER** cockpit: conversation + agents on the
+left, live system gauges and real agent-activity bars on the right, the
+holographic portrait with orbiting agent shortcuts, and the bottom
+navigation bar (the central K button starts voice input). language, automatic replies and multilingual voices
 Open **SETTINGS** (or **PARAMÈTRES** after switching to French):
 - **Interface language** changes menus, buttons, statuses, task messages and help
   immediately. The bundled UI translations are English, French and Arabic; Arabic

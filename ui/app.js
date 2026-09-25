@@ -1,8 +1,8 @@
 import { I18n, UI_LANGUAGES, interfaceLanguage } from "./i18n.mjs";
 import { speechLocale, baseLanguage, FALLBACK_LANGUAGES, VOICE_SAMPLES } from "./locale.mjs";
-import { SpeechPlayer } from "./speech.mjs?v=open-18";
+import { SpeechPlayer } from "./speech.mjs?v=open-19";
 import { lipDemoPose } from "./lips.mjs";
-import { Hologram } from "./hologram.mjs?v=open-18";
+import { Hologram } from "./hologram.mjs?v=open-19";
 
 /* KIRA / cockpit controller. The desktop and browser share the same local UI.
    API calls stay on this origin; kira_ui.py proxies them to the local backend. */
@@ -38,6 +38,53 @@ let replyPreference = baseLanguage(readLanguagePreference("kira.replyLanguage", 
 let lastReplyLanguage = baseLanguage(readLanguagePreference("kira.lastReplyLanguage", i18n.language));
 let hasReplyLanguage = Boolean(readLanguagePreference("kira.lastReplyLanguage", ""));
 let languageCatalog = [...FALLBACK_LANGUAGES];
+// Real session activity, shown in the AGENT ACTIVITY panel: each module bar
+// reflects a genuine counter (commands sent, searches, opens, tasks, voice,
+// CPU / memory share). Nothing here is simulated.
+const sessionActivity = { commands: 0, searches: 0, opens: 0, voice: false, tasks: 0, cpu: null, memory: null };
+
+function updateAgentActivity() {
+  const values = {
+    system: sessionActivity.cpu,
+    data: sessionActivity.memory,
+    research: Math.min(100, sessionActivity.searches * 25),
+    web: Math.min(100, sessionActivity.opens * 30),
+    content: sessionActivity.voice ? 100 : 0,
+    automation: Math.min(100, sessionActivity.tasks * 25),
+  };
+  for (const [name, value] of Object.entries(values)) {
+    const bar = $(`agent-bar-${name}`);
+    if (!bar) continue;
+    const valid = typeof value === "number" && Number.isFinite(value);
+    bar.style.width = valid ? `${Math.max(2, Math.min(100, value))}%` : "0";
+    writeText(`agent-val-${name}`, valid ? `${Math.round(value)}%` : "—");
+  }
+}
+
+function renderRecentTasks(tasks) {
+  const list = $("recent-tasks");
+  if (!list) return;
+  list.replaceChildren();
+  if (!Array.isArray(tasks) || !tasks.length) {
+    const empty = document.createElement("p");
+    empty.className = "task-empty";
+    empty.textContent = t("No recent tasks.");
+    list.appendChild(empty);
+    return;
+  }
+  tasks.slice(0, 4).forEach((task) => {
+    const row = document.createElement("div");
+    row.className = "recent-task";
+    const dot = document.createElement("i");
+    const label = document.createElement("span");
+    label.textContent = task.title;
+    label.title = task.title;
+    const who = document.createElement("small");
+    who.textContent = "KIRA";
+    row.append(dot, label, who);
+    list.appendChild(row);
+  });
+}
 
 
 function preference(key, choices, fallback) {
@@ -190,7 +237,10 @@ function setActivity(state) {
 
 const speech = new SpeechPlayer({
   fetchAudio: (text, { signal, language }) => requestJSON("/tts", { method: "POST", body: { text, language }, signal, timeout: 15000 }),
-  onState: (state) => { speechState = state; setActivity(state); },
+  onState: (state) => {
+    speechState = state; setActivity(state);
+    if (state === "SPEAKING") { sessionActivity.voice = true; updateAgentActivity(); }
+  },
   onNotice: (code, details) => {
     if (code === "voice-unavailable") notify(t("No voice is available for {language}. The written reply is kept. Check Edge TTS or install a matching system voice.", { language: languageInfo(details.language).native_name }));
   },
@@ -333,6 +383,11 @@ async function sendCommand(text, { shortcut = false } = {}) {
   $("command-form").setAttribute("aria-busy", "true");
   commandCount++;
   writeText("command-count", String(commandCount).padStart(3, "0"));
+  sessionActivity.commands++;
+  const lowered = text.toLowerCase();
+  if (/\b(search|cherche|recherche|find|trouve|locate)\b/.test(lowered)) sessionActivity.searches++;
+  if (/\b(open|ouvre|launch|lance)\b/.test(lowered)) sessionActivity.opens++;
+  updateAgentActivity();
   const thinking = addMessage("KIRA", t("Processing your request…"));
   thinking.classList.add("thinking");
   const started = performance.now();
@@ -404,6 +459,29 @@ document.addEventListener("keydown", (event) => {
     $("command").focus();
   }
 });
+$("nav-kira").addEventListener("click", () => $("mic").click());
+$("nav-home").addEventListener("click", () => { $("command").focus(); });
+$("nav-conv").addEventListener("click", () => { $("command").focus(); });
+$("nav-agents").addEventListener("click", () => {
+  const panel = document.querySelector(".agents-panel");
+  panel.scrollIntoView({ block: "nearest" });
+  panel.classList.remove("flash");
+  requestAnimationFrame(() => panel.classList.add("flash"));
+});
+$("nav-history").addEventListener("click", () => {
+  const feed = $("conversation");
+  feed.scrollIntoView({ block: "nearest" });
+  feed.scrollTop = 0;
+  feed.classList.remove("flash");
+  requestAnimationFrame(() => feed.classList.add("flash"));
+});
+$("nav-bell").addEventListener("click", () => openPanel("diagnostics"));
+$("nav-gear").addEventListener("click", () => openPanel("settings"));
+$("nav-tools").addEventListener("click", () => openPanel("diagnostics"));
+$("nav-settings").addEventListener("click", () => openPanel("settings"));
+$("nav-power").addEventListener("click", () => notify(t("KIRA runs locally on this computer. Close the window to shut it down.")));
+$("add-agent").addEventListener("click", () => notify(t("KIRA modules are built in. Pick one to fill the command line.")));
+
 $("clear-chat").addEventListener("click", () => {
   if (commandPending) return notify(t("Wait for the current command to finish before clearing the view."));
   $("conversation").replaceChildren();
@@ -432,6 +510,7 @@ if (Recognition) {
     listening = true;
     stopSpeaking();
     $("mic").classList.add("listening");
+    $("nav-kira").classList.add("listening");
     $("mic").setAttribute("aria-label", t("Stop voice input"));
     setActivity("LISTENING");
   };
@@ -443,6 +522,7 @@ if (Recognition) {
   recognition.onend = () => {
     listening = false;
     $("mic").classList.remove("listening");
+    $("nav-kira").classList.remove("listening");
     $("mic").setAttribute("aria-label", t("Start voice input"));
     setActivity("READY");
   };
@@ -509,12 +589,17 @@ async function updateTelemetry() {
     const percent = valid ? Math.max(0, Math.min(100, value)) : 0;
     writeText(key, valid ? `${percent.toFixed(1)}%` : "—");
     $(`${key}-bar`).style.width = `${percent}%`;
+    const gauge = $(`gauge-${key}`);
+    if (gauge) gauge.style.strokeDashoffset = valid ? String((100 - percent) / 100 * 125.7) : "125.7";
   };
   try {
     const data = await requestJSON("/system");
     paint("cpu", data.cpu_percent);
     paint("memory", data.memory_percent);
     paint("disk", data.disk_percent);
+    sessionActivity.cpu = typeof data.cpu_percent === "number" ? data.cpu_percent : null;
+    sessionActivity.memory = typeof data.memory_percent === "number" ? data.memory_percent : null;
+    updateAgentActivity();
     writeText("gpu", data.gpu || t("UNAVAILABLE"));
     $("gpu").title = data.gpu || t("Graphics telemetry is unavailable");
     writeText("telemetry-live", t("LIVE"));
@@ -524,6 +609,9 @@ async function updateTelemetry() {
     writeText("gpu", t("UNAVAILABLE"));
     writeText("telemetry-live", t("OFFLINE"));
     $("telemetry-live").classList.remove("live");
+    sessionActivity.cpu = null;
+    sessionActivity.memory = null;
+    updateAgentActivity();
   } finally { telemetryPending = false; }
 }
 
@@ -535,6 +623,9 @@ async function updateTasks() {
     const data = await requestJSON("/tasks?type=todo&completed=false");
     const tasks = Array.isArray(data.tasks) ? data.tasks : [];
     writeText("task-count", tasks.length);
+    sessionActivity.tasks = tasks.length;
+    updateAgentActivity();
+    renderRecentTasks(tasks);
     $("tasks-list").replaceChildren();
     if (!tasks.length) {
       const empty = document.createElement("p");
@@ -571,6 +662,7 @@ async function updateTasks() {
     empty.className = "task-empty";
     empty.textContent = t("Task manager unavailable. Start KIRA’s backend to access your tasks.");
     $("tasks-list").appendChild(empty);
+    renderRecentTasks([]);
   } finally { tasksPending = false; }
 }
 $("task-form").addEventListener("submit", async (event) => {
