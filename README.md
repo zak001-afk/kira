@@ -118,6 +118,10 @@ build_kira.bat
 - "Call me commander"
 - "My name is Zakaria"
 
+**Shared Knowledge (Supabase):**
+- "Search shared knowledge for python decorators"
+- "What do we know about the solar system"
+
 **System:**
 - "System info"
 - "What time is it"
@@ -213,6 +217,35 @@ KIRA uses SQLite with WAL mode for efficient concurrent access:
 - **conversations** — Chat history with session tracking
 - **memories** — User preferences and facts
 - **tasks** — Timers, reminders, todos
+
+Personal data (conversations, names, preferences, tasks, private notes)
+**always stays local** in `kira_memory.db`.
+
+### Shared Knowledge (Supabase)
+
+KIRA can share **non-personal web knowledge** (web research summaries and
+learned public web pages) with a Supabase project, so multiple KIRA
+instances share one knowledge base. Personal data never leaves the local
+memory database.
+
+Setup:
+
+1. Run `SUPABASE_SCHEMA.sql` in the Supabase SQL editor (creates the
+   `shared_knowledge` table with Row Level Security enabled).
+2. Copy `.env.example` to `.env` and fill in:
+   - `SUPABASE_URL` — your project URL
+   - `SUPABASE_ANON_KEY` — the **anon/public** key only
+
+Security notes:
+- KIRA only ever uses the public **anon** key. The `service_role` key
+  bypasses Row Level Security and must **never** be used by or given to
+  KIRA (if KIRA detects one in the environment, it ignores it).
+- Without a `.env`, shared knowledge is simply disabled and KIRA works
+  fully offline as before.
+
+Voice commands: "search shared knowledge for …", "what do we know
+about …". Learned web research (`search_and_learn`, `learn_from_url`)
+is saved locally **and** shared to Supabase automatically.
 
 ### Animation System
 

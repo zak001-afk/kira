@@ -24,6 +24,16 @@ import sounddevice as sd
 import numpy as np
 from ollama import chat
 
+# Shared Supabase knowledge base (non-personal web knowledge only).
+# Personal data (conversations, names, preferences, tasks, private notes)
+# stays local in kira_memory and is never sent to Supabase.
+try:
+    import kira_shared_memory
+    SHARED_MEMORY_AVAILABLE = True
+except ImportError:
+    kira_shared_memory = None
+    SHARED_MEMORY_AVAILABLE = False
+
 DEFAULT_MODEL = "qwen3:0.6b"
 DEFAULT_VISION_MODEL = "qwen3-vl:2b"
 WAKE_WORD = "kira"
@@ -1240,6 +1250,28 @@ def parse_simple_command(command: str):
                 "target": target.lower() if target else "notepad",
             }
 
+    # ── Shared knowledge base (Supabase) — must run BEFORE generic "search " ──
+    shared_kb_match = re.match(
+        r"^(?:search|query|find|look up|lookup)\s+(?:the\s+)?shared\s+"
+        r"(?:knowledge base|knowledge|memory)(?:\s+(?:for|about|on))?\s+(.+)$",
+        lower,
+    )
+    if shared_kb_match:
+        return {
+            "action": "search_shared_knowledge",
+            "query": shared_kb_match.group(1).strip().rstrip(".?!"),
+        }
+
+    shared_kb_match = re.match(
+        r"^what\s+(?:do\s+we|does\s+the\s+team)\s+know\s+about\s+(.+)$",
+        lower,
+    )
+    if shared_kb_match:
+        return {
+            "action": "search_shared_knowledge",
+            "query": shared_kb_match.group(1).strip().rstrip(".?!"),
+        }
+
     if lower.startswith("search "):
         return {"action": "search", "query": text[7:].strip()}
 
@@ -2229,6 +2261,54 @@ def search_web(query: str):
     return True
 
 
+def search_shared_knowledge(query: str):
+    """
+    Search the shared Supabase knowledge base (non-personal web knowledge)
+    and speak the results.
+
+    This only READS shared knowledge — personal data such as conversations,
+    names, preferences, tasks and private notes never leave the local memory.
+    """
+    query = (query or "").strip()
+    if not query:
+        return False
+
+    if (not SHARED_MEMORY_AVAILABLE) or (not kira_shared_memory.is_enabled()):
+        speak(
+            personalize_address(
+                "Shared knowledge is not configured sir. "
+                "Add SUPABASE_URL and SUPABASE_ANON_KEY to the .env file, "
+                "then try again."
+            )
+        )
+        return True
+
+    results = kira_shared_memory.search_shared_knowledge(query, limit=3)
+
+    if not results:
+        speak(
+            personalize_address(
+                f"I found nothing in shared knowledge about {query}, sir."
+            )
+        )
+        return True
+
+    count = len(results)
+    speak(
+        personalize_address(
+            f"I found {count} shared knowledge "
+            f"{'entry' if count == 1 else 'entries'} about {query}, sir."
+        )
+    )
+
+    for index, item in enumerate(results, start=1):
+        topic = str(item.get("topic", "")).replace("_", " ").strip() or "entry"
+        content = str(item.get("content", "")).strip()[:300]
+        speak(f"Number {index}. {topic}. {content}")
+
+    return True
+
+
 def mouse_move(x, y):
     try:
         pyautogui.moveTo(int(float(x)), int(float(y)), duration=0.25)
@@ -2371,11 +2451,11 @@ def system_info():
 def help_command():
     return personalize_address(
         "I can open apps and websites, type text, search the web, "
+        "search our shared knowledge base, "
         "control volume and media, manage windows, read the clipboard, "
         "report system status, analyze your screen, locate things on screen, "
         "and answer questions using my local AI, sir."
     )
-    return True
 
 
 def report_time():
@@ -2479,6 +2559,9 @@ def execute_action(action_data):
 
     if action == "search":
         return search_web(str(action_data.get("query", "")))
+
+    if action == "search_shared_knowledge":
+        return search_shared_knowledge(str(action_data.get("query", "")))
 
     if action == "mouse_move":
         return mouse_move(action_data.get("x"), action_data.get("y"))
@@ -2652,6 +2735,10 @@ def describe_action(action_data):
     if action == "search":
         query = str(action_data.get("query", "search")).strip() or "search"
         return f"search the web for {query}"
+
+    if action == "search_shared_knowledge":
+        query = str(action_data.get("query", "")).strip() or "the topic"
+        return f"search the shared knowledge base for {query}"
 
     if action == "mouse_move":
         x = action_data.get("x", 0)
@@ -2868,6 +2955,8 @@ def main():
                     "help",
                     "time",
                     "date",
+                    # Already speaks its own results.
+                    "search_shared_knowledge",
                 }:
                     continue
                 target_text = ""

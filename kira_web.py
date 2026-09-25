@@ -30,6 +30,41 @@ except ImportError:
     print("[WARNING] duckduckgo-search not installed. Install with: pip install duckduckgo-search")
 
 
+def _share_to_supabase(kind: str, topic: str, title: str, content: str, source_url: str = "") -> bool:
+    """
+    Best-effort publish of learned web knowledge to the shared Supabase store.
+
+    PRIVACY: only generic, non-personal web knowledge may be shared here.
+    Conversations, names, preferences, tasks and private notes stay local
+    (kira_memory.db) and must never be passed to this function.
+
+    Returns True when the entry was shared, False otherwise. Failures are
+    silent (logged) — local memory is always saved regardless.
+    """
+    try:
+        import kira_shared_memory
+
+        if not kira_shared_memory.is_enabled():
+            return False
+
+        shared = kira_shared_memory.save_shared_knowledge(
+            kind=kind,
+            topic=topic,
+            content=content,
+            title=title,
+            source_url=source_url,
+        )
+
+        if shared:
+            print(f"[KIRA WEB] Shared web knowledge to Supabase: [{kind}] {topic}")
+
+        return shared
+
+    except Exception as exc:
+        print(f"[KIRA WEB] Supabase share skipped: {exc}")
+        return False
+
+
 def search_web(query: str, num_results: int = 5) -> list:
     """
     Search the web using DuckDuckGo.
@@ -194,9 +229,22 @@ def search_and_summarize(query: str, store_memory: bool = False) -> str:
                 f"{r['title']} - {r['snippet'][:100]}" for r in results[:2]
             ])
             
+            # 1. Always keep a local copy (personal memory stays local).
             kira_memory.save_memory("web_knowledge", memory_key, memory_content)
             summary_parts.append("\n💾 I've saved this information to my memory for future reference.")
             print(f"[KIRA WEB] Stored search results in memory: {memory_key}")
+
+            # 2. Also share this NON-personal web research to Supabase
+            #    (best-effort; local saving above is never affected).
+            shared = _share_to_supabase(
+                kind="web_search",
+                topic=memory_key,
+                title=f"Web search results for '{query}'",
+                content=memory_content,
+                source_url=results[0].get("url", "") if results else "",
+            )
+            if shared:
+                summary_parts.append("🌐 I've also shared this web research to the shared knowledge base.")
         except Exception as e:
             print(f"[KIRA WEB] Failed to store memory: {e}")
     
@@ -235,9 +283,27 @@ def learn_from_url(url: str) -> str:
         memory_key = url.replace("https://", "").replace("http://", "").replace("/", "_")[:50]
         memory_content = f"Learned from {title} ({url}): {summary}"
         
+        # 1. Always keep a local copy (personal memory stays local).
         kira_memory.save_memory("web_knowledge", memory_key, memory_content)
         
         print(f"[KIRA WEB] Learned from {url} and stored in memory")
+
+        # 2. Also share this NON-personal web knowledge to Supabase
+        #    (best-effort; local saving above is never affected).
+        shared = _share_to_supabase(
+            kind="web_page",
+            topic=memory_key,
+            title=title,
+            content=memory_content,
+            source_url=url,
+        )
+
+        if shared:
+            return (
+                f"I've read and memorized the content from '{title}'. I'll remember "
+                "this for future conversations and shared it with the shared knowledge base."
+            )
+
         return f"I've read and memorized the content from '{title}'. I'll remember this for future conversations."
         
     except Exception as e:

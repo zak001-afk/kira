@@ -1,5 +1,24 @@
 # KIRA Changelog
 
+## Unreleased — Shared knowledge base (Supabase)
+
+- Add `kira_shared_memory.py`: optional Supabase sync for **shared,
+  non-personal** knowledge only. Conversations, names, preferences, tasks
+  and private notes remain strictly local in `kira_memory.db`.
+- Add `SUPABASE_SCHEMA.sql`: `shared_knowledge` table with Row Level
+  Security (public read/insert, authenticated update/delete) and trigram
+  search indexes.
+- Add `.env.example` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`). KIRA only ever
+  uses the public anon key — the `service_role` key is never used; if one
+  is detected in the environment it is ignored and a warning is logged.
+- `kira_web.py`: learned web research (`search_and_learn`, `learn_from_url`)
+  is still saved locally and is now also shared to Supabase best-effort.
+- `kira_voice_agent.py`: new voice commands "search shared knowledge for …"
+  and "what do we know about …" to query the shared knowledge base; help
+  text updated.
+- Add `supabase` and `python-dotenv` to `requirements.txt`. Without
+  configuration KIRA degrades gracefully and keeps working fully offline.
+
 ## Unreleased — Speech sync 02 follow-up
 
 - Add **Motion: Auto / On / Off** (remembered per browser). Auto still respects
