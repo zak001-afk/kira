@@ -108,6 +108,10 @@ def start_ui_server():
 
 def _try_builtin_response(text):
     """Handle common greetings and questions without needing Ollama."""
+    from kira_commands import try_web_learning
+    learning_reply = try_web_learning(text)
+    if learning_reply is not None:
+        return learning_reply
     lower = text.strip().lower()
     
     greetings = {
@@ -172,59 +176,46 @@ def _try_builtin_response(text):
         ]
         return random.choice(farewell_list)
         
-        # Check if it's a web search request
-        search_keywords = ["search for", "search", "look up", "find", "google", "what is", "who is", "where is", "when did", "how to", "latest", "news about", "current", "recent"]
-        if any(keyword in lower for keyword in search_keywords):
-            # Extract the search query
-            query = text
-            for prefix in ["search for", "search", "look up", "find", "google"]:
-                if lower.startswith(prefix):
-                    query = text[len(prefix):].strip()
-                    break
+    # Check if it's a web search request
+    search_keywords = ["search for", "search", "look up", "find", "google", "what is", "who is", "where is", "when did", "how to", "latest", "news about", "current", "recent"]
+    if any(keyword in lower for keyword in search_keywords):
+        # Extract the search query
+        query = text
+        for prefix in ["search for", "search", "look up", "find", "google"]:
+            if lower.startswith(prefix):
+                query = text[len(prefix):].strip()
+                break
             
-            print(f"[KIRA] Web search requested: {query}")
-            try:
-                import kira_web
-                return kira_web.search_and_summarize(query)
-            except Exception as e:
-                return f"I tried to search the web but encountered an error: {str(e)}"
+        print(f"[KIRA] Web search requested: {query}")
+        try:
+            import kira_web
+            return kira_web.search_and_summarize(query)
+        except Exception as e:
+            return f"I tried to search the web but encountered an error: {str(e)}"
         
-        # Check if it's a learn/research request (search and store in memory)
-        learn_keywords = ["learn about", "research", "study", "memorize", "remember this", "teach yourself"]
-        if any(keyword in lower for keyword in learn_keywords):
-            # Extract the topic
-            query = text
-            for prefix in ["learn about", "research", "study", "memorize", "teach yourself about"]:
-                if lower.startswith(prefix):
-                    query = text[len(prefix):].strip()
-                    break
+    # Check if it's a URL to learn from
+    if lower.startswith("http://") or lower.startswith("https://") or "www." in lower:
+        # It's a URL - learn from it
+        url = text
+        if not url.startswith("http"):
+            url = "https://" + url
             
-            print(f"[KIRA] Learn and memorize requested: {query}")
-            try:
-                import kira_web
-                return kira_web.search_and_learn(query)
-            except Exception as e:
-                return f"I tried to learn about that but encountered an error: {str(e)}"
+        print(f"[KIRA] Learning from URL: {url}")
+        try:
+            import kira_web
+            return kira_web.learn_from_url(url)
+        except Exception as e:
+            return f"I tried to learn from that URL but encountered an error: {str(e)}"
         
-        # Check if it's a URL to learn from
-        if lower.startswith("http://") or lower.startswith("https://") or "www." in lower:
-            # It's a URL - learn from it
-            url = text
-            if not url.startswith("http"):
-                url = "https://" + url
-            
-            print(f"[KIRA] Learning from URL: {url}")
-            try:
-                import kira_web
-                return kira_web.learn_from_url(url)
-            except Exception as e:
-                return f"I tried to learn from that URL but encountered an error: {str(e)}"
-        
-        return None
+    return None
 
 
 def process_command(text):
     """Process a command — used by both HTTP API and pywebview bridge."""
+    from kira_commands import try_web_learning
+    learning_reply = try_web_learning(text)
+    if learning_reply is not None:
+        return {"action": "web_learn", "response": learning_reply}
     if backend is None:
         return {"error": f"Backend not available: {BACKEND_ERROR}"}
     

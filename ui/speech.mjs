@@ -6,7 +6,9 @@ export function cleanForSpeech(text) {
     .replace(/```[\s\S]*?```/g, "code block")
     .replace(/`[^`]+`/g, "")
     .replace(/https?:\/\/\S+/g, "link")
+    .replace(/[0-9#*]\uFE0F?\u20E3|[\u{1F000}-\u{1FAFF}\u2600-\u27BF\u2300-\u23FF\u2B00-\u2BFF\u2194-\u2199\u21A9-\u21AA\u00A9\u00AE\u203C\u2049\u2122\u2139\u3030\u303D\u3297\u3299\uFE0E\uFE0F\u200D\u20E3\u{E0020}-\u{E007F}]/gu, "")
     .replace(/[*_~]/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 

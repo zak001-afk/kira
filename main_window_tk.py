@@ -1084,6 +1084,10 @@ class KiraUI(ctk.CTk):
             self.events.put(("error", f"{type(e).__name__}: {e}"))
 
     def _route(self, text):
+        from kira_commands import try_web_learning
+        learning_reply = try_web_learning(text)
+        if learning_reply is not None:
+            return learning_reply
         cleaned = backend.normalize_command(text)
         if not cleaned:
             return ""

@@ -592,15 +592,11 @@ def speak(text: str):
         return
     response_text = personalize_address(text)
     print(f"KIRA: {response_text}", flush=True)
+    from kira_speech import clean_for_speech
+    speech_text = clean_for_speech(response_text)
+    if not speech_text:
+        return
     try:
-        speech_text = re.sub(
-            "[\\U0001F000-\\U0001FAFF\\U00002700-\\U000027BF\\U0001F1E6-\\U0001F1FF]",
-            "",
-            response_text,
-        )
-        speech_text = re.sub(r"\\s{2,}", " ", speech_text).strip()
-        if not speech_text:
-            return
         encoded_text = base64.b64encode(speech_text.encode("utf-8")).decode("ascii")
         command = (
             "Add-Type -AssemblyName System.Speech; "
@@ -626,7 +622,7 @@ def speak(text: str):
         try:
             engine = get_or_create_speech_engine()
             if engine is not None:
-                engine.say(text)
+                engine.say(speech_text)
                 engine.runAndWait()
         except Exception as fallback_exc:
             print(
@@ -2030,6 +2026,11 @@ def ask_chat(command: str):
     if not command:
         return ""
 
+    from kira_commands import try_web_learning
+    learning_reply = try_web_learning(command)
+    if learning_reply is not None:
+        return learning_reply
+
     history_limit = max(
         4,
         int(CONFIG.get("chat_history_limit", 16)),
@@ -3188,6 +3189,12 @@ def main():
             if lower in {"exit", "quit", "goodbye", "bye"}:
                 speak(personalize_address("Goodbye sir."))
                 break
+
+            from kira_commands import try_web_learning
+            learning_reply = try_web_learning(cleaned)
+            if learning_reply is not None:
+                speak(learning_reply)
+                continue
 
             result = parse_simple_command(cleaned)
             if result is None and is_chat_question(cleaned):

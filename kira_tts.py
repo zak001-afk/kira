@@ -5,6 +5,8 @@ These voices sound very natural and human-like, much better than
 browser-based TTS. Uses edge-tts library.
 """
 
+from kira_speech import clean_for_speech
+
 import asyncio
 import os
 import tempfile
@@ -58,6 +60,7 @@ def generate_speech(text: str, voice: str = None) -> str | None:
     Returns:
         Path to generated audio file, or None if failed
     """
+    text = clean_for_speech(text)
     if not EDGE_TTS_AVAILABLE:
         print("[KIRA TTS] edge-tts not available")
         return None

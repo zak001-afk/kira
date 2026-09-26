@@ -38,11 +38,11 @@ except ImportError:
     SHARED_KNOWLEDGE_AVAILABLE = False
 
 try:
-    from duckduckgo_search import DDGS
+    from ddgs import DDGS
     DUCKDUCKGO_AVAILABLE = True
 except ImportError:
     DUCKDUCKGO_AVAILABLE = False
-    print("[WARNING] duckduckgo-search not installed. Install with: pip install duckduckgo-search")
+    print("[WARNING] ddgs not installed. Install with: pip install ddgs")
 
 
 def shared_knowledge_available() -> bool:
@@ -108,13 +108,13 @@ def search_web(query: str, num_results: int = 5) -> list:
         List of search results with title, url, and snippet
     """
     if not DUCKDUCKGO_AVAILABLE:
-        return [{"error": "duckduckgo-search not installed"}]
+        return [{"error": "ddgs not installed"}]
     
     # Check cache first
     if CACHE_ENABLED:
         cache_key = f"search:{hashlib.md5(query.encode()).hexdigest()}:{num_results}"
         cached_result = web_cache.get(cache_key)
-        if cached_result is not None:
+        if cached_result and not any("error" in item for item in cached_result):
             print(f"[KIRA WEB] Cache hit for search: {query}")
             return cached_result
     
@@ -122,7 +122,7 @@ def search_web(query: str, num_results: int = 5) -> list:
         print(f"[KIRA WEB] Searching: {query}")
         
         with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=num_results))
+            results = list(ddgs.text(query, max_results=num_results) or [])
         
         # Format results
         formatted = []
@@ -136,7 +136,7 @@ def search_web(query: str, num_results: int = 5) -> list:
         print(f"[KIRA WEB] Found {len(formatted)} results")
         
         # Cache the results
-        if CACHE_ENABLED:
+        if CACHE_ENABLED and formatted:
             web_cache.set(cache_key, formatted, ttl=3600)  # 1 hour TTL
         
         return formatted
@@ -239,7 +239,10 @@ def search_and_summarize(query: str, store_memory: bool = False) -> str:
     """
     results = search_web(query, num_results=3)
     
-    if not results or "error" in results[0]:
+    if not results:
+        return f"I found no web results for '{query}'. Try a different search phrase."
+
+    if "error" in results[0]:
         return f"I couldn't search the web: {results[0].get('error', 'Unknown error')}"
     
     # Format results

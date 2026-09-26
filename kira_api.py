@@ -258,6 +258,12 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(e)}, 500)
                 return
 
+        from kira_commands import try_web_learning
+        learning_reply = try_web_learning(text)
+        if learning_reply is not None:
+            self._send_json({"response": learning_reply, "action": "web_learn"})
+            return
+
         # Fallback: use backend directly
         if _backend is None:
             self._send_json({"error": "Backend not available"}, 503)
