@@ -193,20 +193,23 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
     if (texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
     if (texture) texture.needsUpdate = true;
   });
-  // Rendu "visage réel" : blending normal (peau opaque, tons naturels),
-  // grande échelle, au premier plan devant les anneaux.
+  // Rendu "visage réel" : blending normal (peau opaque, tons naturels).
+  // depthTest désactivé + renderOrder maximal : le visage est TOUJOURS
+  // dessiné en dernier, au-dessus de toute la machinerie — aucun élément 3D
+  // ne peut jamais passer devant, quelle que soit sa position.
   const avatarMaterial = new THREE.MeshBasicMaterial({
     map: avatarTexture,
     transparent: true,
     opacity: 1.0,
     depthWrite: false,
+    depthTest: false,
     toneMapped: false,
   });
   const avatarPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(5.6, 5.6),
+    new THREE.PlaneGeometry(6.4, 6.4),
     avatarMaterial
   );
-  // Portrait réduit, devant TOUTE la machinerie (rayon max 4.9).
+  avatarPlane.renderOrder = 50;
   avatarPlane.position.set(0, 0.4, 5.2);
   avatarGroup.add(avatarPlane);
 }
@@ -1412,7 +1415,7 @@ function animate() {
 
   // La machinerie tourne lentement ; l'avatar reste face à vous mais
   // respire avec la voix comme le reste du réacteur.
-  reactor.rotation.y = motionTime * 0.12;
+  reactor.rotation.y = motionTime * 0.09;
   reactor.rotation.x = Math.sin(motionTime * 0.18) * 0.08;
   reactor.scale.set(1.05 + energy * 0.12, 1.05 + energy * 0.23, 1.05 + energy * 0.12);
   reactor.position.y = Math.sin(motionTime * 3.5) * energy * 0.14;
@@ -1455,7 +1458,7 @@ function animate() {
   whiteGlow.scale.setScalar(1 + breath + high * 0.22 + energy * 0.1);
   whiteGlowMaterial.opacity = 0.22 + light * 0.07;
   reactorLight.intensity = 9 + light * 3;
-  bloomPass.strength = 1.4 + light * 0.18;
+  bloomPass.strength = 1.1 + light * 0.16;
 
   reactorParticles.rotation.y = motionTime * 0.025;
   reactorParticles.rotation.x = Math.sin(motionTime * 0.15) * 0.15;
