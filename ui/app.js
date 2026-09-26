@@ -185,7 +185,8 @@ reactor.add(energySphere);
    ========================================================= */
 
 const avatarGroup = new THREE.Group();
-scene.add(avatarGroup);
+// Avatar désactivé : centre volontairement vide.
+if (false) scene.add(avatarGroup);
 
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
@@ -219,8 +220,9 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
    ========================================================= */
 
 const coreCluster = new THREE.Group();
-coreCluster.position.set(0, -4.1, 0.4); // derrière l'avatar, bas du buste
-scene.add(coreCluster);
+coreCluster.position.set(0, -4.1, 0.4);
+// Noyau désactivé : centre volontairement vide.
+if (false) scene.add(coreCluster);
 
 // --- CŒUR ---
 const coreGeometry = new THREE.SphereGeometry(0.42, 64, 64);
@@ -364,7 +366,7 @@ halo.rotation.x = Math.PI / 2;
 reactor.add(halo);
 
 // --- LUMIÈRE DU RÉACTEUR ---
-const reactorLight = new THREE.PointLight(0xffa61b, 10, 9);
+const reactorLight = new THREE.PointLight(0xffa61b, 3, 9);
 reactorLight.position.set(0, -4.1, 1.0);
 scene.add(reactorLight);
 
