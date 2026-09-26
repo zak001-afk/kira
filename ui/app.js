@@ -3,6 +3,8 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { AvatarMouth } from "./avatar-mouth.mjs?v=command-center-13";
+import { lipDemoPose } from "./lips.mjs?v=command-center-13";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
@@ -184,6 +186,7 @@ energySphere.position.z = -3.2;
    AVATAR — visage doré de KIRA
    ========================================================= */
 
+let avatarMouth = null;
 const avatarGroup = new THREE.Group();
 scene.add(avatarGroup);
 
@@ -192,6 +195,11 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarTexture = avatarLoader.load("assets/avatar_gold.png", (texture) => {
     if (texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
     if (texture) texture.needsUpdate = true;
+    // Lèvres animées : synchronisées sur l'horloge audio réelle.
+    if (texture && texture.image && typeof AvatarMouth === "function") {
+      try { avatarMouth = new AvatarMouth(texture.image, THREE, scene, avatarPlane); }
+      catch { avatarMouth = null; }
+    }
   });
   // Rendu "visage réel" : blending normal (peau opaque, tons naturels).
   // depthTest désactivé + renderOrder maximal : le visage est TOUJOURS
@@ -576,7 +584,7 @@ function stopSpeaking() {
   speech.stop();
 }
 
-window.addEventListener("pagehide", () => speech.destroy());
+window.addEventListener("pagehide", () => { speech.destroy(); avatarMouth?.destroy?.(); });
 
 // Bouton muet
 const muteButton = document.getElementById("mute");
@@ -1402,6 +1410,14 @@ function animate() {
   const light = level * (disabled ? 0.12 : 1);
   const motionTime = disabled ? 0 : time;
   const step = disabled ? 0 : dt;
+  // Lèvres : suivent la même horloge audio que le son (aucun décalage).
+  if (avatarMouth) {
+    avatarMouth.update(
+      { mouth: voice.mouth, active: voice.active, level },
+      { now, disabled, demo: demo ? lipDemoPose(demoAge) : null }
+    );
+  }
+
   voiceRotation += energy * step;
   voiceUniforms.voiceTime.value = motionTime;
   voiceUniforms.voiceEnergy.value = energy;
