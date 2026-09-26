@@ -185,8 +185,7 @@ energySphere.position.z = -3.2;
    ========================================================= */
 
 const avatarGroup = new THREE.Group();
-// Avatar désactivé : centre volontairement vide.
-if (false) scene.add(avatarGroup);
+scene.add(avatarGroup);
 
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
@@ -207,7 +206,7 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
     toneMapped: false,
   });
   const avatarPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(6.4, 6.4),
+    new THREE.PlaneGeometry(7.2, 7.2),
     avatarMaterial
   );
   avatarPlane.renderOrder = 50;
