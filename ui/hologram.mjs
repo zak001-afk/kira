@@ -55,6 +55,7 @@ export class Hologram {
     this.root.style.setProperty("--voice", frame.light.toFixed(4));
     this.halo.style.filter = `brightness(${(1 + frame.light * 0.25 + frame.high * 0.8).toFixed(3)})`;
     this.halo.style.transform = `scale(${frame.haloX.toFixed(4)}, ${frame.haloY.toFixed(4)})`;
+    // The portrait is optional: the center can be a pure holographic core.
     if (this.portrait) this.portrait.style.transform = `translateY(${frame.portraitY.toFixed(3)}px) scale(${frame.portraitScale.toFixed(4)})`;
     // A static, very quiet trace when idle. Movement only comes from speech/test.
     this.wave.setAttribute("d", waveformPath(frame.energy, frame.energy > 0.002 ? frame.time : 0));

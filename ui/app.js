@@ -386,6 +386,7 @@ function animate(now = performance.now()) {
   const rendererState = hologram.mouth.renderer.state;
   const lipLabel = disabled ? t("LIP SYNC · MOTION DISABLED")
     : !lipsEnabled ? t("LIP SYNC · OFF")
+    : hologram.mouth.renderer.canvas && ["unsupported", "unavailable"].includes(rendererState) ? t("LIP SYNC · RENDERER UNAVAILABLE")
     : rendererState === "loading" ? t("LIP SYNC · LOADING PORTRAIT")
     : lipDemo ? t("LIP SYNC · VISUAL TEST / NO AUDIO")
     : !voice.active ? t("LIP SYNC · IDLE")
