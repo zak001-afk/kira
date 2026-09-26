@@ -193,19 +193,20 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
     if (texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
     if (texture) texture.needsUpdate = true;
   });
+  // Rendu "visage réel" : blending normal (peau opaque, tons naturels),
+  // grande échelle, au premier plan devant les anneaux.
   const avatarMaterial = new THREE.MeshBasicMaterial({
     map: avatarTexture,
     transparent: true,
-    opacity: 0.96,
-    blending: THREE.AdditiveBlending,
+    opacity: 1.0,
     depthWrite: false,
     toneMapped: false,
   });
   const avatarPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(7.9, 7.9),
+    new THREE.PlaneGeometry(9.9, 9.9),
     avatarMaterial
   );
-  avatarPlane.position.set(0, 0.2, 0);
+  avatarPlane.position.set(0, 0.55, 1.7);
   avatarGroup.add(avatarPlane);
 }
 
@@ -214,7 +215,7 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
    ========================================================= */
 
 const coreCluster = new THREE.Group();
-coreCluster.position.set(0, -2.75, 0.7);
+coreCluster.position.set(0, -3.6, 2.4);
 scene.add(coreCluster);
 
 // --- CŒUR ---
@@ -360,7 +361,7 @@ reactor.add(halo);
 
 // --- LUMIÈRE DU RÉACTEUR ---
 const reactorLight = new THREE.PointLight(0xffa61b, 10, 9);
-reactorLight.position.set(0, -2.75, 1.4);
+reactorLight.position.set(0, -3.6, 3.0);
 scene.add(reactorLight);
 
 // --- ANNEAUX ORBITAUX ---
@@ -1414,7 +1415,8 @@ function animate() {
   reactor.rotation.x = Math.sin(motionTime * 0.18) * 0.08;
   reactor.scale.set(1.05 + energy * 0.12, 1.05 + energy * 0.23, 1.05 + energy * 0.12);
   reactor.position.y = Math.sin(motionTime * 3.5) * energy * 0.14;
-  avatarGroup.scale.set(reactor.scale.x, reactor.scale.y, reactor.scale.z);
+  // L'avatar reste stable et humain ; seule une respiration légère l'anime.
+  avatarGroup.scale.set(1 + energy * 0.02, 1 + energy * 0.045, 1);
   armorGroup.rotation.y = -motionTime * 0.08;
   verticalArmor.rotation.y = motionTime * 0.05;
   halo.rotation.z = motionTime * 1.8 + voiceRotation * 0.5;
