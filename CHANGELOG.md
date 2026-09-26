@@ -1,5 +1,38 @@
 # KIRA Changelog
 
+## Unreleased — AI Command Center (thème or)
+
+- **Nouvelle interface web complète** (`ui/`) : KIRA adopte le look
+  « AI COMMAND CENTER » noir & or, entièrement en français — panneau
+  Conversation, panneau Agents, jauges Système (CPU / RAM / Disque / Réseau),
+  Activité des agents, Tâches récentes et dock de navigation à 9 vues
+  (Accueil, Conversation, Agents, Fichiers, Outils, Paramètres, Historique,
+  Système) avec bouton vocal « K » central. Utilisée par l'app native
+  (pywebview) comme par le mode navigateur.
+- **Avatar holographique** (`ui/assets/avatar_gold.png`, généré par IA) :
+  rendu additif Three.js, anneaux orbitaux dorés, particules et bloom.
+  L'avatar respire avec la voix (same speech-sync pipeline, tests inchangés).
+- **Jauges temps réel réelles** : `kira_api._handle_system` ajoute
+  `cpu_cores`, `uptime_h` et les **débits réseau live** (`net_sent_kbps`,
+  `net_recv_kbps`, calculés par delta des compteurs `psutil`). L'UI trace des
+  sparklines CPU/RAM/Disque/Réseau et met à jour cloche de notifications,
+  barres d'activité (dont l'énergie vocale instantanée) et badge de tâches.
+- **Vues fonctionnelles branchées sur l'API** : Historique (`/api/history`),
+  Tâches (`/api/tasks`, ajout via `/api/task`), Agents (`/api/plugins`),
+  Système détaillé, Paramètres (choix de **voix** FR/EN et langue du micro,
+  persistés en `localStorage`), Outils (recherche web, apprentissage d'une
+  page, analyse d'écran, notes mémo via `/api/remember`), Fichiers
+  (raccourcis de commandes réelles).
+- **Voix françaises** (`kira_tts.py`) : Denise, Éloïse, Vivienne et Henri
+  (edge-tts) rejoignent les voix anglophones ; l'UI envoie le choix à
+  `/api/tts`.
+- Micro par défaut en **fr-FR** (modifiable dans Paramètres), horloge et dates
+  localisées en français, historique de session précédente affiché au démarrage.
+- `API_BASE` peut être surchargé via `window.KIRA_API_BASE` (déploiement
+  derrière un proxy même origine).
+- Suppression de la pluie Matrix (thème or épuré) ; les 12 tests du réacteur,
+  26 tests vocaux et 23 tests Python passent inchangés.
+
 ## Unreleased — Shared knowledge base (Supabase)
 
 - Add **`kira_shared_memory.py`**: the only module that talks to Supabase, and
