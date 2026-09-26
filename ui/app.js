@@ -182,6 +182,8 @@ async function loadLanguageCatalog() {
 }
 function writeText(id, value) {
   const element = $(id);
+  // Optional targets are legitimate: panels can be removed from the layout.
+  if (!element) return;
   if (element.textContent !== String(value)) element.textContent = value;
 }
 
@@ -425,19 +427,8 @@ async function sendCommand(text, { shortcut = false } = {}) {
   updateAgentActivity();
   const thinking = addMessage("KIRA", t("Processing your request…"));
   thinking.classList.add("thinking");
-  let orchFlow = null;
-  const delegatedId = delegateFor(text);
-  if (delegatedId) {
-    const agentDef = AGENTS.find((agent) => agent.id === delegatedId);
-    if (agentDef) {
-      thinking.classList.add("orch");
-      const flow = document.createElement("p");
-      flow.className = "orch-flow";
-      flow.innerHTML = `<svg class="icon" aria-hidden="true"><use href="#${agentDef.icon}" /></svg><b>KIRA → ${t(agentDef.name)}</b><span class="orch-state"><i></i>${t("WORKING")}</span>`;
-      thinking.querySelector(".message-content").appendChild(flow);
-      orchFlow = flow;
-    }
-  }
+  void delegateFor; // Agent registry kept for future re-introduction.
+
   const started = performance.now();
   try {
     const revision = languageRevision;
@@ -459,12 +450,6 @@ async function sendCommand(text, { shortcut = false } = {}) {
       languageRevision++;
     }
     updateLanguageControls();
-    if (orchFlow) {
-      const state = orchFlow.querySelector(".orch-state");
-      if (state) state.innerHTML = `<i></i>${t("DONE")}`;
-      orchFlow.classList.add("done");
-      orchFlow = null;
-    }
     writeText("response-time", `${((performance.now() - started) / 1000).toFixed(2)} s`);
     // Failed actions must never be labelled as successfully executed.
     const response = data.success === false ? t("KIRA could not complete: {action}.", { action: data.action || t("this action") }) + (data.response ? `\n${t("Backend response: {response}", { response: data.response })}` : "")
@@ -474,12 +459,6 @@ async function sendCommand(text, { shortcut = false } = {}) {
     if (data.language_warning) notify(t("The model could not use the requested language. Try a multilingual model."));
   } catch (error) {
     if (destroyed) return;
-    if (orchFlow) {
-      const state = orchFlow.querySelector(".orch-state");
-      if (state) state.innerHTML = `<i></i>${t("FAILED")}`;
-      orchFlow.classList.add("failed");
-      orchFlow = null;
-    }
     thinking.remove();
     addMessage("SYSTEM", friendlyError(error));
     setActivity("ERROR");
@@ -546,7 +525,9 @@ $("nav-gear").addEventListener("click", () => openPanel("settings"));
 $("nav-tools").addEventListener("click", () => openPanel("diagnostics"));
 $("nav-settings").addEventListener("click", () => openPanel("settings"));
 $("nav-power").addEventListener("click", () => notify(t("KIRA runs locally on this computer. Close the window to shut it down.")));
-$("add-agent").addEventListener("click", () => notify(t("KIRA modules are built in. Pick one to fill the command line.")));
+// The AGENTS panel is optional in the layout; keep the handler when present.
+const addAgent = $("add-agent");
+if (addAgent) addAgent.addEventListener("click", () => notify(t("KIRA modules are built in. Pick one to fill the command line.")));
 
 $("clear-chat").addEventListener("click", () => {
   if (commandPending) return notify(t("Wait for the current command to finish before clearing the view."));

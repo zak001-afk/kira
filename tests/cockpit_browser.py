@@ -149,8 +149,7 @@ class CockpitBrowserTests(unittest.TestCase):
     def test_commands_safe_text_and_quick_prompt(self):
         self.load()
         self.page.locator("#mute").click()
-        self.page.locator('[data-prompt="search for "]').click()
-        expect(self.page.locator("#command")).to_have_value("search for ")
+        self.assertEqual(self.page.locator(".agents-panel").count(), 0)
         self.assertFalse(any("/api/command" in request.url for request in self.requests), "Incomplete search must not execute")
         self.page.locator("#command").fill("Bonjour KIRA")
         self.page.locator("#command").press("Enter")
