@@ -24,6 +24,23 @@ import sounddevice as sd
 import numpy as np
 from ollama import chat
 
+
+# Keep symbols and emoji out of spoken responses.  In addition to the main
+# emoji blocks, remove variation selectors and joiners so compound emoji do
+# not leave behind invisible characters for SAPI or pyttsx3.
+_EMOJI_RE = re.compile(
+    r"[\U0001F000-\U0001FAFF\u2300-\u23FF\u2600-\u27BF\u2B00-\u2BFF"
+    r"\u3030\u303D\u3297\u3299\u00A9\u00AE\u203C\u2049\u2122\u2139"
+    r"\uFE0E\uFE0F\u200D\u20E3\U000E0020-\U000E007F]"
+)
+
+
+def clean_for_speech(text: str) -> str:
+    """Return text safe to send to the desktop speech engines."""
+    cleaned = _EMOJI_RE.sub("", str(text or ""))
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
 # Shared Supabase knowledge base (non-personal web research and project
 # knowledge only). Personal data — conversations, names, preferences, tasks
 # and private notes — stays local in kira_memory and is never sent to
@@ -592,15 +609,10 @@ def speak(text: str):
         return
     response_text = personalize_address(text)
     print(f"KIRA: {response_text}", flush=True)
+    speech_text = clean_for_speech(response_text)
+    if not speech_text:
+        return
     try:
-        speech_text = re.sub(
-            "[\\U0001F000-\\U0001FAFF\\U00002700-\\U000027BF\\U0001F1E6-\\U0001F1FF]",
-            "",
-            response_text,
-        )
-        speech_text = re.sub(r"\\s{2,}", " ", speech_text).strip()
-        if not speech_text:
-            return
         encoded_text = base64.b64encode(speech_text.encode("utf-8")).decode("ascii")
         command = (
             "Add-Type -AssemblyName System.Speech; "
@@ -626,7 +638,7 @@ def speak(text: str):
         try:
             engine = get_or_create_speech_engine()
             if engine is not None:
-                engine.say(text)
+                engine.say(speech_text)
                 engine.runAndWait()
         except Exception as fallback_exc:
             print(

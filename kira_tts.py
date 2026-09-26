@@ -6,9 +6,10 @@ browser-based TTS. Uses edge-tts library.
 """
 
 import asyncio
-import os
-import tempfile
 import hashlib
+import os
+import re
+import tempfile
 from pathlib import Path
 
 try:
@@ -17,6 +18,22 @@ try:
 except ImportError:
     EDGE_TTS_AVAILABLE = False
     print("[WARNING] edge-tts not installed. Install with: pip install edge-tts")
+
+
+# The neural voice should not try to pronounce emoji or the invisible
+# variation/joiner characters used to build compound emoji.
+_EMOJI_RE = re.compile(
+    r"[\U0001F000-\U0001FAFF\u2300-\u23FF\u2600-\u27BF\u2B00-\u2BFF"
+    r"\u3030\u303D\u3297\u3299\u00A9\u00AE\u203C\u2049\u2122\u2139"
+    r"\uFE0E\uFE0F\u200D\u20E3\U000E0020-\U000E007F]"
+)
+
+
+def clean_for_speech(text: str) -> str:
+    """Remove emoji and normalize whitespace before generating audio."""
+    cleaned = _EMOJI_RE.sub("", str(text or ""))
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
 
 # Cache directory for generated audio files
 CACHE_DIR = Path(tempfile.gettempdir()) / "kira_tts_cache"
@@ -62,9 +79,10 @@ def generate_speech(text: str, voice: str = None) -> str | None:
         print("[KIRA TTS] edge-tts not available")
         return None
     
-    if not text or not text.strip():
+    text = clean_for_speech(text)
+    if not text:
         return None
-    
+
     # Use default voice if not specified
     if voice is None:
         voice = DEFAULT_VOICE

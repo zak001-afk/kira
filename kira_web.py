@@ -38,11 +38,18 @@ except ImportError:
     SHARED_KNOWLEDGE_AVAILABLE = False
 
 try:
-    from duckduckgo_search import DDGS
+    # duckduckgo-search was renamed to ddgs.  Keep the legacy import as a
+    # compatibility fallback for existing installations while using the
+    # maintained package declared in requirements.txt.
+    from ddgs import DDGS
     DUCKDUCKGO_AVAILABLE = True
 except ImportError:
-    DUCKDUCKGO_AVAILABLE = False
-    print("[WARNING] duckduckgo-search not installed. Install with: pip install duckduckgo-search")
+    try:
+        from duckduckgo_search import DDGS
+        DUCKDUCKGO_AVAILABLE = True
+    except ImportError:
+        DUCKDUCKGO_AVAILABLE = False
+        print("[WARNING] ddgs not installed. Install with: pip install ddgs")
 
 
 def shared_knowledge_available() -> bool:
@@ -238,10 +245,14 @@ def search_and_summarize(query: str, store_memory: bool = False) -> str:
         Formatted string with search results
     """
     results = search_web(query, num_results=3)
-    
-    if not results or "error" in results[0]:
+
+    # DuckDuckGo can legitimately return an empty list for a query.  Treat it
+    # as a normal no-results response instead of indexing results[0].
+    if not results:
+        return f"I couldn't find any web results for '{query}'."
+    if "error" in results[0]:
         return f"I couldn't search the web: {results[0].get('error', 'Unknown error')}"
-    
+
     # Format results
     summary_parts = [f"Here's what I found for '{query}':\n"]
     

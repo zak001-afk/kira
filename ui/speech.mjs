@@ -1,12 +1,19 @@
 // Speech-driven motion, independent of Three.js. No microphone is sampled.
 const clamp = (value, low = 0, high = 1) => Math.min(high, Math.max(low, value));
 
+// Keep both neural audio and browser speech from attempting to pronounce
+// emoji.  Remove the joiners and variation selectors too, otherwise a
+// compound emoji can leave invisible characters in the utterance.
+const emojiPattern = /[\u{1F000}-\u{1FAFF}\u{2300}-\u{23FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{3030}\u{303D}\u{3297}\u{3299}\u{00A9}\u{00AE}\u{203C}\u{2049}\u{2122}\u{2139}\u{FE0E}\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu;
+
 export function cleanForSpeech(text) {
   return String(text || "")
     .replace(/```[\s\S]*?```/g, "code block")
     .replace(/`[^`]+`/g, "")
     .replace(/https?:\/\/\S+/g, "link")
     .replace(/[*_~]/g, "")
+    .replace(emojiPattern, "")
+    .replace(/\s{2,}/g, " ")
     .trim();
 }
 
