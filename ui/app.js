@@ -3,8 +3,7 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { AvatarMouth } from "./avatar-mouth.mjs?v=command-center-13";
-import { lipDemoPose } from "./lips.mjs?v=command-center-13";
+import { createAvatar3D } from "./avatar3d.mjs?v=command-center-14";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
@@ -186,40 +185,15 @@ energySphere.position.z = -3.2;
    AVATAR — visage doré de KIRA
    ========================================================= */
 
-let avatarMouth = null;
+let avatar3D = null;
 const avatarGroup = new THREE.Group();
 scene.add(avatarGroup);
 
-if (THREE.TextureLoader && THREE.PlaneGeometry) {
-  const avatarLoader = new THREE.TextureLoader();
-  const avatarTexture = avatarLoader.load("assets/avatar_gold.png", (texture) => {
-    if (texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-    if (texture) texture.needsUpdate = true;
-    // Lèvres animées : synchronisées sur l'horloge audio réelle.
-    if (texture && texture.image && typeof AvatarMouth === "function") {
-      try { avatarMouth = new AvatarMouth(texture.image, THREE, scene, avatarPlane); }
-      catch { avatarMouth = null; }
-    }
-  });
-  // Rendu "visage réel" : blending normal (peau opaque, tons naturels).
-  // depthTest désactivé + renderOrder maximal : le visage est TOUJOURS
-  // dessiné en dernier, au-dessus de toute la machinerie — aucun élément 3D
-  // ne peut jamais passer devant, quelle que soit sa position.
-  const avatarMaterial = new THREE.MeshBasicMaterial({
-    map: avatarTexture,
-    transparent: true,
-    opacity: 1.0,
-    depthWrite: false,
-    depthTest: false,
-    toneMapped: false,
-  });
-  const avatarPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(5.6, 5.6),
-    avatarMaterial
-  );
-  avatarPlane.renderOrder = 50;
-  avatarPlane.position.set(0, 0.4, 5.2);
-  avatarGroup.add(avatarPlane);
+// ── AVATAR 3D (géométrie pure, à la place de la photo) ──
+// Lèvres/mâchoire animées par les visèmes, synchronisées sur l'horloge audio.
+if (typeof createAvatar3D === "function") {
+  try { avatar3D = createAvatar3D(THREE, scene); }
+  catch { avatar3D = null; }
 }
 
 /* =========================================================
@@ -584,7 +558,7 @@ function stopSpeaking() {
   speech.stop();
 }
 
-window.addEventListener("pagehide", () => { speech.destroy(); avatarMouth?.destroy?.(); });
+window.addEventListener("pagehide", () => { speech.destroy(); avatar3D?.destroy?.(); });
 
 // Bouton muet
 const muteButton = document.getElementById("mute");
@@ -1410,12 +1384,12 @@ function animate() {
   const light = level * (disabled ? 0.12 : 1);
   const motionTime = disabled ? 0 : time;
   const step = disabled ? 0 : dt;
-  // Lèvres : suivent la même horloge audio que le son (aucun décalage).
-  if (avatarMouth) {
-    avatarMouth.update(
-      { mouth: voice.mouth, active: voice.active, level },
-      { now, disabled, demo: demo ? lipDemoPose(demoAge) : null }
-    );
+  // Avatar 3D : bouche/visèmes sur l'horloge audio réelle (aucun décalage).
+  if (avatar3D) {
+    avatar3D.update({
+      mouth: voice.mouth, level, energy, time: motionTime,
+      active: !disabled && (voice.active || demo), dt: step || 1 / 60,
+    });
   }
 
   voiceRotation += energy * step;
@@ -1437,7 +1411,7 @@ function animate() {
   reactor.scale.set(1.05 + energy * 0.12, 1.05 + energy * 0.23, 1.05 + energy * 0.12);
   reactor.position.y = Math.sin(motionTime * 3.5) * energy * 0.14;
   // L'avatar reste stable et humain ; seule une respiration légère l'anime.
-  avatarGroup.scale.set(1 + energy * 0.02, 1 + energy * 0.045, 1);
+
   armorGroup.rotation.y = -motionTime * 0.08;
   verticalArmor.rotation.y = motionTime * 0.05;
   halo.rotation.z = motionTime * 1.8 + voiceRotation * 0.5;
