@@ -22,6 +22,10 @@ _backend = None
 _events_callback = None
 _command_handler = None
 
+# Previous network counters, used to compute live transfer rates.
+_net_lock = threading.Lock()
+_net_last = {"sent": None, "recv": None, "ts": None}
+
 DEFAULT_PORT = 8765
 DEFAULT_HOST = "0.0.0.0"
 
@@ -205,14 +209,39 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
     def _handle_system(self):
         """Return system telemetry."""
         try:
+            import time as _time
+
             import psutil
             data = {
                 "cpu_percent": psutil.cpu_percent(interval=None),
+                "cpu_cores": psutil.cpu_count(logical=True),
                 "memory_percent": psutil.virtual_memory().percent,
                 "memory_used_gb": round(psutil.virtual_memory().used / (1024**3), 1),
                 "memory_total_gb": round(psutil.virtual_memory().total / (1024**3), 1),
                 "disk_percent": psutil.disk_usage("/").percent,
+                "uptime_h": round(max(0.0, _time.time() - psutil.boot_time()) / 3600, 1),
             }
+            # Live network rates (bytes/s since the previous call)
+            try:
+                net = psutil.net_io_counters()
+                now = _time.time()
+                with _net_lock:
+                    prev_sent = _net_last["sent"]
+                    prev_recv = _net_last["recv"]
+                    prev_ts = _net_last["ts"]
+                    _net_last["sent"] = net.bytes_sent
+                    _net_last["recv"] = net.bytes_recv
+                    _net_last["ts"] = now
+                if prev_sent is not None and prev_ts is not None and now > prev_ts:
+                    dt = now - prev_ts
+                    data["net_sent_kbps"] = round(max(0.0, (net.bytes_sent - prev_sent) / dt / 1024), 1)
+                    data["net_recv_kbps"] = round(max(0.0, (net.bytes_recv - prev_recv) / dt / 1024), 1)
+                else:
+                    data["net_sent_kbps"] = 0.0
+                    data["net_recv_kbps"] = 0.0
+            except Exception:
+                data["net_sent_kbps"] = 0.0
+                data["net_recv_kbps"] = 0.0
             # GPU info (Windows)
             try:
                 import subprocess

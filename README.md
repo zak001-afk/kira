@@ -1,11 +1,12 @@
 # KIRA — Local AI Computer Agent
 
-**KIRA** is a sophisticated local AI assistant with voice control, computer automation, persistent memory, task management, and an extensible plugin system. Built for Windows with a cinematic HUD interface.
+**KIRA** is a sophisticated local AI assistant with voice control, computer automation, persistent memory, task management, and an extensible plugin system. Built for Windows with a cinematic gold **AI Command Center** interface (in French).
 
 ## ✨ Features
 
 ### Core Capabilities
-- **Voice Control** — Natural language voice commands with wake word detection
+- **AI Command Center UI** — Gold/black HUD with holographic AI avatar, live system gauges (CPU / RAM / Disk / Network), agents panel, recent tasks and a 9-view navigation dock
+- **Voice Control** — Natural language voice commands with wake word detection (French voices included: Denise, Éloïse, Vivienne, Henri)
 - **Computer Control** — Open apps, control windows, manage files, automate tasks
 - **Persistent Memory** — SQLite-based memory system that remembers across sessions
 - **Multi-Language** — Supports English, French, and Arabic

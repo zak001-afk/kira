@@ -29,12 +29,17 @@ DEFAULT_VOICE = "en-US-JennyNeural"
 
 # Available high-quality female voices
 FEMALE_VOICES = {
-    "jenny": "en-US-JennyNeural",      # Friendly, natural
-    "aria": "en-US-AriaNeural",         # Professional, clear
-    "sara": "en-US-SaraNeural",         # Warm, conversational
-    "nancy": "en-US-NancyNeural",       # Calm, soothing
-    "jane": "en-US-JaneNeural",         # Expressive
+    "jenny": "en-US-JennyNeural",      # Friendly, natural (EN)
+    "aria": "en-US-AriaNeural",         # Professional, clear (EN)
+    "sara": "en-US-SaraNeural",         # Warm, conversational (EN)
+    "nancy": "en-US-NancyNeural",       # Calm, soothing (EN)
+    "jane": "en-US-JaneNeural",         # Expressive (EN)
     "aria_uk": "en-GB-SoniaNeural",     # British accent
+    # Voix françaises
+    "denise": "fr-FR-DeniseNeural",     # Chaleureuse, naturelle (FR)
+    "eloise": "fr-FR-EloiseNeural",     # Jeune, expressive (FR)
+    "vivienne": "fr-FR-VivienneNeural", # Posée, élégante (FR)
+    "henri": "fr-FR-HenriNeural",       # Masculine, grave (FR)
 }
 
 

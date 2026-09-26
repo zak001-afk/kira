@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>KIRA // Neural Interface</title>
+    <title>KIRA // AI Command Center</title>
     <link rel="stylesheet" href="./style.css" />
     <script type="importmap">
       {
@@ -15,160 +15,374 @@
     </script>
   </head>
   <body>
-    <!-- 3D BACKGROUND -->
+    <!-- FOND 3D : avatar + anneaux holographiques dorés -->
     <div id="scene-container"></div>
-
-    <!-- MATRIX OVERLAY -->
-    <canvas id="matrix"></canvas>
 
     <!-- HUD -->
     <main id="hud">
-      <!-- HEADER -->
+      <!-- ══════════ BARRE SUPÉRIEURE ══════════ -->
       <header class="top-bar">
         <div class="brand">
-          <span class="brand-name">K I R A</span>
-          <span class="brand-sub">NEURAL COMPUTER AGENT // LOCAL INSTANCE</span>
+          <span class="brand-name">KIRA</span>
+          <span class="brand-sub">AI COMMAND CENTER</span>
         </div>
         <div class="header-right">
           <div class="clock">
             <div class="clock-time" id="clock-time">00:00:00</div>
-            <div class="clock-date" id="clock-date">LOADING...</div>
+            <div class="clock-date" id="clock-date">Chargement…</div>
           </div>
-          <div class="online">
-            <span class="online-dot"></span>
-            <span id="status-text">ONLINE</span>
-          </div>
+          <button id="bell-btn" class="icon-btn" title="Tâches et notifications">
+            <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            <span id="bell-count" class="badge hidden">0</span>
+          </button>
+          <button id="settings-btn" class="icon-btn" title="Paramètres">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          </button>
+          <button id="power-btn" class="icon-btn" title="Mettre en veille">
+            <svg viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+          </button>
         </div>
       </header>
 
-      <!-- LEFT PANEL — CONVERSATION -->
-      <section class="hud-panel conversation-panel">
-        <div class="corner tl"></div>
-        <div class="corner tr"></div>
-        <div class="corner bl"></div>
-        <div class="corner br"></div>
-        
-        <div class="panel-title">CONVERSATION</div>
-        <div class="panel-line"></div>
-        <div class="conversation" id="conversation">
-          <div class="message-block">
-            <div class="message-meta">KIRA &nbsp;//&nbsp; <span id="boot-time"></span></div>
-            <div class="message">Hello sir.<br />I am ready for your orders.</div>
+      <!-- ══════════ GRILLE PRINCIPALE ══════════ -->
+      <div class="hud-grid">
+        <!-- ─────── COLONNE GAUCHE ─────── -->
+        <div class="hud-col left">
+          <!-- CONVERSATION -->
+          <section class="hud-panel conversation-panel">
+            <div class="corner tl"></div><div class="corner tr"></div>
+            <div class="corner bl"></div><div class="corner br"></div>
+            <div class="panel-head">
+              <span class="panel-title">Conversation</span>
+              <span class="panel-hint">Session <span id="boot-time">--:--</span></span>
+            </div>
+            <div class="panel-line"></div>
+            <div class="conversation" id="conversation"></div>
+            <div class="command-box">
+              <input
+                id="command"
+                type="text"
+                placeholder="Tapez votre commande ici…"
+                autocomplete="off"
+              />
+              <button id="send" title="Envoyer">
+                <svg viewBox="0 0 24 24">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
+              <button id="mic" class="mic-btn" title="Saisie vocale">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                  <line x1="12" y1="19" x2="12" y2="23"></line>
+                  <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+              </button>
+              <button id="mute" class="mute-btn" title="Couper / activer la voix">
+                <svg viewBox="0 0 24 24">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+              </button>
+            </div>
+          </section>
+
+          <!-- AGENTS -->
+          <section class="hud-panel agents-panel">
+            <div class="corner tl"></div><div class="corner tr"></div>
+            <div class="corner bl"></div><div class="corner br"></div>
+            <div class="panel-head">
+              <span class="panel-title">Agents</span>
+              <button id="agents-add" class="mini-btn" title="Voir tous les agents">＋ Ajouter</button>
+            </div>
+            <div class="panel-line"></div>
+            <div class="agents-list" id="agents-list"></div>
+          </section>
+        </div>
+
+        <!-- ─────── CENTRE : avatar 3D + état ─────── -->
+        <div class="hud-center">
+          <div class="status-chip">
+            <span class="activity-dot" id="activity-dot"></span>
+            <span id="activity" class="sr-only">READY</span>
+            <span id="activity-fr">Prête</span>
           </div>
+        </div>
+
+        <!-- ─────── COLONNE DROITE ─────── -->
+        <div class="hud-col right">
+          <!-- SYSTÈME -->
+          <section class="hud-panel system-panel">
+            <div class="corner tl"></div><div class="corner tr"></div>
+            <div class="corner bl"></div><div class="corner br"></div>
+            <div class="panel-head">
+              <span class="panel-title">Système</span>
+              <span class="panel-hint">Performances en temps réel</span>
+            </div>
+            <div class="panel-line"></div>
+            <div class="gauges">
+              <div class="gauge">
+                <svg viewBox="0 0 64 64">
+                  <circle class="gauge-track" cx="32" cy="32" r="26"></circle>
+                  <circle class="gauge-fill" id="ring-cpu" cx="32" cy="32" r="26"></circle>
+                </svg>
+                <div class="gauge-label"><strong id="val-cpu">--%</strong><span>CPU</span></div>
+                <canvas class="spark" id="spark-cpu" width="86" height="26"></canvas>
+                <span class="gauge-sub" id="sub-cpu">—</span>
+              </div>
+              <div class="gauge">
+                <svg viewBox="0 0 64 64">
+                  <circle class="gauge-track" cx="32" cy="32" r="26"></circle>
+                  <circle class="gauge-fill" id="ring-ram" cx="32" cy="32" r="26"></circle>
+                </svg>
+                <div class="gauge-label"><strong id="val-ram">--%</strong><span>RAM</span></div>
+                <canvas class="spark" id="spark-ram" width="86" height="26"></canvas>
+                <span class="gauge-sub" id="sub-ram">—</span>
+              </div>
+              <div class="gauge">
+                <svg viewBox="0 0 64 64">
+                  <circle class="gauge-track" cx="32" cy="32" r="26"></circle>
+                  <circle class="gauge-fill" id="ring-disk" cx="32" cy="32" r="26"></circle>
+                </svg>
+                <div class="gauge-label"><strong id="val-disk">--%</strong><span>Disque</span></div>
+                <canvas class="spark" id="spark-disk" width="86" height="26"></canvas>
+                <span class="gauge-sub" id="sub-disk">—</span>
+              </div>
+              <div class="gauge">
+                <svg viewBox="0 0 64 64">
+                  <circle class="gauge-track" cx="32" cy="32" r="26"></circle>
+                  <circle class="gauge-fill" id="ring-net" cx="32" cy="32" r="26"></circle>
+                </svg>
+                <div class="gauge-label"><strong id="val-net">--</strong><span>Réseau</span></div>
+                <canvas class="spark" id="spark-net" width="86" height="26"></canvas>
+                <span class="gauge-sub"><span id="val-net-up">↑ --</span> <span id="val-net-down">↓ --</span></span>
+              </div>
+            </div>
+          </section>
+
+          <!-- ACTIVITÉ DES AGENTS -->
+          <section class="hud-panel activity-panel">
+            <div class="corner tl"></div><div class="corner tr"></div>
+            <div class="corner bl"></div><div class="corner br"></div>
+            <div class="panel-head">
+              <span class="panel-title">Activité des agents</span>
+            </div>
+            <div class="panel-line"></div>
+            <div class="act-rows">
+              <div class="act-row">
+                <span class="act-name">Noyau IA<small>Charge processeur</small></span>
+                <span class="act-bar"><span id="bar-core"></span></span>
+                <strong id="val-core">--%</strong>
+              </div>
+              <div class="act-row">
+                <span class="act-name">Voix<small>Énergie vocale en direct</small></span>
+                <span class="act-bar"><span id="bar-voice"></span></span>
+                <strong id="val-voice">0%</strong>
+              </div>
+              <div class="act-row">
+                <span class="act-name">Mémoire<small>Vive utilisée</small></span>
+                <span class="act-bar"><span id="bar-mem"></span></span>
+                <strong id="val-mem">--%</strong>
+              </div>
+              <div class="act-row">
+                <span class="act-name">Tâches<small>En attente</small></span>
+                <span class="act-bar"><span id="bar-tasks"></span></span>
+                <strong id="val-tasks">0</strong>
+              </div>
+              <div class="act-row">
+                <span class="act-name">Réseau<small>Traffic descendant</small></span>
+                <span class="act-bar"><span id="bar-net"></span></span>
+                <strong id="val-net-act">--</strong>
+              </div>
+            </div>
+          </section>
+
+          <!-- TÂCHES RÉCENTES -->
+          <section class="hud-panel tasks-panel">
+            <div class="corner tl"></div><div class="corner tr"></div>
+            <div class="corner bl"></div><div class="corner br"></div>
+            <div class="panel-head">
+              <span class="panel-title">Tâches récentes</span>
+              <button id="tasks-open" class="link-btn">Voir tout</button>
+            </div>
+            <div class="panel-line"></div>
+            <div class="tasks-list" id="tasks-list">
+              <div class="task-empty">Aucune tâche en attente</div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- ══════════ VUES (overlay central) ══════════ -->
+      <section id="view-overlay" class="view-overlay hidden">
+        <div class="corner tl"></div><div class="corner tr"></div>
+        <div class="corner bl"></div><div class="corner br"></div>
+        <div class="view-head">
+          <span class="view-title" id="view-title">Vue</span>
+          <button id="view-close" class="icon-btn" title="Fermer">
+            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+
+        <!-- TÂCHES -->
+        <div class="view-body hidden" id="view-taches">
+          <p class="view-intro">Rappels, minuteurs et listes enregistrés localement.</p>
+          <div class="list-rows" id="tasks-full"><div class="task-empty">Chargement…</div></div>
+          <div class="view-actions">
+            <button class="mini-btn" onclick="promptAddTask()">＋ Nouvelle tâche</button>
+          </div>
+        </div>
+
+        <!-- AGENTS -->
+        <div class="view-body hidden" id="view-agents">
+          <p class="view-intro">Modules intégrés et extensions chargées depuis le dossier <code>plugins/</code>.</p>
+          <div class="list-rows" id="agents-full"></div>
+          <div class="view-actions">
+            <span class="view-note">Pour ajouter un agent : déposez un plugin Python dans <code>plugins/</code> puis redémarrez KIRA.</span>
+          </div>
+        </div>
+
+        <!-- FICHIERS -->
+        <div class="view-body hidden" id="view-fichiers">
+          <p class="view-intro">KIRA gère vos fichiers par commande vocale ou textuelle. Essayez :</p>
+          <div class="chip-grid">
+            <button onclick="quickCmd('crée un fichier notes.txt')">Créer un fichier</button>
+            <button onclick="quickCmd('lis le fichier notes.txt')">Lire un fichier</button>
+            <button onclick="quickCmd('cherche mes fichiers pdf')">Rechercher des fichiers</button>
+            <button onclick="quickCmd('open file explorer')">Ouvrir l'explorateur</button>
+            <button onclick="quickCmd('liste les tâches')">Mes listes</button>
+          </div>
+          <p class="view-note">Le résultat de chaque commande apparaît dans la conversation.</p>
+        </div>
+
+        <!-- OUTILS -->
+        <div class="view-body hidden" id="view-outils">
+          <p class="view-intro">Actions rapides exécutées par le backend KIRA.</p>
+          <div class="chip-grid">
+            <button onclick="promptWebSearch()">🔎 Recherche web</button>
+            <button onclick="promptLearn()">🧠 Apprendre d'une page</button>
+            <button onclick="quickCmd('analyze screen')">🖥️ Analyser l'écran</button>
+            <button onclick="quickCmd('system info')">📊 État du système</button>
+            <button onclick="quickCmd('what time is it')">🕐 Quelle heure est-il</button>
+            <button onclick="promptAddTask()">＋ Ajouter une tâche</button>
+            <button onclick="promptRemember()">📌 Mémoriser une note</button>
+            <button onclick="quickCmd('list tasks')">🗂️ Lister les tâches</button>
+          </div>
+        </div>
+
+        <!-- PARAMÈTRES -->
+        <div class="view-body hidden" id="view-parametres">
+          <div class="param-grid">
+            <div class="param-block">
+              <h3>Voix de KIRA</h3>
+              <select id="voice-select">
+                <option value="jenny">Jenny — Anglais</option>
+                <option value="denise">Denise — Français</option>
+                <option value="henri">Henri — Français</option>
+                <option value="aria">Aria — Anglais</option>
+              </select>
+              <p class="view-note">La voix est utilisée pour lire les réponses à voix haute.</p>
+            </div>
+            <div class="param-block">
+              <h3>Microphone</h3>
+              <select id="micro-select">
+                <option value="fr-FR">Français</option>
+                <option value="en-US">English</option>
+              </select>
+              <p class="view-note">Langue de reconnaissance vocale du navigateur.</p>
+            </div>
+            <div class="param-block diagnostics">
+              <h3>Diagnostics</h3>
+              <div class="speech-diagnostics">
+                <div class="speech-build">KIRA COMMAND CENTER</div>
+                <div id="motion-status" role="status">VOICE IDLE</div>
+                <div class="voice-meter" aria-hidden="true"><span id="voice-level"></span></div>
+                <div class="motion-controls">
+                  <button id="motion-toggle" type="button">MOTION: AUTO</button>
+                  <button id="motion-test" type="button">TEST MOTION</button>
+                  <button id="voice-test" type="button">TEST VOICE</button>
+                </div>
+              </div>
+            </div>
+            <div class="param-block">
+              <h3>Moteur</h3>
+              <div id="param-model" class="param-info">Interrogation du backend…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- HISTORIQUE -->
+        <div class="view-body hidden" id="view-historique">
+          <p class="view-intro">Derniers échanges enregistrés dans la mémoire locale.</p>
+          <div class="list-rows" id="history-full"><div class="task-empty">Chargement…</div></div>
+          <div class="view-actions">
+            <button class="mini-btn" onclick="loadHistoryFull()">↻ Actualiser</button>
+          </div>
+        </div>
+
+        <!-- SYSTÈME (détails) -->
+        <div class="view-body hidden" id="view-systeme">
+          <p class="view-intro">Informations détaillées de la machine.</p>
+          <div class="list-rows" id="system-full"><div class="task-empty">Chargement…</div></div>
         </div>
       </section>
 
-      <!-- RIGHT PANEL — TELEMETRY -->
-      <section class="hud-panel telemetry-panel">
-        <div class="corner tl"></div>
-        <div class="corner tr"></div>
-        <div class="corner bl"></div>
-        <div class="corner br"></div>
+      <!-- ══════════ DOCK DE NAVIGATION ══════════ -->
+      <nav class="dock">
+        <button id="nav-accueil" class="dock-btn active" data-view="accueil">
+          <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+          <span>Accueil</span>
+        </button>
+        <button id="nav-conversation" class="dock-btn" data-view="conversation">
+          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <span>Conversation</span>
+        </button>
+        <button id="nav-agents" class="dock-btn" data-view="agents">
+          <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          <span>Agents</span>
+        </button>
+        <button id="nav-fichiers" class="dock-btn" data-view="fichiers">
+          <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          <span>Fichiers</span>
+        </button>
+        <span class="dock-spacer"></span>
+        <button id="nav-outils" class="dock-btn" data-view="outils">
+          <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+          <span>Outils</span>
+        </button>
+        <button id="nav-parametres" class="dock-btn" data-view="parametres">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <span>Paramètres</span>
+        </button>
+        <button id="nav-historique" class="dock-btn" data-view="historique">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          <span>Historique</span>
+        </button>
+        <button id="nav-systeme" class="dock-btn" data-view="systeme">
+          <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+          <span>Système</span>
+        </button>
+      </nav>
 
-        <div class="panel-title">SYSTEM TELEMETRY</div>
-        <div class="panel-line"></div>
+      <!-- Bouton K central (dans le dock, comme la maquette) -->
+      <div class="k-dock-slot">
+        <button id="k-btn" title="Parler à KIRA"><span>K</span></button>
+      </div>
 
-        <div class="telemetry-row">
-          <div class="telemetry-label-row">
-            <span>CPU</span>
-            <strong id="cpu">--%</strong>
-          </div>
-          <div class="stat-bar">
-            <div class="stat-fill" id="cpu-bar"></div>
-          </div>
+      <!-- VEILLE -->
+      <div id="standby" class="standby hidden">
+        <div class="standby-inner">
+          <div class="standby-k">K</div>
+          <p>KIRA est en veille</p>
+          <span>Cliquez n'importe où pour la réveiller</span>
         </div>
+      </div>
 
-        <div class="telemetry-row">
-          <div class="telemetry-label-row">
-            <span>MEMORY</span>
-            <strong id="memory">--%</strong>
-          </div>
-          <div class="stat-bar">
-            <div class="stat-fill" id="memory-bar"></div>
-          </div>
-        </div>
-
-        <div class="telemetry-row">
-          <div class="telemetry-label-row">
-            <span>GPU</span>
-            <strong id="gpu">--</strong>
-          </div>
-        </div>
-
-        <div class="telemetry-divider"></div>
-        <div class="panel-label">CORE</div>
-        <div class="core-name">LOCAL NEURAL ENGINE</div>
-
-        <div class="panel-label activity-label">ACTIVITY</div>
-        <div class="activity">
-          <span class="activity-dot" id="activity-dot"></span>
-          <span id="activity">STANDBY</span>
-        </div>
-
-        <div class="speech-diagnostics">
-          <div class="speech-build">SPEECH SYNC 02</div>
-          <div id="motion-status" role="status">VOICE IDLE</div>
-          <div class="voice-meter" aria-hidden="true"><span id="voice-level"></span></div>
-          <div class="motion-controls">
-            <button id="motion-toggle" type="button">MOTION: AUTO</button>
-            <button id="motion-test" type="button">TEST MOTION</button>
-            <button id="voice-test" type="button">TEST VOICE</button>
-          </div>
-        </div>
-
-        <div class="telemetry-divider"></div>
-        <div class="panel-label">TASKS</div>
-        <div class="tasks-list" id="tasks-list">
-          <div class="task-empty">No pending tasks</div>
-        </div>
-      </section>
-
-      <!-- CORE LABEL -->
-      <div class="core-caption">KIRA // NEURAL PROCESSOR</div>
-
-      <!-- COMMAND -->
-      <section class="command-area">
-        <div class="command-box">
-          <button id="mic" class="icon-btn mic-btn" title="Voice input">
-            <svg viewBox="0 0 24 24">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-              <line x1="12" y1="19" x2="12" y2="23"></line>
-              <line x1="8" y1="23" x2="16" y2="23"></line>
-            </svg>
-          </button>
-          <input
-            id="command"
-            type="text"
-            placeholder="ASK KIRA..."
-            autocomplete="off"
-          />
-          <button id="mute" class="icon-btn mute-btn" title="Toggle voice output">
-            <svg viewBox="0 0 24 24">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-            </svg>
-          </button>
-          <button id="send">
-            <svg viewBox="0 0 24 24">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </svg>
-          </button>
-        </div>
-
-        <div class="quick-actions">
-          <button onclick="quickCmd('open chrome')">OPEN CHROME</button>
-          <button onclick="quickCmd('search for')">SEARCH WEB</button>
-          <button onclick="quickCmd('learn about')">LEARN</button>
-          <button onclick="quickCmd('analyze screen')">ANALYZE SCREEN</button>
-          <button onclick="quickCmd('system info')">SYSTEM STATUS</button>
-          <button onclick="quickCmd('list tasks')">MY TASKS</button>
-          <button onclick="quickCmd('what time is it')">TIME</button>
-        </div>
-      </section>
+      <!-- TOAST -->
+      <div id="toast" class="toast"></div>
     </main>
 
-    <script type="module" src="./app.js?v=speech-sync-2"></script>
+    <script type="module" src="./app.js?v=command-center-1"></script>
   </body>
 </html>
