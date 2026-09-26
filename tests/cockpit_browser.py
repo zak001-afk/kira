@@ -205,17 +205,12 @@ class CockpitBrowserTests(unittest.TestCase):
         expect(self.page.locator("html")).to_have_attribute("data-motion", "off")
         self.page.wait_for_function("getComputedStyle(document.getElementById('halo')).transform === 'matrix(1, 0, 0, 1, 0, 0)'")
 
-    def test_lip_demo_changes_real_pixels_then_returns_to_idle_without_audio(self):
+    def test_lip_demo_degrades_cleanly_without_the_portrait(self):
         self.load()
-        expect(self.page.locator("#mouth-canvas")).to_have_attribute("hidden", "")
+        self.assertEqual(self.page.locator("#mouth-canvas").count(), 0)
         self.page.locator('[data-dialog="diagnostics"]').click()
         self.page.locator("#lip-test").click()
-        self.page.wait_for_function("Number(document.getElementById('mouth-canvas').dataset.open) > .3")
-        expect(self.page.locator("#mouth-canvas")).to_be_visible()
-        self.assertEqual(self.page.locator("#mouth-canvas").get_attribute("data-renderer"), "ready")
-        pixels = self.page.locator("#mouth-canvas").evaluate("el => el.getContext('2d').getImageData(0, 0, el.width, el.height).data.some((n, i) => i % 4 === 3 && n > 0)")
-        self.assertTrue(pixels, "lip attributes changed but the mouth was never painted")
-        self.page.wait_for_function("document.getElementById('mouth-canvas').hidden", timeout=7000)
+        expect(self.page.locator("#lip-status")).to_contain_text("LIP SYNC")
         self.assertFalse(any("/api/tts" in request.url or "/api/command" in request.url for request in self.requests))
 
     def start_test_voice(self):
@@ -231,24 +226,19 @@ class CockpitBrowserTests(unittest.TestCase):
         self.load()
         self.page.locator('[data-dialog="diagnostics"]').click()
         self.page.locator("#voice-test").click()
-        self.page.wait_for_function("window.testAudio && Number(document.getElementById('mouth-canvas').dataset.open) > .15")
+        self.page.wait_for_function("window.testAudio && document.getElementById('lip-status').textContent.includes('WORD TIMING')")
 
     def test_decoded_audio_drives_lips_and_real_silence_closes_them(self):
         self.start_test_voice()
         expect(self.page.locator("#lip-status")).to_contain_text("TTS WORD TIMING")
-        expect(self.page.locator("#mouth-canvas")).to_be_visible()
-        self.page.wait_for_function("window.testAudio.currentTime > 1.25 && window.testAudio.currentTime < 1.52 && Number(document.getElementById('mouth-canvas').dataset.open) < .004", timeout=5000)
-        self.page.wait_for_function("window.testAudio.currentTime > 1.7 && Number(document.getElementById('mouth-canvas').dataset.open) > .15", timeout=5000)
-        expect(self.page.locator("#mouth-canvas")).to_be_visible()
-        self.page.wait_for_function("document.getElementById('activity').textContent === 'READY' && document.getElementById('mouth-canvas').hidden", timeout=5000)
+        self.page.wait_for_function("document.getElementById('activity').textContent === 'READY' && document.getElementById('lip-status').textContent.includes('IDLE')", timeout=8000)
         expect(self.page.locator("#lip-status")).to_have_text("LIP SYNC · IDLE")
 
     def test_mute_stops_actual_audio_and_immediately_restores_the_mouth(self):
         self.start_test_voice()
         self.page.locator("#mute").click()
-        expect(self.page.locator("#mouth-canvas")).to_be_hidden()
         self.assertTrue(self.page.evaluate("window.testAudio.paused"))
-        self.assertEqual(float(self.page.locator("#mouth-canvas").get_attribute("data-open")), 0)
+        expect(self.page.locator("#lip-status")).to_have_text("LIP SYNC · IDLE")
 
     def test_lip_preference_is_persisted_and_global_motion_off_takes_priority(self):
         self.load()
@@ -264,7 +254,6 @@ class CockpitBrowserTests(unittest.TestCase):
         self.page.locator("#close-dialog").click()
         self.page.locator('[data-dialog="diagnostics"]').click()
         self.page.locator("#lip-test").click()
-        expect(self.page.locator("#mouth-canvas")).to_be_hidden()
         expect(self.page.locator("#toast")).to_contain_text("Enable Motion: On")
 
     def test_interface_language_switches_labels_without_translating_history(self):
@@ -303,7 +292,7 @@ class CockpitBrowserTests(unittest.TestCase):
             self.page.locator("#command").fill(text)
             self.page.locator("#send").click()
             expect(self.page.locator(".message").last).to_contain_text(fragment)
-            self.page.wait_for_function("Number(document.getElementById('mouth-canvas').dataset.open) > .15")
+            self.page.wait_for_function("document.getElementById('lip-status').textContent.includes('WORD TIMING')")
             spoken = [request for request in self.requests if request.url.endswith("/api/tts")]
             self.assertGreater(len(spoken), before)
             self.assertEqual(spoken[-1].post_data_json["language"], locale)

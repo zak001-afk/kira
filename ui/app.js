@@ -386,7 +386,6 @@ function animate(now = performance.now()) {
   const rendererState = hologram.mouth.renderer.state;
   const lipLabel = disabled ? t("LIP SYNC · MOTION DISABLED")
     : !lipsEnabled ? t("LIP SYNC · OFF")
-    : ["unsupported", "unavailable"].includes(rendererState) ? t("LIP SYNC · RENDERER UNAVAILABLE")
     : rendererState === "loading" ? t("LIP SYNC · LOADING PORTRAIT")
     : lipDemo ? t("LIP SYNC · VISUAL TEST / NO AUDIO")
     : !voice.active ? t("LIP SYNC · IDLE")
@@ -838,9 +837,10 @@ function renderAgents() {
   const list = $("agents-list");
   const cards = document.querySelector(".agent-cards");
   const meters = $("agent-meters");
-  if (!list || !cards || !meters) return;
+  if (!list || !meters) return;
   agentRows.clear();
-  list.replaceChildren(); cards.replaceChildren(); meters.replaceChildren();
+  if (cards) cards.replaceChildren();
+  list.replaceChildren(); meters.replaceChildren();
   for (const agent of AGENTS) {
     const attrs = agent.action.prompt ? `data-prompt="${agent.action.prompt}"`
       : agent.action.command ? `data-command="${agent.action.command}"`
@@ -852,12 +852,14 @@ function renderAgents() {
     agentRows.set(agent.id, row);
     list.appendChild(row); wireAgentButton(row);
 
-    const chip = document.createElement("button");
-    chip.type = "button"; chip.className = `agent-chip chip-${agent.chip}`;
-    const chipAction = agent.chipAction || agent.action;
-    Object.entries(chipAction).forEach(([k, v]) => { chip.dataset[k] = v; });
-    chip.innerHTML = `<span class="agent-ico"><svg class="icon"><use href="#${agent.icon}" /></svg></span><span>${t(agent.name)}</span>`;
-    cards.appendChild(chip); wireAgentButton(chip);
+    if (cards) {
+      const chip = document.createElement("button");
+      chip.type = "button"; chip.className = `agent-chip chip-${agent.chip}`;
+      const chipAction = agent.chipAction || agent.action;
+      Object.entries(chipAction).forEach(([k, v]) => { chip.dataset[k] = v; });
+      chip.innerHTML = `<span class="agent-ico"><svg class="icon"><use href="#${agent.icon}" /></svg></span><span>${t(agent.name)}</span>`;
+      cards.appendChild(chip); wireAgentButton(chip);
+    }
 
     const meter = document.createElement("div");
     meter.className = "agent-meter-row";

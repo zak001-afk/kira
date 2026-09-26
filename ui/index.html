@@ -3,16 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="kira-ui-build" content="command-center-01-open-27" />
+    <meta name="kira-ui-build" content="command-center-01-open-28" />
     <meta name="theme-color" content="#0b0703" />
     <meta name="description" content="KIRA — your local neural computer agent." />
-    <title>KIRA // AI COMMAND CENTER 01 / OPEN 27</title>
+    <title>KIRA // AI COMMAND CENTER 01 / OPEN 28</title>
     <link rel="icon" href="./assets/kira-mark.svg" type="image/svg+xml" />
     <link rel="preload" href="./assets/fonts/rajdhani-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="./assets/kira-hologram.webp" as="image" />
     <link rel="preload" href="./assets/kira-chamber.webp" as="image" />
-    <link rel="preload" href="./assets/kira-mouth-interior.webp" as="image" />
-    <link rel="stylesheet" href="./style.css?v=open-27" />
+    <link rel="stylesheet" href="./style.css?v=open-28" />
   </head>
   <body>
     <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -126,25 +124,16 @@
       </div>
 
       <section class="neural-stage" aria-label="KIRA holographic neural projection" data-i18n-aria-label="KIRA holographic neural projection">
-        <div class="stage-topline"><span><i class="tiny-light"></i> <span data-i18n="NEURAL COMPUTER AGENT">NEURAL COMPUTER AGENT</span></span><span id="ui-build">COMMAND CENTER 01 / OPEN 27</span></div>
+        <div class="stage-topline"><span><i class="tiny-light"></i> <span data-i18n="NEURAL COMPUTER AGENT">NEURAL COMPUTER AGENT</span></span><span id="ui-build">COMMAND CENTER 01 / OPEN 28</span></div>
 
         <div class="hologram" id="hologram">
           <div class="core-title" aria-hidden="true"><span class="core-title-name">KIRA</span><span class="core-title-sub" data-i18n="CENTRAL INTELLIGENCE">CENTRAL INTELLIGENCE</span></div>
-          <svg class="agent-links" id="agent-links" aria-hidden="true"></svg>
           <div class="halo-glow"></div>
           <div class="halo" id="halo">
             <img class="reticle reticle-outer" src="./assets/reticle.svg" alt="" />
             <div class="reticle-track track-one"></div><div class="reticle-track track-two"></div>
           </div>
-          <div class="portrait-float"><div class="portrait" id="portrait">
-            <div class="portrait-surface">
-              <img id="portrait-image" src="./assets/kira-hologram.webp" width="896" height="1200" alt="KIRA, an android whose lips animate with spoken replies" fetchpriority="high" data-i18n-alt="KIRA, an android whose lips animate with spoken replies" />
-              <canvas id="mouth-canvas" class="mouth-canvas" width="304" height="224" aria-hidden="true" hidden></canvas>
-              <img id="mouth-texture" src="./assets/kira-mouth-interior.webp" width="180" height="62" alt="" hidden />
-            </div>
-            <div class="portrait-scanlines" aria-hidden="true"></div>
-            <span class="forehead-id" aria-hidden="true">KIRA<small data-i18n="NEURAL INTERFACE">NEURAL INTERFACE</small></span>
-          </div></div>
+          
           <svg class="neural-orbits" viewBox="0 0 600 600" fill="none" aria-hidden="true">
             <g class="orbit orbit-one"><ellipse cx="300" cy="300" rx="284" ry="74" /><ellipse cx="300" cy="300" rx="278" ry="69" /><circle cx="584" cy="300" r="3" /></g>
             <g class="orbit orbit-two"><ellipse cx="300" cy="300" rx="290" ry="94" /><circle cx="10" cy="300" r="2.5" /></g>
@@ -156,7 +145,6 @@
           <div class="core-orb" aria-hidden="true"></div>
           <div class="projection-beam" aria-hidden="true"></div>
           <div class="hologram-platform" aria-hidden="true"><img src="./assets/projector.svg" alt="" /><div class="projector-light"></div></div>
-          <div class="agent-cards" aria-hidden="false"></div>
           </div>
         <div class="core-caption"><span class="caption-line"></span><span>KIRA <b>//</b> <span data-i18n="AI COMMAND CENTER">AI COMMAND CENTER</span></span><span class="caption-line"></span></div>
         <div class="stage-status"><span class="status-pill" id="connection-pill"><i class="status-dot"></i><span id="status-text" data-i18n="CONNECTING">CONNECTING</span></span><span class="stage-status-detail" data-i18n="AWAITING YOUR COMMAND">AWAITING YOUR COMMAND</span></div>
@@ -293,6 +281,6 @@
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
     <noscript><div class="noscript-notice" data-i18n="Enable JavaScript to connect to KIRA and use the command interface.">Enable JavaScript to connect to KIRA and use the command interface.</div></noscript>
-    <script type="module" src="./app.js?v=open-27"></script>
+    <script type="module" src="./app.js?v=open-28"></script>
   </body>
 </html>
