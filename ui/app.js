@@ -185,9 +185,7 @@ energySphere.position.z = -3.2;
    ========================================================= */
 
 const avatarGroup = new THREE.Group();
-// Avatar complètement supprimé de la scène — aucun visage à l'écran.
-// (Pour le réactiver un jour : scene.add(avatarGroup);)
-// scene.add(avatarGroup);
+scene.add(avatarGroup);
 
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
@@ -208,7 +206,7 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
     toneMapped: false,
   });
   const avatarPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(4.6, 4.6),
+    new THREE.PlaneGeometry(5.6, 5.6),
     avatarMaterial
   );
   avatarPlane.renderOrder = 50;
