@@ -216,3 +216,14 @@ test("diagnostic controls opt back into pointer events inside the HUD", () => {
   const css = readFileSync(new URL("../ui/style.css", import.meta.url), "utf8");
   assert.match(css, /\.speech-diagnostics\s*\{[^}]*pointer-events:\s*auto/);
 });
+
+test("MED French voice preference reaches the neural speech request", async () => {
+  const rig = appRig();
+  rig.storage.set("kira.voice", "denise");
+  await rig.probe.speak("Bonjour !");
+  const request = rig.requests.find(item => item.url.endsWith("/api/tts"));
+  const body = JSON.parse(request.init.body);
+  assert.equal(body.voice, "denise");
+  assert.equal(body.language, "fr-FR");
+  assert.equal(rig.probe.speech.session.language, "fr-FR");
+});

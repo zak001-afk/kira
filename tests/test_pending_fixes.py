@@ -6,6 +6,8 @@ import types
 import unittest
 from unittest.mock import Mock, patch
 
+import kira_commands
+import kira_language
 from kira_commands import try_web_learning
 from kira_speech import clean_for_speech
 
@@ -30,10 +32,10 @@ class RoutingTests(unittest.TestCase):
                 ("main_window_tk.py", "_route", (object(), "learn about Python")),
                 ("kira_voice_agent.py", "ask_chat", ("learn about Python",)),
             ]:
-                reply = load_function(filename, name)(*args)
+                reply = load_function(filename, name, {"kira_commands": kira_commands, "backend": None})(*args)
                 self.assertEqual(reply.get("response") if isinstance(reply, dict) else reply, "Learned")
             handler = Mock()
-            load_function("kira_api.py", "_handle_command", {"_command_handler": None})(handler, {"text": "learn about Python"})
+            load_function("kira_api.py", "_handle_command", {"_command_handler": None, "kira_commands": kira_commands, "kira_language": kira_language})(handler, {"text": "learn about Python"})
             handler._send_json.assert_called_once_with({"response": "Learned", "action": "web_learn"})
 
     def test_topic_required_and_private_commands_not_routed(self):
@@ -76,6 +78,7 @@ class SpeechTests(unittest.TestCase):
         subprocess.run.side_effect = OSError("not Windows")
         fn = load_function("kira_voice_agent.py", "speak", {
             "personalize_address": lambda text: text, "base64": base64,
+            "kira_language": kira_language, "select_voice": lambda engine, language: True,
             "subprocess": subprocess, "SAPI_VOICE": "test",
             "get_or_create_speech_engine": lambda: engine,
         })

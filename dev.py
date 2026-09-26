@@ -8,12 +8,17 @@ ROOT = Path(__file__).resolve().parent
 APP = ROOT / "main_window.py"
 
 # Files/folders that should trigger an automatic restart.
-WATCH_EXTENSIONS = {".py", ".json", ".png", ".jpg", ".jpeg", ".ico"}
+WATCH_EXTENSIONS = {
+    ".py", ".json", ".png", ".jpg", ".jpeg", ".ico", ".webp",
+    ".html", ".css", ".js", ".mjs", ".svg", ".woff2",
+}
 
 # Ignore generated/cache files.
 IGNORED_DIRS = {
     "__pycache__",
     ".git",
+    ".cache",
+    "node_modules",
     ".venv",
     "venv",
     "build",

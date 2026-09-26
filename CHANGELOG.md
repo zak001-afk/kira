@@ -311,3 +311,10 @@ Potential areas for improvement:
 ---
 
 **KIRA** — Continuously evolving to be the perfect local AI assistant.
+
+## Branch consolidation (MED priority)
+
+- Retain MED UI and voice preferences; use same-origin API requests.
+- Integrate multilingual command/file opening, timed TTS, and packaged UI serving.
+- Preserve web-learning routing, empty-result handling, emoji filtering, and shared-memory privacy guards.
+- Retain superseded branch histories without enabling competing interfaces or the obsolete server architecture. See BRANCH_CONSOLIDATION.md.

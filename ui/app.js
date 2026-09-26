@@ -429,7 +429,7 @@ window.addEventListener("resize", () => {
 // window.KIRA_API_BASE permet de servir l'UI derrière un proxy même origine.
 const IS_NATIVE = typeof window.pywebview !== "undefined";
 const API_BASE = window.KIRA_API_BASE
-  || (window.location.protocol + "//" + window.location.hostname + ":8765");
+  || "";
 
 // Heure de session
 const bootTimeEl = document.getElementById("boot-time");
@@ -543,11 +543,11 @@ function currentVoice() {
 }
 
 const speech = new SpeechPlayer({
-  fetchAudio: async (text, { signal }) => {
+  fetchAudio: async (text, { signal, language }) => {
     const response = await fetch(`${API_BASE}/api/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice: currentVoice() }),
+      body: JSON.stringify({ text, voice: currentVoice(), language }),
       signal,
     });
     if (!response.ok) throw new Error(`TTS API error: ${response.status}`);
@@ -560,7 +560,10 @@ const speech = new SpeechPlayer({
 });
 
 function speak(text) {
-  return speech.speak(text);
+  const voice = currentVoice();
+  const language = ["denise", "eloise", "vivienne", "henri"].includes(voice)
+    ? "fr-FR" : voice === "aria_uk" ? "en-GB" : "en-US";
+  return speech.speak(text, { language });
 }
 
 function stopSpeaking() {

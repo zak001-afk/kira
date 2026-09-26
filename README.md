@@ -382,3 +382,9 @@ Contributions welcome! Areas for improvement:
 ---
 
 **KIRA** — Your local AI companion, always ready to assist.
+
+## Consolidated branches
+
+The active interface follows MED’s French black-and-gold design. See
+[BRANCH_CONSOLIDATION.md](BRANCH_CONSOLIDATION.md) for integration decisions,
+validation, and the manual transition to `main`, `zakaria`, and the MED branch.

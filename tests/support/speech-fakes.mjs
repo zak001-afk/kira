@@ -13,7 +13,9 @@ export function analyser(amplitude = 0, bass = 0, treble = 0) {
 }
 
 export function playerRig(options = {}) {
-  const audios = [], utterances = [], revoked = [], contexts = [], timers = new Map(), states = [];
+  const audios = [], utterances = [], revoked = [], contexts = [], timers = new Map(), states = [], notices = [];
+  let voices = options.voices || [{ lang: "en-US", name: "Zira" }];
+  const voiceListeners = new Set();
   let serial = 0, now = 0, cancelled = 0;
   class Audio {
     constructor(url) { this.src = url; this.currentTime = 0; this.paused = true; audios.push(this); }
@@ -54,21 +56,23 @@ export function playerRig(options = {}) {
     URL: { createObjectURL: () => `blob:voice-${++serial}`, revokeObjectURL: (url) => revoked.push(url) },
     SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } },
     speechSynthesis: options.noSynth ? undefined : {
-      getVoices: () => [{ lang: "en-US", name: "Zira" }],
+      getVoices: () => voices,
+      ...(options.delayedVoices ? { addEventListener: (event, listener) => voiceListeners.add(listener), removeEventListener: (event, listener) => voiceListeners.delete(listener) } : {}),
       speak(utterance) { utterances.push(utterance); if (!options.noStart) utterance.onstart?.(); },
       cancel() { cancelled++; utterances.at(-1)?.onend?.(); },
     },
   };
   const fetches = [];
   const player = new SpeechPlayer({
-    env, onState: (state) => states.push(state),
+    env, onState: (state) => states.push(state), onNotice: (code, detail) => notices.push({ code, ...detail }),
     fetchAudio: (text, params) => {
       fetches.push({ text, ...params });
       return options.fetchAudio ? options.fetchAudio(text, params) : Promise.resolve({ audio: "YWJj" });
     },
   });
   return {
-    player, env, audios, contexts, utterances, revoked, states, timers, fetches,
+    player, env, audios, contexts, utterances, revoked, states, notices, timers, fetches, voiceListeners,
+    setVoices(next) { voices = next; for (const listener of [...voiceListeners]) listener(); },
     get cancelled() { return cancelled; },
     advance(ms = 100) { now += ms; return { ...player.motion.sample() }; },
     fireTimers() { for (const [id, timer] of [...timers]) { timers.delete(id); timer.fn(); } },
