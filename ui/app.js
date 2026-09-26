@@ -203,10 +203,11 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
     toneMapped: false,
   });
   const avatarPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(9.9, 9.9),
+    new THREE.PlaneGeometry(11.6, 11.6),
     avatarMaterial
   );
-  avatarPlane.position.set(0, 0.55, 1.7);
+  // Devant TOUTE la machinerie (rayon max 4.9) : plus rien ne croise le visage.
+  avatarPlane.position.set(0, 0.6, 5.2);
   avatarGroup.add(avatarPlane);
 }
 
@@ -215,7 +216,7 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
    ========================================================= */
 
 const coreCluster = new THREE.Group();
-coreCluster.position.set(0, -3.6, 2.4);
+coreCluster.position.set(0, -4.1, 0.4); // derrière l'avatar, bas du buste
 scene.add(coreCluster);
 
 // --- CŒUR ---
@@ -361,7 +362,7 @@ reactor.add(halo);
 
 // --- LUMIÈRE DU RÉACTEUR ---
 const reactorLight = new THREE.PointLight(0xffa61b, 10, 9);
-reactorLight.position.set(0, -3.6, 3.0);
+reactorLight.position.set(0, -4.1, 1.0);
 scene.add(reactorLight);
 
 // --- ANNEAUX ORBITAUX ---
