@@ -203,11 +203,11 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
     toneMapped: false,
   });
   const avatarPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(11.6, 11.6),
+    new THREE.PlaneGeometry(5.6, 5.6),
     avatarMaterial
   );
-  // Devant TOUTE la machinerie (rayon max 4.9) : plus rien ne croise le visage.
-  avatarPlane.position.set(0, 0.6, 5.2);
+  // Portrait réduit, devant TOUTE la machinerie (rayon max 4.9).
+  avatarPlane.position.set(0, 0.4, 5.2);
   avatarGroup.add(avatarPlane);
 }
 
