@@ -206,7 +206,7 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
     toneMapped: false,
   });
   const avatarPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(7.2, 7.2),
+    new THREE.PlaneGeometry(4.6, 4.6),
     avatarMaterial
   );
   avatarPlane.renderOrder = 50;
