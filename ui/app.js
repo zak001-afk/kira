@@ -95,7 +95,7 @@ const shellMaterial = new THREE.MeshStandardMaterial({
   depthWrite: false,
 });
 const shell = new THREE.Mesh(shellGeometry, shellMaterial);
-reactor.add(shell);
+// reactor.add(shell); // retiré : centre vide
 
 // --- COQUILLE FILAIRE ---
 const wireGeometry = new THREE.SphereGeometry(2.3, 32, 32);
@@ -106,11 +106,11 @@ const wireMaterial = new THREE.MeshBasicMaterial({
   opacity: 0.03,
 });
 const wireShell = new THREE.Mesh(wireGeometry, wireMaterial);
-reactor.add(wireShell);
+// reactor.add(wireShell); // retiré : centre vide
 
 // --- ANNEAUX DE BLINDAGE (plaques orbitales) ---
 const armorGroup = new THREE.Group();
-reactor.add(armorGroup);
+// reactor.add(armorGroup); // retiré : centre vide
 
 const armorMaterial = new THREE.MeshStandardMaterial({
   color: 0x120c04,
@@ -131,7 +131,7 @@ for (let i = 0; i < 12; i++) {
 
 // --- BLINDAGE VERTICAL ---
 const verticalArmor = new THREE.Group();
-reactor.add(verticalArmor);
+// reactor.add(verticalArmor); // retiré : centre vide
 
 for (let i = 0; i < 8; i++) {
   const angle = (i / 8) * Math.PI * 2;
@@ -178,7 +178,7 @@ energyMaterial.onBeforeCompile = (shader) => {
 };
 const energySphere = new THREE.Mesh(energyGeometry, energyMaterial);
 energySphere.position.z = -3.2;
-reactor.add(energySphere);
+// reactor.add(energySphere); // retiré : centre vide
 
 /* =========================================================
    AVATAR — visage doré de KIRA
@@ -333,7 +333,7 @@ orbitRing2.rotation.z = Math.PI / 3;
 
 // --- FAISCEAUX D'ÉNERGIE ---
 const beamGroup = new THREE.Group();
-reactor.add(beamGroup);
+// reactor.add(beamGroup); // retiré : centre vide
 
 const beamMat = new THREE.MeshBasicMaterial({
   color: GOLD,
@@ -363,7 +363,7 @@ const haloMat = new THREE.MeshBasicMaterial({
 });
 const halo = new THREE.Mesh(haloGeo, haloMat);
 halo.rotation.x = Math.PI / 2;
-reactor.add(halo);
+// reactor.add(halo); // retiré : centre vide
 
 // --- LUMIÈRE DU RÉACTEUR ---
 const reactorLight = new THREE.PointLight(0xC2A66B, 3, 9);
