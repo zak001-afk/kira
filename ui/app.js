@@ -8,11 +8,11 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
    KIRA // AI COMMAND CENTER — thème or
    ========================================================= */
 
-const GOLD = 0xffb427;
-const GOLD_BRIGHT = 0xffd97a;
-const GOLD_SOFT = 0xffcf6b;
-const GOLD_DARK = 0x52300a;
-const GOLD_DEEP = 0x1c1002;
+const GOLD = 0xC2A66B;
+const GOLD_BRIGHT = 0xE3D3A6;
+const GOLD_SOFT = 0xD5BE8A;
+const GOLD_DARK = 0x5C4A28;
+const GOLD_DEEP = 0x241C0F;
 
 /* =========================================================
    SCÈNE
@@ -88,7 +88,7 @@ const shellMaterial = new THREE.MeshStandardMaterial({
   color: 0x0a0703,
   metalness: 0.95,
   roughness: 0.25,
-  emissive: 0x2a1a02,
+  emissive: 0x241C0F,
   emissiveIntensity: 0.18,
   transparent: true,
   opacity: 0.16,
@@ -100,7 +100,7 @@ reactor.add(shell);
 // --- COQUILLE FILAIRE ---
 const wireGeometry = new THREE.SphereGeometry(2.3, 32, 32);
 const wireMaterial = new THREE.MeshBasicMaterial({
-  color: 0xcc8a1d,
+  color: 0xA08652,
   wireframe: true,
   transparent: true,
   opacity: 0.03,
@@ -116,7 +116,7 @@ const armorMaterial = new THREE.MeshStandardMaterial({
   color: 0x120c04,
   metalness: 1.0,
   roughness: 0.18,
-  emissive: 0x6b430c,
+  emissive: 0x6E5A33,
   emissiveIntensity: 0.4,
 });
 
@@ -145,7 +145,7 @@ for (let i = 0; i < 8; i++) {
 // --- AURA D'ÉNERGIE (derrière l'avatar, se déforme avec la voix) ---
 const energyGeometry = new THREE.SphereGeometry(2.6, 64, 64);
 const energyMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffa61b,
+  color: 0xC2A66B,
   transparent: true,
   opacity: 0.1,
   blending: THREE.AdditiveBlending,
@@ -236,7 +236,7 @@ coreCluster.add(core);
 // --- HALO DU CŒUR ---
 const glowGeometry = new THREE.SphereGeometry(0.78, 64, 64);
 const glowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffb427,
+  color: 0xC2A66B,
   transparent: true,
   opacity: 0.42,
   blending: THREE.AdditiveBlending,
@@ -290,7 +290,7 @@ const frameMat = new THREE.MeshStandardMaterial({
   color: 0x120c04,
   metalness: 1,
   roughness: 0.2,
-  emissive: 0x6b430c,
+  emissive: 0x6E5A33,
   emissiveIntensity: 0.3,
 });
 const coreFrame = new THREE.Mesh(frameGeo, frameMat);
@@ -299,7 +299,7 @@ neuralCore.add(coreFrame);
 
 const discGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.18, 64);
 const discMat = new THREE.MeshBasicMaterial({
-  color: 0xffa61b,
+  color: 0xC2A66B,
   transparent: true,
   opacity: 1.0,
   blending: THREE.AdditiveBlending,
@@ -366,7 +366,7 @@ halo.rotation.x = Math.PI / 2;
 reactor.add(halo);
 
 // --- LUMIÈRE DU RÉACTEUR ---
-const reactorLight = new THREE.PointLight(0xffa61b, 3, 9);
+const reactorLight = new THREE.PointLight(0xC2A66B, 3, 9);
 reactorLight.position.set(0, -4.1, 1.0);
 scene.add(reactorLight);
 
@@ -374,7 +374,7 @@ scene.add(reactorLight);
 function createReactorRing(radius, tube, rotation, opacity) {
   const geo = new THREE.TorusGeometry(radius, tube, 12, 180);
   const mat = new THREE.MeshBasicMaterial({
-    color: 0xffa61b,
+    color: 0xC2A66B,
     transparent: true,
     opacity: opacity,
   });
@@ -811,13 +811,13 @@ function drawSpark(canvas, values) {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = "rgba(245, 180, 49, 0.85)";
+  ctx.strokeStyle = "rgba(194, 166, 107, 0.85)";
   ctx.lineWidth = 1.4;
   ctx.stroke();
   ctx.lineTo(w, h);
   ctx.lineTo(0, h);
   ctx.closePath();
-  ctx.fillStyle = "rgba(245, 180, 49, 0.14)";
+  ctx.fillStyle = "rgba(194, 166, 107, 0.14)";
   ctx.fill();
 }
 
