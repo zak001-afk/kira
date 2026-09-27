@@ -67,6 +67,6 @@ def run_tool(action, function, *args, **kwargs):
                           error_code="tool_failed", elapsed_ms=elapsed)
     elapsed = int((time.perf_counter() - started) * 1000)
     if isinstance(value, str):
-        return ToolResult(action=action, ok=True, response=value, elapsed_ms=elapsed)
+        return ToolResult(action=action, ok=True, response=value, data=value, elapsed_ms=elapsed)
     return ToolResult(action=action, ok=True, data=value,
                       response="" if value is None else str(value), elapsed_ms=elapsed)

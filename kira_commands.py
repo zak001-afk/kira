@@ -42,6 +42,15 @@ _MESSAGES = {
     },
     "auto": {"en": "Automatic language selection is enabled. I’ll follow the language of your questions.", "fr": "La langue automatique est activée. Je suivrai la langue de vos questions.", "ar": "تم تفعيل اختيار اللغة تلقائياً. سأتبع لغة أسئلتك."},
     "action_failed": {"en": "I could not complete that action.", "fr": "Je n’ai pas pu effectuer cette action.", "ar": "لم أتمكن من تنفيذ هذا الإجراء."},
+    "reminder_added": {"en": "Reminder added: {title}.", "fr": "Rappel ajouté : {title}.", "ar": "تمت إضافة التذكير: {title}."},
+    "todo_added": {"en": "Todo added: {title}.", "fr": "Tâche ajoutée : {title}.", "ar": "تمت إضافة المهمة: {title}."},
+    "task_title_missing": {"en": "What should the task say?", "fr": "Que dois-je noter ?", "ar": "ماذا أكتب في المهمة؟"},
+    "tasks_none": {"en": "You have no pending tasks.", "fr": "Vous n’avez aucune tâche en attente.", "ar": "ليست لديك مهام معلقة."},
+    "tasks_pending_one": {"en": "You have 1 pending task:\n{list}", "fr": "Vous avez 1 tâche en attente :\n{list}", "ar": "لديك مهمة واحدة معلقة:\n{list}"},
+    "tasks_pending": {"en": "You have {count} pending tasks:\n{list}", "fr": "Vous avez {count} tâches en attente :\n{list}", "ar": "لديك {count} مهام معلقة:\n{list}"},
+    "tasks_cleared_one": {"en": "Cleared 1 completed task.", "fr": "J’ai supprimé 1 tâche terminée.", "ar": "حذفت مهمة مكتملة واحدة."},
+    "tasks_cleared": {"en": "Cleared {count} completed tasks.", "fr": "J’ai supprimé {count} tâches terminées.", "ar": "حذفت {count} مهام مكتملة."},
+    "tasks_none_cleared": {"en": "No completed tasks to clear.", "fr": "Aucune tâche terminée à supprimer.", "ar": "لا توجد مهام مكتملة لحذفها."},
     "choose_open": {
         "en": "I found {count} of them. Which one should I open? Reply with its number (1, 2, …), say “all” to open every one, or “cancel”.\n{list}",
         "fr": "J’en ai trouvé {count}. Lequel veux-tu que j’ouvre ? Réponds avec son numéro (1, 2, …), « tous » pour tout ouvrir, ou « annule » pour ne rien faire.\n{list}",
@@ -247,12 +256,13 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         parsed = None if chat_only else backend.parse_simple_command(cleaned)
         if parsed and parsed.get("action", "none") != "none":
             action = parsed["action"]
-            if action == "search_shared_knowledge":
-                # Fast path: return the research text immediately. The backend
-                # voice handler speaks synchronously and would block this HTTP
+            if action in DIRECT_TOOL_ACTIONS:
+                # Fast paths: tools return data immediately. The backend voice
+                # handlers speak synchronously and would block this HTTP
                 # response; the UI already displays the text and speaks it on
                 # its own TTS path. No execute_action, no Ollama translation.
-                return _search_shared_knowledge(parsed, metadata)
+                # The standalone voice loop keeps its own speaking handlers.
+                return _direct_tool_route(action, parsed, metadata, choice.language)
             matches = None
             if action in {"open_file", "open_folder"} and hasattr(backend, "resolve_open_matches"):
                 try:
@@ -305,23 +315,101 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         return {"error": str(error), "error_code": "command_failed", **metadata}
 
 
-def _search_shared_knowledge(parsed, metadata):
-    """Read-only shared-knowledge lookup as data, never as backend speech.
+# Actions answered directly from tools: data out, no backend speech, no model.
+DIRECT_TOOL_ACTIONS = frozenset({
+    "search_shared_knowledge", "share_project_knowledge",
+    "add_reminder", "add_todo", "list_tasks", "clear_completed_tasks",
+})
 
-    kira_web.search_shared_knowledge already formats results and covers the
-    "not configured" and "no results" cases with clear text; failures become a
-    structured error payload instead of an HTTP 500 or a stuck request.
+
+def _direct_tool_route(action, parsed, metadata, language):
+    """Run one tool and answer with its data; speech stays in the interface.
+
+    The kira_voice_agent handlers for these actions speak every result
+    synchronously, which is right for the microphone loop but blocks HTTP
+    responses and double-speaks in the UI. Failures become structured error
+    payloads instead of an HTTP 500 or a stuck request. Imports are lazy so
+    optional dependencies only load for the routes that need them.
     """
     import kira_tools
 
-    query = str(parsed.get("query", "")).strip()
+    def msg(key, **values):
+        return message(key, language, **values) or message(key, "en", **values) or ""
 
-    def lookup():
-        import kira_web  # Lazy: requests/bs4 stay optional for other routes.
-        return kira_web.search_shared_knowledge(query, limit=3)
+    if action == "search_shared_knowledge":
+        query = str(parsed.get("query", "")).strip()
 
-    result = kira_tools.run_tool("search_shared_knowledge", lookup)
-    return result.to_payload(**metadata)
+        def lookup():
+            import kira_web  # Lazy: requests/bs4 stay optional for other routes.
+            return kira_web.search_shared_knowledge(query, limit=3)
+
+        return kira_tools.run_tool(action, lookup).to_payload(**metadata)
+
+    if action == "share_project_knowledge":
+        topic = str(parsed.get("topic", "")).strip()
+        content = str(parsed.get("content", "")).strip()
+
+        def share():
+            import kira_web
+            return kira_web.share_project_knowledge(topic, content)
+
+        return kira_tools.run_tool(action, share).to_payload(**metadata)
+
+    if action in {"add_reminder", "add_todo"}:
+        title = str(parsed.get("title", "")).strip()
+        due_at = str(parsed.get("due_at", "")).strip()
+        if not title:
+            return {"action": action, "success": False, "response": msg("task_title_missing"),
+                    "error": msg("task_title_missing"), "error_code": "task_title_missing", **metadata}
+
+        def add():
+            import kira_tasks
+            return kira_tasks.add_task(title=title,
+                                       task_type="reminder" if action == "add_reminder" else "todo",
+                                       due_at=due_at)
+
+        result = kira_tools.run_tool(action, add)
+        if result.ok:
+            result.response = msg("reminder_added" if action == "add_reminder" else "todo_added", title=title)
+            result.extra["task_id"] = result.data
+        return result.to_payload(**metadata)
+
+    if action == "list_tasks":
+        def pending():
+            import kira_tasks
+            return kira_tasks.list_tasks(completed=False, limit=10)
+
+        result = kira_tools.run_tool(action, pending)
+        if result.ok:
+            tasks = list(result.data or [])
+            if not tasks:
+                result.response = msg("tasks_none")
+            else:
+                listed = "\n".join(f"{index}. {str(task.get('title', '')).strip()}"
+                                   for index, task in enumerate(tasks, 1))
+                key = "tasks_pending_one" if len(tasks) == 1 else "tasks_pending"
+                result.response = msg(key, count=len(tasks), list=listed)
+            result.extra["tasks"] = [{"id": task.get("id"), "title": task.get("title"),
+                                      "type": task.get("type"), "due_at": task.get("due_at")}
+                                     for task in tasks]
+        return result.to_payload(**metadata)
+
+    if action == "clear_completed_tasks":
+        def clear():
+            import kira_tasks
+            return kira_tasks.clear_completed()
+
+        result = kira_tools.run_tool(action, clear)
+        if result.ok:
+            count = int(result.data or 0)
+            if count <= 0:
+                result.response = msg("tasks_none_cleared")
+            else:
+                result.response = msg("tasks_cleared_one" if count == 1 else "tasks_cleared", count=count)
+            result.extra["cleared"] = count
+        return result.to_payload(**metadata)
+
+    raise ValueError(f"Unrouted tool action: {action}")  # Defensive; DIRECT_TOOL_ACTIONS drives this.
 
 
 _LEARN = re.compile(

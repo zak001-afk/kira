@@ -1,5 +1,21 @@
 # KIRA Changelog
 
+## Unreleased — Tâches et partage sans blocage vocal
+
+- **Tâches et partage instantanés** : `add_reminder`, `add_todo`, `list_tasks`,
+  `clear_completed_tasks` et `share_project_knowledge` répondent maintenant en
+  données directes (`kira_tasks` / `kira_web`) sur la route UI/HTTP — plus de
+  parole synchrone côté backend (qui bloquait la réponse et doublait la voix du
+  navigateur), plus de traduction Ollama. Réponses localisées (fr/en/ar) via le
+  catalogue de messages, avec `task_id`, liste `tasks` et compteur `cleared`
+  dans la charge utile, plus `elapsed_ms` partout.
+- **La boucle vocale autonome est inchangée** : `kira_voice_agent` continue de
+  parler ses propres résultats au micro ; seules les routes `process_command`
+  (fenêtre native + API) deviennent silencieuses côté backend.
+- **Tests** : `tests/test_tool_routes.py` (12 tests, 10 échouent sur l'ancien
+  code) ; suite complète 232 tests Python + 64 JS au vert. Aucun fichier `ui/`
+  modifié.
+
 ## Unreleased — Shared-search fast path, disconnect handling, ToolResult
 
 - **Recherche partagée instantanée** : `search_shared_knowledge` répond
