@@ -530,6 +530,30 @@ def call_ollama(messages, options):
 CHAT_ANSWER_BUDGET = 5.0
 
 
+def chat_budget():
+    """Answer budget in seconds: KIRA_CHAT_BUDGET env, else kira_config.json
+    'chat_budget_seconds', else the 5-second default. Clamped to 2..60."""
+    import os
+    value = None
+    raw = os.environ.get("KIRA_CHAT_BUDGET", "").strip()
+    if raw:
+        try:
+            value = float(raw)
+        except ValueError:
+            value = None
+    if value is None:
+        try:
+            import json
+            from pathlib import Path
+            config = json.loads((Path(__file__).resolve().parent / "kira_config.json").read_text(encoding="utf-8"))
+            value = float(config.get("chat_budget_seconds") or 0) or None
+        except Exception:
+            value = None
+    if value is None:
+        value = CHAT_ANSWER_BUDGET
+    return min(60.0, max(2.0, value))
+
+
 def _run_bounded(function, timeout):
     """Run function() in a thread, return its result or None after timeout."""
     box = []
@@ -546,12 +570,14 @@ def _run_bounded(function, timeout):
     return box[0][0] if box and box[0] else None
 
 
-def chat_answer_with_web(command, language, ask_model, ask_web=None, synthesize=None, budget=None):
-    """Answer within the budget (max 5 s): the local model gets ~70 % of it,
-    then a quick web lookup whose raw results are REFORMULATED to answer the
-    actual question (never a bare copy-paste) while the budget holds — the
-    raw text is the fallback, then whatever the model produced meanwhile.
-    Returns (answer_or_empty, "model" | "web" | "timeout")."""
+def chat_answer_with_web(command, language, ask_model, ask_web=None, synthesize=None, budget=None,
+                         ask_cloud=None):
+    """Answer within the budget: the local model gets ~70 % of it, then the
+    optional cloud model (fast, already privacy-gated by the caller), then a
+    quick web lookup whose raw results are REFORMULATED to answer the actual
+    question (never a bare copy-paste) while the budget holds — the raw text
+    is the fallback, then whatever the local model produced meanwhile.
+    Returns (answer_or_empty, "model" | "cloud" | "web" | "timeout")."""
     budget = budget or CHAT_ANSWER_BUDGET
     deadline = time.monotonic() + budget
     started = time.monotonic()
@@ -568,6 +594,14 @@ def chat_answer_with_web(command, language, ask_model, ask_web=None, synthesize=
     worker.join(max(0.5, budget * 0.7))
     if box and box[0][0]:
         return box[0][0], "model"
+    if ask_cloud is not None:
+        remaining = deadline - time.monotonic()
+        if remaining >= 0.5:
+            # Leave ~1 s for the web fallback in case the cloud also stalls.
+            found = _run_bounded(lambda: ask_cloud(command, language),
+                                 max(0.5, remaining - 1.0))
+            if found:
+                return found, "cloud"
     if ask_web is not None:
         remaining = deadline - time.monotonic()
         found = _run_bounded(lambda: ask_web(command, language), max(0.3, remaining))
@@ -2118,22 +2152,51 @@ def ask_chat(command: str, language=None):
     if language == "auto":
         language = detect_language(command)
     _LAST_REPLY_LANGUAGE = language
+    budget = chat_budget()
     answer, source = chat_answer_with_web(command, language, _ask_chat_response,
-                                          _web_lookup, _synthesize_web_answer)
+                                          _web_lookup, _synthesize_web_answer,
+                                          budget=budget, ask_cloud=_cloud_chat_answer)
     if not str(answer or "").strip():
+        seconds = int(budget)
         answer = {
-            "fr": ("Je n'ai pas eu de réponse en 5 secondes : le modèle local est lent "
+            "fr": (f"Je n'ai pas eu de réponse en {seconds} secondes : le modèle local est lent "
                    "et le web n'a rien donné. Reformule ou réessaie."),
-            "ar": ("لم أحصل على رد خلال 5 ثوانٍ: النموذج المحلي بطيء والويب لم يعط شيئًا. "
+            "ar": (f"لم أحصل على رد خلال {seconds} ثوانٍ: النموذج المحلي بطيء والويب لم يعط شيئًا. "
                    "أعد الصياغة أو حاول مرة أخرى."),
-            "en": ("I did not get an answer within 5 seconds: the local model is slow "
+            "en": (f"I did not get an answer within {seconds} seconds: the local model is slow "
                    "and the web gave nothing. Rephrase or try again."),
-        }.get(language) or ("I did not get an answer within 5 seconds: the local model is slow "
+        }.get(language) or (f"I did not get an answer within {seconds} seconds: the local model is slow "
                             "and the web gave nothing. Rephrase or try again.")
         return answer
-    if source == "web":
-        return answer  # already readable; translating snippets would waste the budget
+    if source in {"web", "cloud"}:
+        return answer  # already readable/in-language; extra translation would waste the budget
     return kira_language.ensure_reply_language(answer, language, call_ollama)
+
+
+CLOUD_CHAT_PROMPTS = {
+    "fr": "Tu es KIRA, l'assistante de l'utilisateur. Réponds en français, en 2 à 4 phrases claires et directes.",
+    "ar": "أنت KIRA، مساعدة المستخدم. أجب بالعربية في جملتين إلى أربع جمل واضحة ومباشرة.",
+    "en": "You are KIRA, the user's assistant. Answer in English, in 2 to 4 clear, direct sentences.",
+}
+
+
+def _cloud_chat_answer(command, language):
+    """Cloud chat fallback, only when the user opted in (KIRA_CLOUD_AI=1).
+
+    Privacy: ONLY the current question is sent — never local chat history,
+    memories, code or screenshots. Returns text or None (never raises).
+    """
+    try:
+        import kira_ai
+        if not kira_ai.cloud_ready():
+            return None
+        system = CLOUD_CHAT_PROMPTS.get(language) or CLOUD_CHAT_PROMPTS["en"]
+        reply = kira_ai.chat([{"role": "system", "content": system},
+                              {"role": "user", "content": str(command)}],
+                             provider=kira_ai.CLOUD_PROVIDER, timeout=8)
+        return reply.text if reply.ok and reply.text.strip() else None
+    except Exception:
+        return None
 
 
 def _ask_chat_response(command: str, language: str):

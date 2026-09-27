@@ -1,0 +1,138 @@
+"""Chat budget: configurable, and the cloud (opt-in) rescues a slow model.
+
+Order inside the budget: local model (~70 %) → cloud (if the user opted in)
+→ web → whatever the local model produced → honest timeout. Privacy: the
+cloud helper sends ONLY the current question, never history or memories.
+"""
+import ast
+import os
+import sys
+import threading
+import time
+import types
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def load_names(names, extra=None):
+    tree = ast.parse((ROOT / "kira_voice_agent.py").read_text(encoding="utf-8"))
+    wanted = []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names:
+            wanted.append(node)
+        elif isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id in names for t in node.targets):
+            wanted.append(node)
+    missing = set(names) - {getattr(n, "name", None) for n in wanted} - {
+        t.id for n in wanted if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)}
+    assert not missing, f"missing in kira_voice_agent.py: {missing}"
+    wanted.sort(key=lambda node: node.lineno)
+    namespace = {"time": time, "threading": threading}
+    namespace.update(extra or {})
+    exec(compile(ast.Module(body=wanted, type_ignores=[]), "chat_cloud_subset", "exec"), namespace)
+    return namespace
+
+
+class CloudStageTests(unittest.TestCase):
+    def setUp(self):
+        ns = load_names({"CHAT_ANSWER_BUDGET", "chat_answer_with_web", "_run_bounded"})
+        self.answer = ns["chat_answer_with_web"]
+
+    def test_cloud_rescues_a_slow_model(self):
+        slow_model = lambda c, l: time.sleep(5) or "late"
+        cloud = Mock(return_value="Gemini answer.")
+        web = Mock(return_value=("web", None))
+        text, source = self.answer("q", "en", slow_model, ask_web=web,
+                                   budget=3, ask_cloud=cloud)
+        self.assertEqual((text, source), ("Gemini answer.", "cloud"))
+        web.assert_not_called()   # The cloud answered first; no web snippets.
+
+    def test_fast_local_model_wins_and_cloud_is_never_called(self):
+        cloud = Mock(return_value="Gemini answer.")
+        text, source = self.answer("q", "en", lambda c, l: "local", budget=2,
+                                   ask_cloud=cloud)
+        self.assertEqual((text, source), ("local", "model"))
+        cloud.assert_not_called()
+
+    def test_cloud_failure_falls_back_to_web(self):
+        slow_model = lambda c, l: time.sleep(5) or None
+        cloud = Mock(return_value=None)
+        web = Mock(return_value=("web text", None))
+        text, source = self.answer("q", "en", slow_model, ask_web=web,
+                                   budget=1.5, ask_cloud=cloud)
+        self.assertEqual((text, source), ("web text", "web"))
+
+    def test_without_cloud_behavior_is_unchanged(self):
+        slow_model = lambda c, l: time.sleep(5) or None
+        web = Mock(return_value=("web text", None))
+        text, source = self.answer("q", "en", slow_model, ask_web=web, budget=1.2)
+        self.assertEqual((text, source), ("web text", "web"))
+
+
+class ChatBudgetTests(unittest.TestCase):
+    def setUp(self):
+        ns = load_names({"CHAT_ANSWER_BUDGET", "chat_budget"})
+        self.budget = ns["chat_budget"]
+
+    def test_default_is_five_seconds(self):
+        with patch.dict(os.environ, {"KIRA_CHAT_BUDGET": ""}):
+            self.assertEqual(self.budget(), 5.0)
+
+    def test_env_override_and_clamping(self):
+        for raw, expected in [("12", 12.0), ("1", 2.0), ("999", 60.0), ("abc", 5.0)]:
+            with patch.dict(os.environ, {"KIRA_CHAT_BUDGET": raw}):
+                self.assertEqual(self.budget(), expected, raw)
+
+
+class CloudChatPrivacyTests(unittest.TestCase):
+    def helper(self, fake_ai):
+        ns = load_names({"_cloud_chat_answer", "CLOUD_CHAT_PROMPTS"})
+        # The helper imports kira_ai lazily; inject the fake.
+        with patch.dict(sys.modules, kira_ai=fake_ai):
+            return ns["_cloud_chat_answer"]
+
+    def test_disabled_cloud_returns_none_without_a_call(self):
+        fake = types.SimpleNamespace(cloud_ready=Mock(return_value=False),
+                                     chat=Mock(), CLOUD_PROVIDER="gemini")
+        helper = self.helper(fake)
+        with patch.dict(sys.modules, kira_ai=fake):
+            self.assertIsNone(helper("hello", "en"))
+        fake.chat.assert_not_called()
+
+    def test_only_the_current_question_is_sent(self):
+        reply = types.SimpleNamespace(ok=True, text="answer")
+        fake = types.SimpleNamespace(cloud_ready=Mock(return_value=True),
+                                     chat=Mock(return_value=reply), CLOUD_PROVIDER="gemini")
+        helper = self.helper(fake)
+        with patch.dict(sys.modules, kira_ai=fake):
+            self.assertEqual(helper("what is python?", "fr"), "answer")
+        messages = fake.chat.call_args.args[0]
+        self.assertEqual(len(messages), 2)                    # system + question only
+        self.assertEqual(messages[1]["content"], "what is python?")
+        self.assertTrue(messages[0]["content"].startswith("Tu es KIRA"))
+        self.assertEqual(fake.chat.call_args.kwargs["provider"], "gemini")
+
+    def test_cloud_errors_never_raise(self):
+        fake = types.SimpleNamespace(cloud_ready=Mock(side_effect=RuntimeError("x")),
+                                     chat=Mock(), CLOUD_PROVIDER="gemini")
+        helper = self.helper(fake)
+        with patch.dict(sys.modules, kira_ai=fake):
+            self.assertIsNone(helper("hello", "en"))
+
+
+class CloudReadyTests(unittest.TestCase):
+    def test_cloud_ready_requires_both_flag_and_key(self):
+        import kira_ai
+        cases = [({"KIRA_CLOUD_AI": "1", "GEMINI_API_KEY": "k", "GOOGLE_API_KEY": ""}, True),
+                 ({"KIRA_CLOUD_AI": "1", "GEMINI_API_KEY": "", "GOOGLE_API_KEY": ""}, False),
+                 ({"KIRA_CLOUD_AI": "", "GEMINI_API_KEY": "k", "GOOGLE_API_KEY": ""}, False)]
+        for env, expected in cases:
+            with patch.dict(os.environ, env):
+                self.assertEqual(kira_ai.cloud_ready(), expected, env)
+
+
+if __name__ == "__main__":
+    unittest.main()

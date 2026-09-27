@@ -51,6 +51,11 @@ def cloud_enabled() -> bool:
     return os.environ.get("KIRA_CLOUD_AI", "").strip().lower() in _TRUE_VALUES
 
 
+def cloud_ready() -> bool:
+    """True only when the user opted in AND a key is configured."""
+    return cloud_enabled() and bool(_gemini_key())
+
+
 def _gemini_key() -> str:
     return (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
 

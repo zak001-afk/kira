@@ -1,5 +1,20 @@
 # KIRA Changelog
 
+## Unreleased — Budget de réponse configurable + secours Gemini dans le chat
+
+- **Fini le mur des 5 secondes** : le budget de réponse du chat devient
+  configurable (`KIRA_CHAT_BUDGET` dans `.env`, ou `chat_budget_seconds` dans
+  `kira_config.json` ; borné 2–60 s) et le message d'échec affiche le budget
+  réel.
+- **Secours cloud dans le budget** : ordre = modèle local (~70 %) → **Gemini**
+  (uniquement si `KIRA_CLOUD_AI=1` + clé) → recherche web → réponse tardive du
+  modèle → message honnête. Nouvelle source « cloud » ; `kira_ai.cloud_ready()`.
+- **Confidentialité** : le secours cloud n'envoie QUE la question courante —
+  jamais l'historique local, les mémoires, le code ou les captures d'écran
+  (testé). Les invites cloud répondent directement dans la langue demandée.
+- **Tests** : `tests/test_chat_cloud_fallback.py` (10 tests). Suite complète
+  294 tests Python + 64 JS au vert. Aucun fichier `ui/` modifié.
+
 ## Unreleased — Grammaire de commandes EN/FR pour les routes outils
 
 - **Correction issue du test réel Windows (2026-09-27)** : « add a todo test
