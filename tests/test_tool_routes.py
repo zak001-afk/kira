@@ -152,13 +152,28 @@ class RouteBoundaryTests(unittest.TestCase):
             "add_todo": {"action": "add_todo", "title": "t"},
             "list_tasks": {"action": "list_tasks"},
             "clear_completed_tasks": {"action": "clear_completed_tasks"},
+            "get_weather": {"action": "get_weather", "city": "Nabeul"},
+            "get_holidays": {"action": "get_holidays", "country": "TN", "year": ""},
+            "convert_currency": {"action": "convert_currency", "amount": "1",
+                                 "from_currency": "eur", "to_currency": "usd"},
         }
         self.assertEqual(set(samples), set(commands.DIRECT_TOOL_ACTIONS))
         web = types.SimpleNamespace(search_shared_knowledge=Mock(return_value="found"),
                                     share_project_knowledge=Mock(return_value="shared"))
+        info = types.SimpleNamespace(
+            default_city=Mock(return_value=""),
+            get_weather=Mock(return_value={"city": "Nabeul", "country": "Tunisia",
+                                           "temperature": 20, "feels_like": 20, "humidity": 50,
+                                           "wind_kmh": 10, "condition": {"en": "clear sky"},
+                                           "today_min": 15, "today_max": 25, "rain_chance_today": 0}),
+            get_holidays=Mock(return_value={"country": "TN", "year": 2026, "holidays": [], "upcoming": []}),
+            convert_currency=Mock(return_value={"amount": 1.0, "from": "EUR", "to": "USD",
+                                                "rate": 1.1, "result": 1.1, "date": "2026-01-01"}),
+        )
         for action, parsed in samples.items():
             backend = make_backend(parsed)
-            with approvals_off(), patch.dict("sys.modules", kira_web=web, kira_tasks=fake_tasks()):
+            with approvals_off(), patch.dict("sys.modules", kira_web=web, kira_tasks=fake_tasks(),
+                                             kira_info=info):
                 result = commands.process_command(backend, "anything")
             self.assertEqual(result["action"], action)
             self.assertIn("elapsed_ms", result)

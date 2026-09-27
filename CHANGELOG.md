@@ -1,5 +1,32 @@
 # KIRA Changelog
 
+## Unreleased — Outils d'information sans clé : météo, fériés, devises, blagues, faits
+
+- **Nouveau module `kira_info.py`** : cinq outils d'information publics,
+  gratuits, **sans aucune clé API** (rien dans `.env`, rien à divulguer,
+  rien à faire tourner) :
+  - `get_weather` — météo actuelle + min/max du jour et de demain
+    (Open-Meteo, géocodage de ville intégré, conditions en FR/EN/AR) ;
+  - `get_holidays` — jours fériés par pays (Nager.Date ; codes ISO ou noms
+    courants FR/EN, Tunisie par défaut via `KIRA_COUNTRY`) ;
+  - `convert_currency` — plus de 150 devises **dont le dinar tunisien**
+    (currency-api sur CDN, avec miroir de secours automatique) ;
+  - `tell_joke` — blagues en mode sûr (EN/FR/DE/ES/PT/CS, JokeAPI) ;
+  - `fun_fact` — un fait vrai et inutile (uselessfacts).
+- **Grammaire directe EN/FR** : « météo à Nabeul », « quel temps fait-il à
+  Tunis », « prochains jours fériés en Tunisie », « convert 100 eur to tnd »,
+  « convertis 50,5 euros en dinars » → outil direct, réponses localisées
+  (FR/EN/AR), zéro appel modèle. Blagues et faits restent accessibles via le
+  registre et le planificateur (la route Gemini « raconte une blague » du
+  chat n'est pas détournée).
+- `KIRA_CITY` (ville météo par défaut) et `KIRA_COUNTRY` documentés dans
+  `.env.example`. Les cinq outils sont dans le catalogue du planificateur.
+- **Tests** : `tests/test_info_tools.py` (20 tests, HTTP simulé) ; le garde
+  d'exhaustivité de `test_tool_routes` couvre les trois nouvelles actions
+  directes. Suite complète : 380 tests Python + 64 tests JS au vert.
+  Vérifié en direct : Nabeul 19,6 °C, fériés TN (15 octobre : عيد الجلاء),
+  100 EUR = 336,95 TND, blague FR, fait EN. Aucun fichier `ui/` modifié.
+
 ## Unreleased — Planificateur v1 (expérimental, désactivé par défaut)
 
 - **Nouveau module `kira_planner.py`** : quand un message n'est pas une

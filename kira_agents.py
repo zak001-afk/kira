@@ -233,6 +233,33 @@ def _web_search(query, num_results=5):
     return kira_web.search_web(query, num_results=max(1, min(int(num_results or 5), 10)))
 
 
+# Keyless public information tools (kira_info): no API keys anywhere.
+
+def _get_weather(city):
+    import kira_info
+    return kira_info.get_weather(city)
+
+
+def _get_holidays(country="", year=0):
+    import kira_info
+    return kira_info.get_holidays(country, year)
+
+
+def _convert_currency(amount, from_currency, to_currency):
+    import kira_info
+    return kira_info.convert_currency(amount, from_currency, to_currency)
+
+
+def _tell_joke(language="en"):
+    import kira_info
+    return kira_info.tell_joke(language)
+
+
+def _fun_fact():
+    import kira_info
+    return kira_info.fun_fact()
+
+
 def _share_project_knowledge(topic, content):
     import kira_web
     return kira_web.share_project_knowledge(topic, content)
@@ -290,6 +317,28 @@ def ensure_builtins():
                   {"query": {"type": str, "required": True},
                    "num_results": {"type": int, "required": False}},
                   _web_search)
+    register_tool("get_weather", "research",
+                  "Current weather and today/tomorrow forecast for a city (keyless Open-Meteo).",
+                  {"city": {"type": str, "required": True}},
+                  _get_weather)
+    register_tool("get_holidays", "research",
+                  "Public holidays for a country (ISO code or common name) and year (keyless Nager.Date).",
+                  {"country": {"type": str, "required": False},
+                   "year": {"type": int, "required": False}},
+                  _get_holidays)
+    register_tool("convert_currency", "research",
+                  "Convert an amount between currencies, e.g. EUR to TND (keyless daily rates).",
+                  {"amount": {"type": float, "required": True},
+                   "from_currency": {"type": str, "required": True},
+                   "to_currency": {"type": str, "required": True}},
+                  _convert_currency)
+    register_tool("tell_joke", "research",
+                  "One safe joke (EN/FR/DE/ES/PT/CS) from a keyless service.",
+                  {"language": {"type": str, "required": False}},
+                  _tell_joke)
+    register_tool("fun_fact", "research",
+                  "One random true fun fact (English) from a keyless service.",
+                  {}, _fun_fact)
     register_tool("add_reminder", "windows",
                   "Add a reminder task, optionally with a due time.",
                   {"title": {"type": str, "required": True},

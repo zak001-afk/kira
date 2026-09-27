@@ -84,6 +84,21 @@ _MESSAGES = {
     },
     "model_offline": {"en": "I cannot reach the local AI model. Start Ollama with ollama serve, then try again.", "fr": "Je ne peux pas joindre le modèle IA local. Démarrez Ollama avec ollama serve, puis réessayez.", "ar": "لا أستطيع الاتصال بنموذج الذكاء الاصطناعي المحلي. شغّل Ollama بالأمر ollama serve ثم حاول مجدداً."},
     "chat_reset": {"en": "New conversation started. I have cleared this session's chat memory.", "fr": "Nouvelle conversation. J’ai effacé la mémoire de cette session.", "ar": "بدأت محادثة جديدة ومسحت ذاكرة هذه الجلسة."},
+    "weather_city_missing": {"en": "Which city? For example: “weather in Nabeul”. You can set a default city with KIRA_CITY in .env.",
+                             "fr": "Pour quelle ville ? Par exemple : « météo à Nabeul ». Vous pouvez définir une ville par défaut avec KIRA_CITY dans .env.",
+                             "ar": "لأي مدينة؟ مثلاً: «الطقس في نابل». يمكنك تحديد مدينة افتراضية عبر KIRA_CITY في .env."},
+    "weather_now": {"en": "Weather in {city}{country}: {condition}, {temp}°C (feels like {feels}°C), humidity {humidity}%, wind {wind} km/h. Today {tmin}–{tmax}°C, rain chance {rain}%.",
+                    "fr": "Météo à {city}{country} : {condition}, {temp}°C (ressenti {feels}°C), humidité {humidity}%, vent {wind} km/h. Aujourd’hui {tmin}–{tmax}°C, risque de pluie {rain}%.",
+                    "ar": "الطقس في {city}{country}: {condition}، {temp}°م (المحسوسة {feels}°م)، الرطوبة {humidity}%، الرياح {wind} كم/س. اليوم {tmin}–{tmax}°م، احتمال المطر {rain}%."},
+    "holidays_upcoming": {"en": "Upcoming public holidays in {country} ({year}):\n{list}",
+                          "fr": "Prochains jours fériés en {country} ({year}) :\n{list}",
+                          "ar": "العطل الرسمية القادمة في {country} ({year}):\n{list}"},
+    "holidays_none": {"en": "No public holidays left in {country} for {year}.",
+                      "fr": "Plus aucun jour férié en {country} pour {year}.",
+                      "ar": "لا توجد عطل رسمية متبقية في {country} لسنة {year}."},
+    "currency_result": {"en": "{amount} {src} = {result} {dst} (rate {rate}, reference of {date}).",
+                        "fr": "{amount} {src} = {result} {dst} (taux {rate}, référence du {date}).",
+                        "ar": "{amount} {src} = {result} {dst} (السعر {rate}، مرجع {date})."},
     "wrong_language": {"en": "The model could not answer in the requested language. Try a multilingual model or another language.", "fr": "Le modèle n’a pas réussi à répondre dans la langue demandée. Essayez un modèle multilingue ou une autre langue.", "ar": "لم يتمكن النموذج من الإجابة باللغة المطلوبة. جرّب نموذجاً متعدد اللغات أو لغة أخرى."},
 }
 
@@ -459,6 +474,19 @@ _LIST_TASKS_PATTERNS = (
     re.compile(r"^(?:liste|affiche|montre)(?:[- ]moi)?\s+(?:mes\s+|les\s+)?t[âa]ches(?:\s+en\s+attente)?\s*\??$", re.IGNORECASE),
     re.compile(r"^mes\s+t[âa]ches\s*\??$", re.IGNORECASE),
 )
+_WEATHER_PATTERNS = (
+    re.compile(r"^(?:what(?:'s|\s+is)\s+(?:the\s+)?)?weather(?:\s+like)?(?:\s+(?:today|now|right\s+now))?(?:\s+in\s+(.+))?$", re.IGNORECASE),
+    re.compile(r"^(?:quel\s+temps\s+fait[- ]il|(?:la\s+)?m[ée]t[ée]o)(?:\s+(?:aujourd'hui|maintenant))?(?:\s+(?:[àa]|en|sur)\s+(.+))?\s*$", re.IGNORECASE),
+)
+_HOLIDAYS_PATTERNS = (
+    re.compile(r"^(?:what\s+are\s+the\s+|show\s+(?:me\s+)?|list\s+)?(?:next\s+|upcoming\s+)?(?:public\s+)?holidays(?:\s+in\s+([a-zà-ÿ'\- ]+?))?(?:\s+(?:in\s+|for\s+)?(\d{4}))?$", re.IGNORECASE),
+    re.compile(r"^(?:quels?\s+sont\s+les\s+|liste\s+(?:les\s+)?|affiche\s+(?:les\s+)?)?(?:prochains?\s+)?jours?\s+f[ée]ri[ée]s(?:\s+(?:en|au|aux|[àa])\s+([a-zà-ÿ'\- ]+?))?(?:\s+(?:en\s+|pour\s+)?(\d{4}))?\s*$", re.IGNORECASE),
+)
+_CURRENCY_UNIT = r"[a-z]{3}|euros?|dollars?|dinars?|pounds?|livres?|dirhams?|yens?"
+_CURRENCY_PATTERN = re.compile(
+    r"^(?:convert\s+|convertis?\s+|change\s+|combien\s+font\s+)?"
+    r"(\d+(?:[.,]\d+)?)\s*(" + _CURRENCY_UNIT + r")\s+(?:to|into|in|en|vers)\s+(" + _CURRENCY_UNIT + r")\s*$",
+    re.IGNORECASE)
 _CLEAR_TASKS_PATTERNS = (
     re.compile(r"^(?:clear|delete|remove)\s+(?:my\s+|the\s+|all\s+)?completed(?:\s+tasks?)?$", re.IGNORECASE),
     re.compile(r"^(?:supprime(?:r)?|efface(?:r)?|nettoie(?:r)?)\s+(?:mes\s+|les\s+)?t[âa]ches\s+termin[ée]es$", re.IGNORECASE),
@@ -502,6 +530,19 @@ def parse_tool_command(text):
     for pattern in _CLEAR_TASKS_PATTERNS:
         if pattern.match(value):
             return {"action": "clear_completed_tasks"}
+    for pattern in _WEATHER_PATTERNS:
+        match = pattern.match(value)
+        if match:
+            return {"action": "get_weather", "city": (match.group(1) or "").strip()}
+    for pattern in _HOLIDAYS_PATTERNS:
+        match = pattern.match(value)
+        if match:
+            return {"action": "get_holidays", "country": (match.group(1) or "").strip(),
+                    "year": (match.group(2) or "").strip()}
+    match = _CURRENCY_PATTERN.match(value)
+    if match:
+        return {"action": "convert_currency", "amount": match.group(1).replace(",", "."),
+                "from_currency": match.group(2), "to_currency": match.group(3)}
     return None
 
 
@@ -509,6 +550,7 @@ def parse_tool_command(text):
 DIRECT_TOOL_ACTIONS = frozenset({
     "search_shared_knowledge", "share_project_knowledge",
     "add_reminder", "add_todo", "list_tasks", "clear_completed_tasks",
+    "get_weather", "get_holidays", "convert_currency",
 })
 
 
@@ -589,6 +631,61 @@ def _direct_tool_route(action, parsed, metadata, language):
             else:
                 result.response = msg("tasks_cleared_one" if count == 1 else "tasks_cleared", count=count)
             result.extra["cleared"] = count
+        return result.to_payload(**metadata)
+
+    def _num(value):  # Missing readings show as "?" instead of "None".
+        return "?" if value is None else value
+
+    if action == "get_weather":
+        import kira_info
+        city = str(parsed.get("city", "")).strip() or kira_info.default_city()
+        if not city:
+            text = msg("weather_city_missing")
+            return {"action": action, "success": False, "response": text,
+                    "error": text, "error_code": "city_missing", **metadata}
+        result = kira_agents.run(action, {"city": city})
+        if result.ok:
+            data = result.data or {}
+            lang = languages.normalize_language(language)
+            condition = (data.get("condition") or {}).get(lang) or (data.get("condition") or {}).get("en", "")
+            country = f" ({data['country']})" if data.get("country") else ""
+            result.response = msg(
+                "weather_now", city=data.get("city", city), country=country,
+                condition=condition, temp=_num(data.get("temperature")),
+                feels=_num(data.get("feels_like")), humidity=_num(data.get("humidity")),
+                wind=_num(data.get("wind_kmh")), tmin=_num(data.get("today_min")),
+                tmax=_num(data.get("today_max")), rain=_num(data.get("rain_chance_today")))
+        return result.to_payload(**metadata)
+
+    if action == "get_holidays":
+        args = {"country": str(parsed.get("country", "")).strip()}
+        year = str(parsed.get("year", "")).strip()
+        if year.isdigit():
+            args["year"] = int(year)
+        result = kira_agents.run(action, args)
+        if result.ok:
+            data = result.data or {}
+            upcoming = list(data.get("upcoming") or [])[:5]
+            if upcoming:
+                listed = "\n".join(f"- {row.get('date')} : {row.get('local_name') or row.get('name')}"
+                                   for row in upcoming)
+                result.response = msg("holidays_upcoming", country=data.get("country", ""),
+                                      year=data.get("year", ""), list=listed)
+            else:
+                result.response = msg("holidays_none", country=data.get("country", ""),
+                                      year=data.get("year", ""))
+        return result.to_payload(**metadata)
+
+    if action == "convert_currency":
+        result = kira_agents.run(action, {"amount": str(parsed.get("amount", "")).strip(),
+                                          "from_currency": str(parsed.get("from_currency", "")).strip(),
+                                          "to_currency": str(parsed.get("to_currency", "")).strip()})
+        if result.ok:
+            data = result.data or {}
+            result.response = msg("currency_result", amount=data.get("amount"),
+                                  src=data.get("from"), dst=data.get("to"),
+                                  result=data.get("result"), rate=data.get("rate"),
+                                  date=data.get("date") or "?")
         return result.to_payload(**metadata)
 
     raise ValueError(f"Unrouted tool action: {action}")  # Defensive; DIRECT_TOOL_ACTIONS drives this.
