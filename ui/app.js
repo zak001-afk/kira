@@ -3,6 +3,8 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { HoloMouth } from "./holo-mouth.mjs?v=command-center-17";
+import { lipDemoPose } from "./lips.mjs?v=command-center-17";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
@@ -184,8 +186,39 @@ energySphere.position.z = -3.2;
    AVATAR — visage doré de KIRA
    ========================================================= */
 
+let holoMouth = null;
 const avatarGroup = new THREE.Group();
 scene.add(avatarGroup);
+
+// ── HOLOGRAMME DE KIRA (image + lèvres animées) ──
+if (THREE.TextureLoader && THREE.PlaneGeometry) {
+  const avatarLoader = new THREE.TextureLoader();
+  const avatarTexture = avatarLoader.load("assets/avatar_gold.png", (texture) => {
+    if (texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    if (texture) texture.needsUpdate = true;
+    // Lèvres animées : maillage visème sur les mesures réelles de la bouche,
+    // synchronisé sur l'horloge audio réelle (aucun décalage).
+    if (texture && texture.image && typeof HoloMouth === "function") {
+      try { holoMouth = new HoloMouth(texture.image, THREE, scene, avatarPlane); }
+      catch { holoMouth = null; }
+    }
+  });
+  const avatarMaterial = new THREE.MeshBasicMaterial({
+    map: avatarTexture,
+    transparent: true,
+    opacity: 1.0,
+    depthWrite: false,
+    depthTest: false,
+    toneMapped: false,
+  });
+  const avatarPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(6.4, 6.4),
+    avatarMaterial
+  );
+  avatarPlane.renderOrder = 50;
+  avatarPlane.position.set(0, 0.4, 5.2);
+  avatarGroup.add(avatarPlane);
+}
 
 /* =========================================================
    CLUSTER DU CŒUR — nœud d'énergie (fixe, sur la poitrine)
@@ -549,7 +582,7 @@ function stopSpeaking() {
   speech.stop();
 }
 
-window.addEventListener("pagehide", () => speech.destroy());
+window.addEventListener("pagehide", () => { speech.destroy(); holoMouth?.destroy?.(); });
 
 // Bouton muet
 const muteButton = document.getElementById("mute");
@@ -1375,7 +1408,15 @@ function animate() {
   const light = level * (disabled ? 0.12 : 1);
   const motionTime = disabled ? 0 : time;
   const step = disabled ? 0 : dt;
-voiceRotation += energy * step;
+// Lèvres de l'hologramme : même horloge audio que le son (zéro décalage).
+  if (holoMouth) {
+    holoMouth.update(
+      { mouth: voice.mouth, active: voice.active, level },
+      { now, disabled, demo: demo ? lipDemoPose(demoAge) : null }
+    );
+  }
+
+  voiceRotation += energy * step;
   voiceUniforms.voiceTime.value = motionTime;
   voiceUniforms.voiceEnergy.value = energy;
   voiceUniforms.voiceLow.value = low;
