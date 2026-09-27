@@ -1,5 +1,26 @@
 # KIRA Changelog
 
+## Unreleased — Planificateur v1 (expérimental, désactivé par défaut)
+
+- **Nouveau module `kira_planner.py`** : quand un message n'est pas une
+  commande connue, un modèle choisit UN outil enregistré (ou aucun →
+  conversation normale). Réponse JSON stricte, analyse tolérante aux
+  code fences, outils inconnus refusés — le modèle ne peut rien inventer.
+- **Activation explicite** : `KIRA_PLANNER=1` dans `.env` (sinon rien ne
+  change). `KIRA_PLANNER_PROVIDER=gemini` n'est honoré que si le cloud est
+  prêt ; par défaut le modèle local planifie.
+- **Garde-fous** : le contenu personnel (nom, mémoire, souvenirs — EN/FR/AR)
+  ne passe JAMAIS par le modèle planificateur ; les arguments restent validés
+  par le registre ; les outils à conséquences passent toujours par
+  l'approbation (le planificateur n'a aucun passe-droit) ; tout échec
+  (timeout, JSON invalide, outil inconnu) retombe silencieusement sur le chat.
+- **`kira_agents.tool_catalog()`** : vue publique sérialisable des outils
+  (nom, agent, description, arguments typés) pour le planificateur et l'API.
+- **Correctif de test** : `recent_activity()` renvoie du plus récent au plus
+  ancien — `test_research_agent` lisait la mauvaise extrémité de la liste.
+- **Tests** : `tests/test_planner.py` (13 tests). Suite complète :
+  360 tests Python + 64 tests JS au vert. Aucun fichier `ui/` modifié.
+
 ## Unreleased — Agent de recherche v2 : le web passe par le registre
 
 - **`web_learn` et `web_search`** rejoignent le registre multi-agents sous

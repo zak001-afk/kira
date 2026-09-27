@@ -171,6 +171,23 @@ def _record(spec, result, source):
         })
 
 
+def tool_catalog():
+    """Public, serializable view of every registered tool (planner, API
+    docs): names, descriptions and arg specs — never the handlers."""
+    ensure_builtins()
+    with _LOCK:
+        specs = list(_REGISTRY.values())
+    return [{
+        "name": spec.name,
+        "agent": spec.agent,
+        "description": spec.description,
+        "consequential": spec.consequential,
+        "args": {name: {"type": rules.get("type", str).__name__,
+                        "required": bool(rules.get("required", False))}
+                 for name, rules in spec.args.items()},
+    } for spec in sorted(specs, key=lambda item: item.name)]
+
+
 def recent_activity(limit=30):
     with _LOCK:
         items = list(_ACTIVITY)

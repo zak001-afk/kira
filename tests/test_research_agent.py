@@ -42,10 +42,10 @@ class WebLearnRouteTests(unittest.TestCase):
             reply = kira_commands.try_web_learning("learn about python")
         self.assertEqual(reply, "I learned about python.")
         learn.assert_called_once_with("python")
-        activity = kira_agents.recent_activity(limit=5)
-        self.assertEqual(activity[-1]["agent"], "research")
-        self.assertEqual(activity[-1]["tool"], "web_learn")
-        self.assertTrue(activity[-1]["ok"])
+        activity = kira_agents.recent_activity(limit=5)  # newest first
+        self.assertEqual(activity[0]["agent"], "research")
+        self.assertEqual(activity[0]["tool"], "web_learn")
+        self.assertTrue(activity[0]["ok"])
 
     def test_failures_are_structured_never_raised(self):
         learn = Mock(side_effect=RuntimeError("no network"))
@@ -53,8 +53,8 @@ class WebLearnRouteTests(unittest.TestCase):
             reply = kira_commands.try_web_learning("learn about python")
         self.assertIn("no network", reply)
         activity = kira_agents.recent_activity(limit=1)
-        self.assertFalse(activity[-1]["ok"])
-        self.assertEqual(activity[-1]["error_code"], "tool_failed")
+        self.assertFalse(activity[0]["ok"])
+        self.assertEqual(activity[0]["error_code"], "tool_failed")
 
     def test_unrelated_and_private_commands_are_untouched(self):
         with patch.dict(sys.modules, kira_web=self.fake_web()):

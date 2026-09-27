@@ -372,6 +372,24 @@ def process_command(backend, text, reply_language="auto", previous_language=None
                 return {"action": action, "success": bool(success), "response": message("wrong_language", interface_language) or message("wrong_language", "en"),
                         "language_warning": "action_completed_translation_unavailable" if success else "action_failed_translation_unavailable", **metadata}
             return {"action": action, "success": bool(success), "response": reply, **metadata}
+        if not chat_only:
+            # Optional planner (KIRA_PLANNER=1): the model picks ONE registered
+            # tool or says none. Approval gates and validation stay intact;
+            # any planner failure falls through to normal chat.
+            try:
+                import kira_planner
+                plan = kira_planner.plan_command(cleaned)
+            except Exception:
+                plan = None
+            if plan:
+                plan_tool, plan_args = plan
+                if plan_tool in DIRECT_TOOL_ACTIONS:
+                    return _direct_tool_route(plan_tool, plan_args, metadata, choice.language)
+                import kira_agents
+                result = kira_agents.run(plan_tool, plan_args, source="planner")
+                if result.ok:
+                    return result.to_payload(**metadata)
+                # A failed plan is not an error to the user: fall back to chat.
         answer = call_with_options(backend.ask_chat, cleaned, language=choice.language)
         return {"action": "chat", "response": answer, **metadata}
     except languages.ReplyLanguageError:
