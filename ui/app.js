@@ -3,18 +3,18 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { HoloMouth } from "./holo-mouth.mjs?v=command-center-22";
-import { lipDemoPose } from "./lips.mjs?v=command-center-22";
+import { HoloMouth } from "./holo-mouth.mjs?v=command-center-23";
+import { lipDemoPose } from "./lips.mjs?v=command-center-23";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
    ========================================================= */
 
-const GOLD = 0xC2A66B;
-const GOLD_BRIGHT = 0xE3D3A6;
-const GOLD_SOFT = 0xD5BE8A;
-const GOLD_DARK = 0x5C4A28;
-const GOLD_DEEP = 0x241C0F;
+const GOLD = 0x00FF41;
+const GOLD_BRIGHT = 0xB9FFC9;
+const GOLD_SOFT = 0x7DEF9B;
+const GOLD_DARK = 0x145228;
+const GOLD_DEEP = 0x061A0B;
 
 /* =========================================================
    SCÈNE
@@ -22,7 +22,7 @@ const GOLD_DEEP = 0x241C0F;
 
 const container = document.getElementById("scene-container");
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x030200);
+scene.background = new THREE.Color(0x010502);
 
 /* =========================================================
    CAMÉRA
@@ -54,7 +54,7 @@ container.appendChild(renderer.domElement);
    LUMIÈRES
    ========================================================= */
 
-const ambient = new THREE.AmbientLight(0x1a1206, 2);
+const ambient = new THREE.AmbientLight(0x051408, 2);
 scene.add(ambient);
 
 const goldLight = new THREE.PointLight(GOLD, 16, 14);
@@ -87,10 +87,10 @@ reactor.scale.setScalar(1.05);
 // --- COQUILLE EXTERNE ---
 const shellGeometry = new THREE.SphereGeometry(2.25, 64, 64);
 const shellMaterial = new THREE.MeshStandardMaterial({
-  color: 0x0a0703,
+  color: 0x020703,
   metalness: 0.95,
   roughness: 0.25,
-  emissive: 0x241C0F,
+  emissive: 0x061A0B,
   emissiveIntensity: 0.18,
   transparent: true,
   opacity: 0.16,
@@ -102,7 +102,7 @@ const shell = new THREE.Mesh(shellGeometry, shellMaterial);
 // --- COQUILLE FILAIRE ---
 const wireGeometry = new THREE.SphereGeometry(2.3, 32, 32);
 const wireMaterial = new THREE.MeshBasicMaterial({
-  color: 0xA08652,
+  color: 0x2E9A50,
   wireframe: true,
   transparent: true,
   opacity: 0.03,
@@ -115,10 +115,10 @@ const armorGroup = new THREE.Group();
 // reactor.add(armorGroup); // retiré : centre vide
 
 const armorMaterial = new THREE.MeshStandardMaterial({
-  color: 0x120c04,
+  color: 0x041507,
   metalness: 1.0,
   roughness: 0.18,
-  emissive: 0x6E5A33,
+  emissive: 0x1D7A35,
   emissiveIntensity: 0.4,
 });
 
@@ -147,7 +147,7 @@ for (let i = 0; i < 8; i++) {
 // --- AURA D'ÉNERGIE (derrière l'avatar, se déforme avec la voix) ---
 const energyGeometry = new THREE.SphereGeometry(2.6, 64, 64);
 const energyMaterial = new THREE.MeshBasicMaterial({
-  color: 0xC2A66B,
+  color: 0x00FF41,
   transparent: true,
   opacity: 0.1,
   blending: THREE.AdditiveBlending,
@@ -194,7 +194,7 @@ scene.add(avatarGroup);
 // ── HOLOGRAMME DE KIRA (image + lèvres animées) ──
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
-  const avatarTexture = avatarLoader.load("assets/avatar_matrix.png?v=command-center-22", (texture) => {
+  const avatarTexture = avatarLoader.load("assets/avatar_matrix.png?v=command-center-23", (texture) => {
     // Valeurs sRGB brutes : le shader holographique gère lui-même le rendu.
     if (texture) texture.needsUpdate = true;
     // Lèvres animées : maillage visème sur les mesures réelles de la bouche,
@@ -268,7 +268,7 @@ if (false) scene.add(coreCluster);
 // --- CŒUR ---
 const coreGeometry = new THREE.SphereGeometry(0.42, 64, 64);
 const coreMaterial = new THREE.MeshBasicMaterial({
-  color: 0xfff6df,
+  color: 0xF0FFF4,
   toneMapped: false,
 });
 const core = new THREE.Mesh(coreGeometry, coreMaterial);
@@ -277,7 +277,7 @@ coreCluster.add(core);
 // --- HALO DU CŒUR ---
 const glowGeometry = new THREE.SphereGeometry(0.78, 64, 64);
 const glowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xC2A66B,
+  color: 0x00FF41,
   transparent: true,
   opacity: 0.42,
   blending: THREE.AdditiveBlending,
@@ -290,7 +290,7 @@ coreCluster.add(coreGlow);
 // --- AURA BLANCHE CHAUDE ---
 const whiteGlowGeometry = new THREE.SphereGeometry(0.62, 64, 64);
 const whiteGlowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffefd0,
+  color: 0xEAFFEE,
   transparent: true,
   opacity: 0.28,
   blending: THREE.AdditiveBlending,
@@ -328,10 +328,10 @@ neuralCore.add(secondRing);
 
 const frameGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.16, 32);
 const frameMat = new THREE.MeshStandardMaterial({
-  color: 0x120c04,
+  color: 0x041507,
   metalness: 1,
   roughness: 0.2,
-  emissive: 0x6E5A33,
+  emissive: 0x1D7A35,
   emissiveIntensity: 0.3,
 });
 const coreFrame = new THREE.Mesh(frameGeo, frameMat);
@@ -340,7 +340,7 @@ neuralCore.add(coreFrame);
 
 const discGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.18, 64);
 const discMat = new THREE.MeshBasicMaterial({
-  color: 0xC2A66B,
+  color: 0x00FF41,
   transparent: true,
   opacity: 1.0,
   blending: THREE.AdditiveBlending,
@@ -407,7 +407,7 @@ halo.rotation.x = Math.PI / 2;
 // reactor.add(halo); // retiré : centre vide
 
 // --- LUMIÈRE DU RÉACTEUR ---
-const reactorLight = new THREE.PointLight(0xC2A66B, 3, 9);
+const reactorLight = new THREE.PointLight(0x00FF41, 3, 9);
 reactorLight.position.set(0, -4.1, 1.0);
 scene.add(reactorLight);
 
@@ -415,7 +415,7 @@ scene.add(reactorLight);
 function createReactorRing(radius, tube, rotation, opacity) {
   const geo = new THREE.TorusGeometry(radius, tube, 12, 180);
   const mat = new THREE.MeshBasicMaterial({
-    color: 0xC2A66B,
+    color: 0x00FF41,
     transparent: true,
     opacity: opacity,
   });
@@ -852,13 +852,13 @@ function drawSpark(canvas, values) {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = "rgba(194, 166, 107, 0.85)";
+  ctx.strokeStyle = "rgba(0, 255, 65, 0.85)";
   ctx.lineWidth = 1.4;
   ctx.stroke();
   ctx.lineTo(w, h);
   ctx.lineTo(0, h);
   ctx.closePath();
-  ctx.fillStyle = "rgba(194, 166, 107, 0.14)";
+  ctx.fillStyle = "rgba(0, 255, 65, 0.14)";
   ctx.fill();
 }
 
