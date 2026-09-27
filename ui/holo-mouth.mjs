@@ -1,5 +1,5 @@
 // Animation des lèvres de l'hologramme KIRA (portrait 1024×1024).
-// Mesures réelles de l'avatar MATRIX actuel : bouche centrée à (510, 567),
+// Mesures réelles de l'avatar FINAL (référence utilisateur) : bouche (510, 567),
 // coins x444→576, lèvres y548→595. Maillage visème (lips.mjs) synchronisé
 // sur l'horloge audio réelle (speech.mjs) — aucun décalage.
 import * as THREE from "three";
@@ -152,9 +152,8 @@ export class HoloMouth {
     this.canvas = document.createElement("canvas");
     this.canvas.width = W; this.canvas.height = H;
     this.context = this.canvas.getContext("2d");
-    this.destination = new Float32Array(MESH.vertices.length);
 
-    // Intérieur de la bouche : teinte holographique sombre dorée.
+    // Intérieur de la bouche : ombre verte sombre et mate.
     this.interior = document.createElement("canvas");
     this.interior.width = 180; this.interior.height = 62;
     const interiorContext = this.interior.getContext("2d");
@@ -170,7 +169,6 @@ export class HoloMouth {
     for (let ly = 3; ly < 62; ly += 6) interiorContext.fillRect(0, ly, 180, 2);
     this.interiorReady = true;
 
-    this.canvas2texture = null;
     this.destination = new Float32Array(MESH.vertices.length);
     this.innerSource = new Float32Array((COUNT + 1) * 2);
     this.innerDestination = new Float32Array(this.innerSource.length);
