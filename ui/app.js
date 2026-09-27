@@ -3,8 +3,8 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { HoloMouth } from "./holo-mouth.mjs?v=command-center-24";
-import { lipDemoPose } from "./lips.mjs?v=command-center-24";
+import { HoloMouth } from "./holo-mouth.mjs?v=command-center-25";
+import { lipDemoPose } from "./lips.mjs?v=command-center-25";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
@@ -194,7 +194,7 @@ scene.add(avatarGroup);
 // ── HOLOGRAMME DE KIRA (image + lèvres animées) ──
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
-  const avatarTexture = avatarLoader.load("assets/avatar_notext.png?v=command-center-24", (texture) => {
+  const avatarTexture = avatarLoader.load("assets/avatar_notext.png?v=command-center-25", (texture) => {
     // Valeurs sRGB brutes : le shader holographique gère lui-même le rendu.
     if (texture) texture.needsUpdate = true;
     // Lèvres animées : maillage visème sur les mesures réelles de la bouche,
@@ -204,15 +204,15 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
       catch (error) { console.error("HoloMouth :", error); holoMouth = null; }
     }
   });
-  // Holographique MAT : fusion additive conservée pour fond noir invisible,
-  // mais SANS boost, SANS scintillement, SANS accent — image atténuée, mate.
+  // Holographique à 10 % de luminosité : fusion normale (aucune accumulation,
+  // le bloom ne peut plus brûler le visage), fond noir rendu transparent.
   holoUniforms = { map: { value: avatarTexture }, time: { value: 0 } };
   const avatarMaterial = new THREE.ShaderMaterial({
     uniforms: holoUniforms,
     transparent: true,
     depthWrite: false,
     depthTest: false,
-    blending: THREE.AdditiveBlending,
+    blending: THREE.NormalBlending,
     vertexShader: `
       varying vec2 vUv;
       uniform float time;
@@ -235,11 +235,13 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
         uv.x += glitch * (fract(sin(slot * 12.9898) * 78.233) - 0.5) * 0.014
               * step(0.4, fract(uv.y * 2.0 - time * 3.0));
         vec4 tex = texture2D(map, uv);
-        // Aucune luminosité ajoutée : image atténuée, scanlines discrètes, fixe.
-        float scan = 0.96 + 0.04 * sin(uv.y * 460.0);
+        // Luminosité 10 % (demande explicite) et contraste réduit.
+        const float BRIGHTNESS = 0.10;
+        vec3 dim = mix(vec3(0.015), tex.rgb, 0.85) * BRIGHTNESS;
+        float lum = dot(dim, vec3(0.299, 0.587, 0.114));
+        float alpha = smoothstep(0.002, 0.03, lum);
         float fade = smoothstep(0.02, 0.1, uv.y) * smoothstep(1.0, 0.94, uv.y);
-        vec3 col = tex.rgb * 0.78 * scan;
-        gl_FragColor = vec4(col * fade, 1.0);
+        gl_FragColor = vec4(dim * fade, alpha * fade * 0.92);
       }`,
   });
   const avatarPlane = new THREE.Mesh(
