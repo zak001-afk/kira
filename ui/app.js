@@ -3,8 +3,8 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { HoloMouth } from "./holo-mouth.mjs?v=command-center-42";
-import { lipDemoPose } from "./lips.mjs?v=command-center-42";
+import { HoloMouth } from "./holo-mouth.mjs?v=command-center-41";
+import { lipDemoPose } from "./lips.mjs?v=command-center-41";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
@@ -183,7 +183,7 @@ energySphere.position.z = -3.2;
 // reactor.add(energySphere); // retiré : centre vide
 
 /* =========================================================
-   AVATAR — hologramme Matrix de KIRA (référence utilisateur)
+   AVATAR — visage doré de KIRA
    ========================================================= */
 
 let holoMouth = null;
@@ -194,9 +194,7 @@ scene.add(avatarGroup);
 // ── HOLOGRAMME DE KIRA (image + lèvres animées) ──
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
-  const avatarTexture = avatarLoader.load(
-    "assets/avatar_final.png?v=command-center-42",
-    (texture) => {
+  const avatarTexture = avatarLoader.load("assets/avatar_final.png?v=command-center-41", (texture) => {
     // Valeurs sRGB brutes : le shader holographique gère lui-même le rendu.
     if (texture) texture.needsUpdate = true;
     // Lèvres animées : maillage visème sur les mesures réelles de la bouche,
@@ -205,10 +203,8 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
       try { holoMouth = new HoloMouth(texture.image, THREE, scene, avatarPlane); }
       catch (error) { console.error("HoloMouth :", error); holoMouth = null; }
     }
-    },
-    () => console.error("Avatar : échec de chargement de avatar_final.png")
-  );
-  // Holographique fidèle à la référence : fusion normale (aucune accumulation,
+  });
+  // Holographique à 10 % de luminosité : fusion normale (aucune accumulation,
   // le bloom ne peut plus brûler le visage), fond noir rendu transparent.
   holoUniforms = { map: { value: avatarTexture }, time: { value: 0 } };
   const avatarMaterial = new THREE.ShaderMaterial({
