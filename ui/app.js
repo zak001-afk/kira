@@ -3,7 +3,6 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { createAvatar3D } from "./avatar3d.mjs?v=command-center-15";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
@@ -185,16 +184,8 @@ energySphere.position.z = -3.2;
    AVATAR — visage doré de KIRA
    ========================================================= */
 
-let avatar3D = null;
 const avatarGroup = new THREE.Group();
 scene.add(avatarGroup);
-
-// ── AVATAR 3D (géométrie pure, à la place de la photo) ──
-// Lèvres/mâchoire animées par les visèmes, synchronisées sur l'horloge audio.
-if (typeof createAvatar3D === "function") {
-  try { avatar3D = createAvatar3D(THREE, scene); }
-  catch { avatar3D = null; }
-}
 
 /* =========================================================
    CLUSTER DU CŒUR — nœud d'énergie (fixe, sur la poitrine)
@@ -558,7 +549,7 @@ function stopSpeaking() {
   speech.stop();
 }
 
-window.addEventListener("pagehide", () => { speech.destroy(); avatar3D?.destroy?.(); });
+window.addEventListener("pagehide", () => speech.destroy());
 
 // Bouton muet
 const muteButton = document.getElementById("mute");
@@ -1384,15 +1375,7 @@ function animate() {
   const light = level * (disabled ? 0.12 : 1);
   const motionTime = disabled ? 0 : time;
   const step = disabled ? 0 : dt;
-  // Avatar 3D : bouche/visèmes sur l'horloge audio réelle (aucun décalage).
-  if (avatar3D) {
-    avatar3D.update({
-      mouth: voice.mouth, level, energy, time: motionTime,
-      active: !disabled && (voice.active || demo), dt: step || 1 / 60,
-    });
-  }
-
-  voiceRotation += energy * step;
+voiceRotation += energy * step;
   voiceUniforms.voiceTime.value = motionTime;
   voiceUniforms.voiceEnergy.value = energy;
   voiceUniforms.voiceLow.value = low;
