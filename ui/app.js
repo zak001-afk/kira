@@ -3,7 +3,7 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { createAvatar3D } from "./avatar3d.mjs?v=command-center-14";
+import { createAvatar3D } from "./avatar3d.mjs?v=command-center-15";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
