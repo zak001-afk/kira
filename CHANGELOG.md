@@ -1,5 +1,21 @@
 # KIRA Changelog
 
+## Unreleased — Agent de recherche v2 : le web passe par le registre
+
+- **`web_learn` et `web_search`** rejoignent le registre multi-agents sous
+  l'agent **research** : arguments validés, échecs structurés (jamais de
+  traceback), et surtout le flux d'activité (`/api/agents`) montre enfin les
+  vraies recherches web — plus d'angle mort pour les affichages spécialistes.
+- **« learn about X » / « apprends sur X »** passe désormais par
+  `kira_agents.run("web_learn", …)` au lieu d'appeler `kira_web` en direct.
+  Comportement identique pour l'utilisateur (instantané, pas d'approbation :
+  les garde-fous de confidentialité de la mémoire partagée filtrent déjà ce
+  qui peut être publié) ; les erreurs restent des phrases, pas des exceptions.
+- **`web_search`** : nouvel outil de données pour la suite (planificateur) —
+  résultats bruts structurés, nombre borné à 10.
+- **Tests** : `tests/test_research_agent.py` (7 tests). Suite complète
+  347 tests Python + 64 JS au vert. Aucun fichier `ui/` modifié.
+
 ## Unreleased — « Efface la conversation » fonctionne depuis l'interface
 
 - **Correctif** : « clear chat », « reset chat », « new conversation »,

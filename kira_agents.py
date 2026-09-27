@@ -206,6 +206,16 @@ def _search_shared_knowledge(query, limit=3):
     return kira_web.search_shared_knowledge(query, limit=limit)
 
 
+def _web_learn(topic):
+    import kira_web
+    return kira_web.search_and_learn(topic)
+
+
+def _web_search(query, num_results=5):
+    import kira_web
+    return kira_web.search_web(query, num_results=max(1, min(int(num_results or 5), 10)))
+
+
 def _share_project_knowledge(topic, content):
     import kira_web
     return kira_web.share_project_knowledge(topic, content)
@@ -253,6 +263,16 @@ def ensure_builtins():
                   {"topic": {"type": str, "required": True},
                    "content": {"type": str, "required": True}},
                   _share_project_knowledge, consequential=True)
+    register_tool("web_learn", "research",
+                  "Research a topic on the public web and keep the summary as knowledge. "
+                  "Sharing is filtered by the shared-memory privacy gates.",
+                  {"topic": {"type": str, "required": True}},
+                  _web_learn)
+    register_tool("web_search", "research",
+                  "Search the public web; top results as structured data (max 10).",
+                  {"query": {"type": str, "required": True},
+                   "num_results": {"type": int, "required": False}},
+                  _web_search)
     register_tool("add_reminder", "windows",
                   "Add a reminder task, optionally with a due time.",
                   {"title": {"type": str, "required": True},

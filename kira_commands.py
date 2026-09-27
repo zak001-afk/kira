@@ -595,7 +595,12 @@ def try_web_learning(text):
     if not topic:
         return "What would you like me to learn about?"
     try:
-        import kira_web
-        return kira_web.search_and_learn(topic)
+        # Through the registry: the research agent's activity feed shows the
+        # run, arguments are validated, failures stay structured.
+        import kira_agents
+        result = kira_agents.run("web_learn", {"topic": topic}, source="ui")
+        if result.ok:
+            return result.response or str(result.data or "")
+        return result.error or "I tried to learn about that but encountered an error."
     except Exception as exc:
         return f"I tried to learn about that but encountered an error: {exc}"
