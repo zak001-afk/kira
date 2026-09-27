@@ -277,7 +277,7 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         cleaned = backend.normalize_command(text)
         if not cleaned:
             return {"action": "none", "response": "", **metadata}
-        parsed = None if chat_only else backend.parse_simple_command(cleaned)
+        parsed = None if chat_only else (parse_tool_command(cleaned) or backend.parse_simple_command(cleaned))
         if parsed and parsed.get("action", "none") != "none":
             action = parsed["action"]
             if action in DIRECT_TOOL_ACTIONS:
@@ -383,6 +383,67 @@ def _format_approved(action, result, language, metadata):
             result.response = msg("tasks_cleared_one" if count == 1 else "tasks_cleared", count=count)
         result.extra["cleared"] = count
     return result.to_payload(**metadata)
+
+
+# ── Deterministic tool-command parsing (EN + FR) ────────────────────────────
+# Route clear commands straight to tools without model calls. Tried BEFORE the
+# backend parser, so phrasing tolerance here wins; anything unmatched falls
+# through to the backend grammar and then to chat.
+
+_TODO_PATTERNS = (
+    re.compile(r"^(?:add|create|new)\s+(?:a\s+|another\s+)?(?:todo|to-?do|task|note)\s*[:\-]?\s+(.+)$", re.IGNORECASE),
+    re.compile(r"^(?:ajoute(?:r)?|cr[ée]e(?:r)?|nouvelle?)\s+(?:une\s+|un\s+)?(?:t[âa]che|todo|note)\s*[:\-]?\s+(.+)$", re.IGNORECASE),
+)
+_LIST_TASKS_PATTERNS = (
+    re.compile(r"^(?:list|show|display|what\s+are)\s+(?:me\s+)?(?:my\s+|all\s+|the\s+)?(?:pending\s+)?(?:tasks?|todos?|to-?dos?)\??$", re.IGNORECASE),
+    re.compile(r"^my\s+tasks?\??$", re.IGNORECASE),
+    re.compile(r"^(?:liste|affiche|montre)(?:[- ]moi)?\s+(?:mes\s+|les\s+)?t[âa]ches(?:\s+en\s+attente)?\s*\??$", re.IGNORECASE),
+    re.compile(r"^mes\s+t[âa]ches\s*\??$", re.IGNORECASE),
+)
+_CLEAR_TASKS_PATTERNS = (
+    re.compile(r"^(?:clear|delete|remove)\s+(?:my\s+|the\s+|all\s+)?completed(?:\s+tasks?)?$", re.IGNORECASE),
+    re.compile(r"^(?:supprime(?:r)?|efface(?:r)?|nettoie(?:r)?)\s+(?:mes\s+|les\s+)?t[âa]ches\s+termin[ée]es$", re.IGNORECASE),
+)
+_SHARE_PATTERNS = (
+    # share knowledge <topic>: <content>  /  share knowledge: <topic>: <content>
+    re.compile(r"^(?:share|publish|save|store)\s+(?:this\s+|the\s+)?(?:project\s+)?knowledge\s*[:\-]?\s+(.+?)\s*[:\-]\s+?(.+)$", re.IGNORECASE),
+    re.compile(r"^(?:partage(?:r)?|publie(?:r)?|enregistre(?:r)?)\s+(?:la\s+|cette\s+)?connaissance\s*[:\-]?\s+(.+?)\s*[:\-]\s+?(.+)$", re.IGNORECASE),
+)
+_SEARCH_SHARED_PATTERNS = (
+    re.compile(r"^(?:search|find|look\s?up|check|query|show)\s+(?:me\s+)?(?:in\s+|the\s+|our\s+)?shared\s+"
+               r"(?:knowledge(?:\s+base)?|research|memory|notes)\s+(?:for|about|on|regarding)\s+(.+)$", re.IGNORECASE),
+    re.compile(r"^(?:cherche(?:r)?|recherche(?:r)?|montre(?:[- ]moi)?)\s+(?:dans\s+)?(?:la\s+)?"
+               r"(?:connaissance|m[ée]moire|recherche)s?\s+partag[ée]es?\s+(?:pour|sur|à propos de|concernant)?\s*(.+)$", re.IGNORECASE),
+    re.compile(r"^(?:la\s+)?(?:recherche|connaissance|m[ée]moire)s?\s+partag[ée]es?\s*[:\-]?\s+"
+               r"(?:pour|sur|à propos de|concernant)\s+(.+)$", re.IGNORECASE),
+)
+
+
+def parse_tool_command(text):
+    """Deterministic EN/FR grammar for the direct tool routes, or None."""
+    value = str(text or "").strip().rstrip(".!?؟ ").strip()
+    if not value:
+        return None
+    for pattern in _SEARCH_SHARED_PATTERNS:
+        match = pattern.match(value)
+        if match and match.group(1).strip():
+            return {"action": "search_shared_knowledge", "query": match.group(1).strip()}
+    for pattern in _SHARE_PATTERNS:
+        match = pattern.match(value)
+        if match and match.group(1).strip() and match.group(2).strip():
+            return {"action": "share_project_knowledge", "kind": "project_knowledge",
+                    "topic": match.group(1).strip(), "content": match.group(2).strip()}
+    for pattern in _TODO_PATTERNS:
+        match = pattern.match(value)
+        if match and match.group(1).strip():
+            return {"action": "add_todo", "title": match.group(1).strip()}
+    for pattern in _LIST_TASKS_PATTERNS:
+        if pattern.match(value):
+            return {"action": "list_tasks"}
+    for pattern in _CLEAR_TASKS_PATTERNS:
+        if pattern.match(value):
+            return {"action": "clear_completed_tasks"}
+    return None
 
 
 # Actions answered directly from tools: data out, no backend speech, no model.

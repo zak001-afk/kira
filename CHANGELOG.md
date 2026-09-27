@@ -1,5 +1,19 @@
 # KIRA Changelog
 
+## Unreleased — Grammaire de commandes EN/FR pour les routes outils
+
+- **Correction issue du test réel Windows (2026-09-27)** : « add a todo test
+  kira », « list my tasks », « share knowledge sujet: contenu » et
+  « partage la connaissance essai: bonjour » tombaient dans le chat/modèle au
+  lieu d'atteindre les outils. `kira_commands.parse_tool_command` ajoute une
+  grammaire déterministe tolérante (anglais + français) pour add_todo,
+  list_tasks, clear_completed_tasks, share_project_knowledge (forme
+  « sujet: contenu ») et search_shared_knowledge — essayée AVANT la grammaire
+  du backend, sans appel modèle. Tout ce qui ne correspond pas suit le chemin
+  existant (grammaire backend, puis chat).
+- **Tests** : `tests/test_command_parsing.py` (11 tests, phrases exactes de
+  l'échec réel). Suite complète 284 tests Python + 64 JS au vert.
+
 ## Unreleased — Approbation conversationnelle des actions conséquentes
 
 - **Porte d'approbation** : les outils marqués `consequential`
