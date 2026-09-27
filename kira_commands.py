@@ -83,6 +83,7 @@ _MESSAGES = {
         "pt": "Não consegui abrir {target} neste computador. Verifique se existe ou está instalado e tente novamente.",
     },
     "model_offline": {"en": "I cannot reach the local AI model. Start Ollama with ollama serve, then try again.", "fr": "Je ne peux pas joindre le modèle IA local. Démarrez Ollama avec ollama serve, puis réessayez.", "ar": "لا أستطيع الاتصال بنموذج الذكاء الاصطناعي المحلي. شغّل Ollama بالأمر ollama serve ثم حاول مجدداً."},
+    "chat_reset": {"en": "New conversation started. I have cleared this session's chat memory.", "fr": "Nouvelle conversation. J’ai effacé la mémoire de cette session.", "ar": "بدأت محادثة جديدة ومسحت ذاكرة هذه الجلسة."},
     "wrong_language": {"en": "The model could not answer in the requested language. Try a multilingual model or another language.", "fr": "Le modèle n’a pas réussi à répondre dans la langue demandée. Essayez un modèle multilingue ou une autre langue.", "ar": "لم يتمكن النموذج من الإجابة باللغة المطلوبة. جرّب نموذجاً متعدد اللغات أو لغة أخرى."},
 }
 
@@ -307,6 +308,19 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         parsed = None if chat_only else (parse_tool_command(cleaned) or backend.parse_simple_command(cleaned))
         if parsed and parsed.get("action", "none") != "none":
             action = parsed["action"]
+            if action == "chat_reset":
+                # 'clear chat' / 'efface la conversation': the voice loop
+                # handled this, but the UI route fell into execute_action and
+                # answered "I could not complete that action."
+                try:
+                    backend.reset_chat()
+                except Exception:
+                    return {"action": action, "success": False,
+                            "response": message("action_failed", choice.language) or message("action_failed", "en"),
+                            **metadata}
+                return {"action": action, "success": True,
+                        "response": message("chat_reset", choice.language) or message("chat_reset", "en"),
+                        **metadata}
             if action in DIRECT_TOOL_ACTIONS:
                 # Fast paths: tools return data immediately. The backend voice
                 # handlers speak synchronously and would block this HTTP

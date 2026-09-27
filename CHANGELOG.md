@@ -1,5 +1,20 @@
 # KIRA Changelog
 
+## Unreleased — « Efface la conversation » fonctionne depuis l'interface
+
+- **Correctif** : « clear chat », « reset chat », « new conversation »,
+  « efface la conversation », « محادثة جديدة » étaient reconnus mais, depuis
+  l'interface, tombaient dans `execute_action` et répondaient « Je n'ai pas
+  pu effectuer cette action. » (la boucle vocale, elle, fonctionnait).
+  La route UI appelle maintenant `backend.reset_chat()` directement :
+  historique de session effacé, nouvel identifiant de session, confirmation
+  localisée (« Nouvelle conversation. J'ai effacé la mémoire de cette
+  session. »). Les souvenirs permanents (nom, préférences) sont conservés.
+- **Tests** : +3 dans `tests/test_command_parsing.py` (reset appelé et
+  confirmé, variante française, échec avoué ; `execute_action` ne doit
+  jamais être touché). Suite complète 340 tests Python + 64 JS au vert.
+  Aucun fichier `ui/` modifié.
+
 ## Unreleased — Derniers accrocs Windows : séparateur d'alias + tests JS en CRLF
 
 - **`resolve_parent_dir("documents")` sous Windows** : la branche alias

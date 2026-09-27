@@ -14,6 +14,41 @@ import kira_commands as commands
 from kira_commands import parse_tool_command
 
 
+class ChatResetTests(unittest.TestCase):
+    """'clear chat' must reset the conversation from the UI route too —
+    live check returned 'I could not complete that action.'"""
+
+    def backend(self, reset=None):
+        return SimpleNamespace(
+            normalize_command=lambda text: text,
+            parse_simple_command=lambda text: {"action": "chat_reset"}
+            if text.lower().strip(" .!?") in {"clear chat", "reset chat", "new conversation",
+                                              "efface la conversation"} else {"action": "none"},
+            reset_chat=reset if reset is not None else Mock(),
+            execute_action=Mock(side_effect=AssertionError("chat_reset must not reach execute_action")),
+        )
+
+    def test_clear_chat_resets_and_confirms(self):
+        reset = Mock()
+        backend = self.backend(reset)
+        result = commands.process_command(backend, "clear chat", reply_language="en")
+        self.assertTrue(result["success"])
+        self.assertIn("New conversation", result["response"])
+        reset.assert_called_once()
+
+    def test_french_phrase_confirms_in_french(self):
+        backend = self.backend()
+        result = commands.process_command(backend, "efface la conversation", reply_language="fr")
+        self.assertTrue(result["success"])
+        self.assertIn("Nouvelle conversation", result["response"])
+
+    def test_reset_failure_is_admitted(self):
+        backend = self.backend(Mock(side_effect=RuntimeError("boom")))
+        result = commands.process_command(backend, "reset chat", reply_language="en")
+        self.assertFalse(result["success"])
+        self.assertTrue(result["response"])
+
+
 class ChoiceHijackTests(unittest.TestCase):
     """Regression: 'raconte-moi une blague' was answered with "Il n'y a rien
     à choisir" because 'une' maps to choice 1. Only pure answers count."""
