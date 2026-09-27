@@ -2137,6 +2137,31 @@ def ask_agent(command: str):
         return {"action": "none"}
 
 
+def chat_provider():
+    """KIRA_CHAT_PROVIDER: 'auto' (local first, cloud rescue — default),
+    'gemini'/'cloud' (cloud first, local pipeline as fallback),
+    'ollama'/'local' (never use the cloud for chat)."""
+    import os
+    value = os.environ.get("KIRA_CHAT_PROVIDER", "").strip().lower()
+    if value in {"gemini", "cloud"}:
+        return "gemini"
+    if value in {"ollama", "local"}:
+        return "ollama"
+    return "auto"
+
+
+def _local_chat_answer(command, language):
+    """The local pipeline answer, or None instead of the 'model offline'
+    apology — a rescue stage must fire, not a dead-end error text."""
+    answer = _ask_chat_response(command, language)
+    text = str(answer or "").strip()
+    if not text:
+        return None
+    offline = {kira_commands.message("model_offline", language),
+               kira_commands.message("model_offline", "en")}
+    return None if text in offline else answer
+
+
 def ask_chat(command: str, language=None):
     """The caller's selected language wins over history and persona examples.
 
@@ -2153,9 +2178,23 @@ def ask_chat(command: str, language=None):
         language = detect_language(command)
     _LAST_REPLY_LANGUAGE = language
     budget = chat_budget()
-    answer, source = chat_answer_with_web(command, language, _ask_chat_response,
+    provider = chat_provider()
+    if provider == "gemini":
+        direct = _run_bounded(lambda: _cloud_chat_answer(command, language),
+                              max(2.0, budget - 1.0))
+        if direct:
+            _CHAT_HISTORY.append({"role": "user", "content": command})
+            _CHAT_HISTORY.append({"role": "assistant", "content": direct})
+            try:
+                kira_memory.save_message(_SESSION_ID, "user", command)
+                kira_memory.save_message(_SESSION_ID, "assistant", direct)
+            except Exception:
+                pass
+            return direct
+    answer, source = chat_answer_with_web(command, language, _local_chat_answer,
                                           _web_lookup, _synthesize_web_answer,
-                                          budget=budget, ask_cloud=_cloud_chat_answer)
+                                          budget=budget,
+                                          ask_cloud=None if provider == "ollama" else _cloud_chat_answer)
     if not str(answer or "").strip():
         seconds = int(budget)
         answer = {

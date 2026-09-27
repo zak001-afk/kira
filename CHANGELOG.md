@@ -1,5 +1,21 @@
 # KIRA Changelog
 
+## Unreleased — Choix du cerveau de chat + l'excuse « modèle injoignable » ne bloque plus
+
+- **`KIRA_CHAT_PROVIDER`** dans `.env` : `auto` (défaut — local d'abord,
+  secours Gemini), **`gemini`** (Gemini d'abord : la meilleure option quand le
+  modèle local est trop petit et répond du charabia), `ollama` (jamais de
+  cloud pour le chat). Le chemin Gemini-d'abord conserve l'historique local
+  (affichage + mémoire) mais n'envoie toujours QUE la question courante au
+  cloud.
+- **Correctif** : quand Ollama est injoignable, le pipeline renvoyait le texte
+  « Je ne peux pas joindre le modèle IA local… » comme une vraie réponse, ce
+  qui empêchait le secours Gemini/web de se déclencher. Cette excuse est
+  maintenant traitée comme une absence de réponse.
+- **Tests** : +5 dans `tests/test_chat_cloud_fallback.py` (Gemini d'abord,
+  repli local, l'excuse ne bloque plus, parsing du fournisseur, `ollama`
+  n'appelle jamais le cloud). Suite complète 299 tests Python + 64 JS au vert.
+
 ## Unreleased — Budget de réponse configurable + secours Gemini dans le chat
 
 - **Fini le mur des 5 secondes** : le budget de réponse du chat devient

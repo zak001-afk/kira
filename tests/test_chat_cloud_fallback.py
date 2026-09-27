@@ -123,6 +123,86 @@ class CloudChatPrivacyTests(unittest.TestCase):
             self.assertIsNone(helper("hello", "en"))
 
 
+class ChatProviderTests(unittest.TestCase):
+    """KIRA_CHAT_PROVIDER=gemini puts the cloud first; the offline apology
+    from the local pipeline can no longer block rescues."""
+
+    def namespace(self, fake_ai, local=None):
+        import kira_commands
+        from types import SimpleNamespace
+        ns_extra = {
+            "kira_commands": kira_commands,
+            "kira_language": SimpleNamespace(normalize_language=lambda l, d=None: l or d,
+                                             ensure_reply_language=lambda a, l, m: a),
+            "kira_memory": SimpleNamespace(save_message=lambda *a, **k: None),
+            "call_ollama": Mock(),
+            "detect_language": lambda text: "en",
+            "_web_lookup": lambda c, l: None,
+            "_synthesize_web_answer": lambda c, l, p: None,
+            "_ask_chat_response": local or Mock(return_value="local answer"),
+            "_CHAT_HISTORY": [],
+            "_SESSION_ID": "test",
+            "_LAST_REPLY_LANGUAGE": "en",
+        }
+        ns = load_names({"ask_chat", "chat_budget", "chat_provider", "_local_chat_answer",
+                         "chat_answer_with_web", "_run_bounded", "CHAT_ANSWER_BUDGET",
+                         "_cloud_chat_answer", "CLOUD_CHAT_PROMPTS"}, extra=ns_extra)
+        # _cloud_chat_answer imports kira_ai lazily; patch happens per test.
+        return ns
+
+    def test_gemini_first_skips_the_local_model(self):
+        reply = types.SimpleNamespace(ok=True, text="A real joke.")
+        fake_ai = types.SimpleNamespace(cloud_ready=Mock(return_value=True),
+                                        chat=Mock(return_value=reply), CLOUD_PROVIDER="gemini")
+        local = Mock(return_value="local answer")
+        ns = self.namespace(fake_ai, local=local)
+        with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": "gemini", "KIRA_CHAT_BUDGET": ""}), \
+                patch.dict(sys.modules, kira_ai=fake_ai):
+            answer = ns["ask_chat"]("tell me a joke", language="en")
+        self.assertEqual(answer, "A real joke.")
+        local.assert_not_called()
+        self.assertEqual(ns["_CHAT_HISTORY"][-1]["content"], "A real joke.")
+
+    def test_gemini_first_falls_back_to_local_when_cloud_fails(self):
+        fake_ai = types.SimpleNamespace(cloud_ready=Mock(return_value=False),
+                                        chat=Mock(), CLOUD_PROVIDER="gemini")
+        ns = self.namespace(fake_ai)
+        with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": "gemini", "KIRA_CHAT_BUDGET": ""}), \
+                patch.dict(sys.modules, kira_ai=fake_ai):
+            answer = ns["ask_chat"]("tell me a joke", language="en")
+        self.assertEqual(answer, "local answer")
+
+    def test_offline_apology_no_longer_blocks_the_cloud_rescue(self):
+        import kira_commands
+        offline = kira_commands.message("model_offline", "en")
+        reply = types.SimpleNamespace(ok=True, text="Cloud saves the day.")
+        fake_ai = types.SimpleNamespace(cloud_ready=Mock(return_value=True),
+                                        chat=Mock(return_value=reply), CLOUD_PROVIDER="gemini")
+        local = Mock(return_value=offline)   # Ollama down -> apology text
+        ns = self.namespace(fake_ai, local=local)
+        with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": "", "KIRA_CHAT_BUDGET": "4"}), \
+                patch.dict(sys.modules, kira_ai=fake_ai):
+            answer = ns["ask_chat"]("tell me a joke", language="en")
+        self.assertEqual(answer, "Cloud saves the day.")
+
+    def test_provider_parsing(self):
+        ns = load_names({"chat_provider"})
+        for raw, expected in [("gemini", "gemini"), ("cloud", "gemini"), ("ollama", "ollama"),
+                              ("local", "ollama"), ("", "auto"), ("weird", "auto")]:
+            with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": raw}):
+                self.assertEqual(ns["chat_provider"](), expected, raw)
+
+    def test_ollama_provider_never_touches_the_cloud(self):
+        fake_ai = types.SimpleNamespace(cloud_ready=Mock(return_value=True),
+                                        chat=Mock(), CLOUD_PROVIDER="gemini")
+        slow_local = Mock(return_value=None)
+        ns = self.namespace(fake_ai, local=slow_local)
+        with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": "ollama", "KIRA_CHAT_BUDGET": "2"}), \
+                patch.dict(sys.modules, kira_ai=fake_ai):
+            ns["ask_chat"]("tell me a joke", language="en")
+        fake_ai.chat.assert_not_called()
+
+
 class CloudReadyTests(unittest.TestCase):
     def test_cloud_ready_requires_both_flag_and_key(self):
         import kira_ai

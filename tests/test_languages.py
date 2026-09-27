@@ -185,7 +185,7 @@ class VoiceLanguageTests(unittest.TestCase):
 class ModelPromptTests(unittest.TestCase):
     def namespace(self, model):
         tree = ast.parse((ROOT / "kira_voice_agent.py").read_text())
-        names = {"build_chat_system_prompt", "clean_chat_response", "ask_chat", "_ask_chat_response", "preferred_address", "address_for_language", "detect_language", "chat_answer_with_web", "_web_answer", "_run_bounded", "_web_lookup", "_web_results", "_format_web_results", "_synthesize_web_answer", "WEB_SYNTHESIS_PROMPTS", "chat_budget", "_cloud_chat_answer", "CLOUD_CHAT_PROMPTS"}
+        names = {"build_chat_system_prompt", "clean_chat_response", "ask_chat", "_ask_chat_response", "preferred_address", "address_for_language", "detect_language", "chat_answer_with_web", "_web_answer", "_run_bounded", "_web_lookup", "_web_results", "_format_web_results", "_synthesize_web_answer", "WEB_SYNTHESIS_PROMPTS", "chat_budget", "_cloud_chat_answer", "CLOUD_CHAT_PROMPTS", "chat_provider", "_local_chat_answer"}
         nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
         nodes += [node for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id in {"CHAT_SYSTEM_PROMPT", "ADDRESS_OPTIONS", "CHAT_ANSWER_BUDGET"} for target in node.targets)]
         nodes.sort(key=lambda node: node.lineno)  # module order: constants before their users
