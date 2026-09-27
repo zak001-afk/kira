@@ -1,4 +1,7 @@
-// Speech-driven motion, independent of Three.js. No microphone is sampled.
+import { speechLocale, matchingVoice } from "./locale.mjs";
+import { VisemeTimeline, wordTimeline, REST_MOUTH } from "./lips.mjs";
+
+// Audio-driven field and mouth timing. Only playback, never the microphone.
 const clamp = (value, low = 0, high = 1) => Math.min(high, Math.max(low, value));
 
 export function cleanForSpeech(text) {
@@ -6,20 +9,10 @@ export function cleanForSpeech(text) {
     .replace(/```[\s\S]*?```/g, "code block")
     .replace(/`[^`]+`/g, "")
     .replace(/https?:\/\/\S+/g, "link")
+    .replace(/[0-9#*]\uFE0F?\u20E3|[\u{1F000}-\u{1FAFF}\u2600-\u27BF\u2300-\u23FF\u2B00-\u2BFF\u2194-\u2199\u21A9-\u21AA\u00A9\u00AE\u203C\u2049\u2122\u2139\u3030\u303D\u3297\u3299\uFE0E\uFE0F\u200D\u20E3\u{E0020}-\u{E007F}]/gu, "")
     .replace(/[*_~]/g, "")
+    .replace(/\s+/g, " ")
     .trim();
-}
-
-// Web Speech doesn't expose its audio. Word boundaries anchor this estimated
-// envelope; voices without boundary events use the same text-paced fallback.
-function wordTimeline(text, rate = 1) {
-  let start = 0;
-  return Array.from(text.matchAll(/\S+/gu), (match) => {
-    const duration = (110 + Math.min(match[0].length, 12) * 30) / rate;
-    const word = { index: match.index, start, duration };
-    start += duration + (/[.!?…]$/.test(match[0]) ? 260 : /[,;:]$/.test(match[0]) ? 120 : 35);
-    return word;
-  });
 }
 
 // Older embedded WebView2 runtimes may not implement Array.findLast.
@@ -33,7 +26,7 @@ function lastBefore(items, value, key) {
 export class SpeechMotion {
   constructor(now = () => performance.now()) {
     this.now = now;
-    this.frame = { energy: 0, low: 0, high: 0, active: false, source: "idle" };
+    this.frame = { energy: 0, low: 0, high: 0, level: 0, active: false, source: "idle", mouth: { ...REST_MOUTH } };
     this.last = now();
     this.stop();
   }
@@ -46,10 +39,14 @@ export class SpeechMotion {
     this.words = [];
     this.offset = 0;
     this.hasBoundary = false;
+    this.articulation = null;
+    this.audioOnset = null;
+    this.frame.mouth = { ...REST_MOUTH };
+    this.frame.level = 0;
     // Keep the envelope: sample() releases it gently back to idle.
   }
 
-  startAudio(analyser, media, text) {
+  startAudio(analyser, media, text, timings = []) {
     this.stop();
     this.mode = "audio";
     this.media = media;
@@ -60,6 +57,7 @@ export class SpeechMotion {
       this.bins = new Uint8Array(analyser.frequencyBinCount);
     }
     this.words = wordTimeline(text);
+    this.articulation = new VisemeTimeline(text, { timings });
   }
 
   startBrowser(text, rate = 1) {
@@ -67,6 +65,7 @@ export class SpeechMotion {
     this.mode = "browser";
     this.started = this.now();
     this.words = wordTimeline(text, rate);
+    this.articulation = new VisemeTimeline(text, { rate });
   }
 
   boundary(charIndex) {
@@ -138,6 +137,28 @@ export class SpeechMotion {
       low = energy * 0.45;
       high = energy * 0.3;
     }
+    this.frame.level = energy; // Unsmeared signal closes the lips during silence.
+    this.frame.mouth = { ...REST_MOUTH };
+    if (active && this.articulation) {
+      let elapsed = now - this.started + this.offset;
+      let duration = 0;
+      let ready = true;
+      if (this.mode === "audio") {
+        elapsed = this.media.currentTime * 1000;
+        duration = Number.isFinite(this.media.duration) ? this.media.duration * 1000 : 0;
+        // With no word metadata, remove leading decoder/TTS silence from the
+        // estimated timeline. The actual media clock still controls progression.
+        if (this.analyser && !this.articulation.measured) {
+          if (this.audioOnset === null && energy > 0.012) this.audioOnset = elapsed;
+          ready = this.audioOnset !== null;
+          elapsed = Math.max(0, elapsed - (this.audioOnset || 0));
+          duration = Math.max(0, duration - (this.audioOnset || 0));
+        }
+      }
+      if (ready) this.frame.mouth = this.articulation.sample(elapsed, {
+        duration, boundaries: this.hasBoundary, keepAlive: this.mode === "browser",
+      });
+    }
     for (const [key, target] of [["energy", energy], ["low", low], ["high", high]]) {
       const smoothing = 1 - Math.exp(-dt / (target > this.frame[key] ? 0.045 : 0.16));
       this.frame[key] += (target - this.frame[key]) * smoothing;
@@ -151,10 +172,11 @@ export class SpeechMotion {
 }
 
 export class SpeechPlayer {
-  constructor({ fetchAudio, onState = () => {}, env = globalThis, motion } = {}) {
+  constructor({ fetchAudio, onState = () => {}, onNotice = () => {}, env = globalThis, motion } = {}) {
     this.env = env;
     this.fetchAudio = fetchAudio;
     this.onState = onState;
+    this.onNotice = onNotice;
     this.motion = motion || new SpeechMotion(() => env.performance.now());
     this.enabled = true;
     this.session = null;
@@ -200,6 +222,7 @@ export class SpeechPlayer {
     this.clearTimer(session);
     session.abort.abort();
     this.releaseMedia(session);
+    if (session.voicesChanged) this.env.speechSynthesis?.removeEventListener?.("voiceschanged", session.voicesChanged);
     if (session.utterance) this.env.speechSynthesis?.cancel();
     this.motion.stop();
     this.onState("READY");
@@ -215,23 +238,24 @@ export class SpeechPlayer {
     if (!enabled) this.stop();
   }
 
-  async speak(text) {
+  async speak(text, { language = "en-US" } = {}) {
     this.stop();
     const cleanText = cleanForSpeech(text);
     if (!this.enabled || !cleanText) return;
-    const session = { abort: new this.env.AbortController(), fallback: false };
+    const session = { abort: new this.env.AbortController(), fallback: false, language: speechLocale(language) };
     this.session = session;
     this.unlock();
     this.onState("THINKING");
     // Also handles a fetch implementation that never resolves after abort.
     session.timer = this.env.setTimeout(() => this.fallback(session, cleanText), 15000);
     try {
-      const data = await this.fetchAudio(cleanText, { signal: session.abort.signal });
+      const data = await this.fetchAudio(cleanText, { signal: session.abort.signal, language: session.language });
       if (!this.isCurrent(session) || session.fallback) return;
       this.clearTimer(session);
       if (data.error || !data.audio) throw new Error(data.error || "No speech audio");
       const bytes = Uint8Array.from(this.env.atob(data.audio), (char) => char.charCodeAt(0));
-      session.url = this.env.URL.createObjectURL(new this.env.Blob([bytes], { type: "audio/mpeg" }));
+      const mime = data.format === "wav" ? "audio/wav" : "audio/mpeg";
+      session.url = this.env.URL.createObjectURL(new this.env.Blob([bytes], { type: mime }));
       const audio = session.audio = new this.env.Audio(session.url);
       // Do not route audio into a suspended context: that would mute it.
       if (this.context?.state === "running") {
@@ -252,7 +276,8 @@ export class SpeechPlayer {
       }
       audio.onplaying = () => {
         if (!this.isCurrent(session) || session.fallback) return;
-        this.motion.startAudio(session.analyser, audio, cleanText);
+        if (this.motion.mode === "audio" && this.motion.media === audio) this.motion.resume();
+        else this.motion.startAudio(session.analyser, audio, cleanText, data.word_timings);
         this.onState("SPEAKING");
       };
       const pause = () => {
@@ -283,41 +308,70 @@ export class SpeechPlayer {
     this.motion.stop();
     const synth = this.env.speechSynthesis;
     if (!synth || !this.env.SpeechSynthesisUtterance) {
+      this.onNotice("voice-unavailable", { language: session.language });
       this.finish(session);
       return;
     }
+    const start = voice => {
+      if (!this.isCurrent(session)) return;
+      this.clearTimer(session);
+      if (session.voicesChanged) synth.removeEventListener?.("voiceschanged", session.voicesChanged);
+      session.voicesChanged = null;
+      try {
+        const utterance = session.utterance = new this.env.SpeechSynthesisUtterance(text);
+        utterance.lang = session.language;
+        utterance.voice = voice;
+        utterance.rate = 0.95;
+        utterance.pitch = 1.1;
+        utterance.volume = 1;
+        utterance.onstart = () => {
+          if (!this.isCurrent(session)) return;
+          this.clearTimer(session);
+          this.motion.startBrowser(text, utterance.rate);
+          this.onState("SPEAKING");
+        };
+        utterance.onboundary = event => {
+          if (this.isCurrent(session) && (!event.name || event.name === "word")) this.motion.boundary(event.charIndex);
+        };
+        utterance.onpause = () => {
+          if (!this.isCurrent(session)) return;
+          this.motion.pause(); this.onState("READY");
+        };
+        utterance.onresume = () => {
+          if (!this.isCurrent(session)) return;
+          this.motion.resume(); this.onState("SPEAKING");
+        };
+        utterance.onend = () => this.finish(session);
+        utterance.onerror = () => {
+          if (this.isCurrent(session)) this.onNotice("voice-unavailable", { language: session.language });
+          this.finish(session);
+        };
+        session.timer = this.env.setTimeout(() => this.finish(session), 10000);
+        synth.speak(utterance);
+      } catch {
+        this.onNotice("voice-unavailable", { language: session.language });
+        this.finish(session);
+      }
+    };
+    const unavailable = () => {
+      if (!this.isCurrent(session)) return;
+      this.onNotice("voice-unavailable", { language: session.language });
+      this.finish(session);
+    };
     try {
-      const utterance = session.utterance = new this.env.SpeechSynthesisUtterance(text);
-      utterance.rate = 0.95;
-      utterance.pitch = 1.1;
-      utterance.volume = 1;
-      const voices = synth.getVoices();
-      const voice = voices.find((v) => v.lang.startsWith("en") && /Female|Samantha|Zira/.test(v.name))
-        || voices.find((v) => v.lang.startsWith("en"));
-      if (voice) utterance.voice = voice;
-      utterance.onstart = () => {
+      const voice = matchingVoice(synth.getVoices(), session.language);
+      if (voice) { start(voice); return; }
+      // Browser voice catalogs can load late. Wait once, with cancellation and a
+      // deadline; never silently read French through an English default voice.
+      if (!synth.addEventListener) { unavailable(); return; }
+      session.voicesChanged = () => {
         if (!this.isCurrent(session)) return;
-        this.clearTimer(session);
-        this.motion.startBrowser(text, utterance.rate);
-        this.onState("SPEAKING");
+        const found = matchingVoice(synth.getVoices(), session.language);
+        if (found) start(found);
       };
-      utterance.onboundary = (event) => {
-        if (this.isCurrent(session) && (!event.name || event.name === "word")) this.motion.boundary(event.charIndex);
-      };
-      utterance.onpause = () => {
-        if (!this.isCurrent(session)) return;
-        this.motion.pause();
-        this.onState("READY");
-      };
-      utterance.onresume = () => {
-        if (!this.isCurrent(session)) return;
-        this.motion.resume();
-        this.onState("SPEAKING");
-      };
-      utterance.onend = utterance.onerror = () => this.finish(session);
-      session.timer = this.env.setTimeout(() => this.finish(session), 10000);
-      synth.speak(utterance);
-    } catch { this.finish(session); }
+      synth.addEventListener("voiceschanged", session.voicesChanged);
+      session.timer = this.env.setTimeout(unavailable, 1200);
+    } catch { unavailable(); }
   }
 
   destroy() {
