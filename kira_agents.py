@@ -18,7 +18,10 @@ Architecture rules enforced here:
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
+import os
 import threading
+import time
+import uuid
 
 import kira_tools
 
@@ -82,8 +85,52 @@ def validate_args(spec, raw):
     return kwargs, None
 
 
-def run(name, raw_args=None, source="api"):
-    """Validate, execute and record one tool call. Always returns a ToolResult."""
+# ── Approval gate for consequential tools ────────────────────────────────────
+
+APPROVAL_TTL_SECONDS = 180
+_PENDING_APPROVALS = {}
+_FALSE_VALUES = {"0", "false", "off", "no"}
+
+
+def approvals_required() -> bool:
+    """Consequential tools require approval unless explicitly disabled."""
+    return os.environ.get("KIRA_REQUIRE_APPROVAL", "1").strip().lower() not in _FALSE_VALUES
+
+
+def _prune_approvals():
+    deadline = time.monotonic() - APPROVAL_TTL_SECONDS
+    for key in [k for k, v in _PENDING_APPROVALS.items() if v["created"] < deadline]:
+        _PENDING_APPROVALS.pop(key, None)
+
+
+def resolve_approval(approval_id, approve, source="api"):
+    """Execute (or discard) a previously gated tool call. Returns a ToolResult."""
+    with _LOCK:
+        _prune_approvals()
+        entry = _PENDING_APPROVALS.pop(str(approval_id), None)
+    if entry is None:
+        return kira_tools.ToolResult(action="approval", ok=False, error_code="unknown_approval",
+                                     error="That confirmation has expired or does not exist.")
+    spec = entry["spec"]
+    if not approve:
+        result = kira_tools.ToolResult(action=spec.name, ok=False, error_code="approval_rejected",
+                                       error="The action was cancelled before it ran.")
+        _record(spec, result, source)
+        return result
+    result = kira_tools.run_tool(spec.name, spec.handler, **entry["kwargs"])
+    _record(spec, result, source)
+    return result
+
+
+def run(name, raw_args=None, source="api", approved=False):
+    """Validate, gate, execute and record one tool call. Always a ToolResult.
+
+    Consequential tools do not run immediately: the call is parked and a
+    ``ToolResult`` with ``error_code == "approval_required"`` and an
+    ``approval_id`` comes back. The interface asks the user, then calls
+    ``resolve_approval``. Pass ``approved=True`` only when the user already
+    confirmed through the calling interface.
+    """
     ensure_builtins()
     spec = _REGISTRY.get(str(name))
     if spec is None:
@@ -93,8 +140,20 @@ def run(name, raw_args=None, source="api"):
     if error:
         result = kira_tools.ToolResult(action=spec.name, ok=False,
                                        error=error, error_code="invalid_args")
-    else:
-        result = kira_tools.run_tool(spec.name, spec.handler, **kwargs)
+        _record(spec, result, source)
+        return result
+    if spec.consequential and approvals_required() and not approved:
+        approval_id = uuid.uuid4().hex[:12]
+        with _LOCK:
+            _prune_approvals()
+            _PENDING_APPROVALS[approval_id] = {"spec": spec, "kwargs": kwargs,
+                                               "created": time.monotonic()}
+        result = kira_tools.ToolResult(action=spec.name, ok=False, error_code="approval_required",
+                                       error=f"'{spec.name}' needs your confirmation before it runs.",
+                                       extra={"approval_id": approval_id, "agent": spec.agent})
+        _record(spec, result, source)
+        return result
+    result = kira_tools.run_tool(spec.name, spec.handler, **kwargs)
     _record(spec, result, source)
     return result
 

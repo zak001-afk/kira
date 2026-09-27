@@ -51,6 +51,16 @@ _MESSAGES = {
     "tasks_cleared_one": {"en": "Cleared 1 completed task.", "fr": "J’ai supprimé 1 tâche terminée.", "ar": "حذفت مهمة مكتملة واحدة."},
     "tasks_cleared": {"en": "Cleared {count} completed tasks.", "fr": "J’ai supprimé {count} tâches terminées.", "ar": "حذفت {count} مهام مكتملة."},
     "tasks_none_cleared": {"en": "No completed tasks to clear.", "fr": "Aucune tâche terminée à supprimer.", "ar": "لا توجد مهام مكتملة لحذفها."},
+    "approval_share": {"en": "⚠️ Sharing “{topic}” to the shared knowledge base needs your confirmation. Reply “confirm” or “cancel”.",
+                       "fr": "⚠️ Le partage de « {topic} » vers la base de connaissances partagée demande votre confirmation. Répondez « confirmer » ou « annuler ».",
+                       "ar": "⚠️ مشاركة «{topic}» في قاعدة المعرفة المشتركة تتطلب تأكيدك. أجب بـ«تأكيد» أو «إلغاء»."},
+    "approval_clear": {"en": "⚠️ This will delete your completed tasks. Reply “confirm” or “cancel”.",
+                       "fr": "⚠️ Cette action supprimera vos tâches terminées. Répondez « confirmer » ou « annuler ».",
+                       "ar": "⚠️ سيؤدي هذا إلى حذف مهامك المكتملة. أجب بـ«تأكيد» أو «إلغاء»."},
+    "approval_generic": {"en": "⚠️ “{tool}” needs your confirmation. Reply “confirm” or “cancel”.",
+                         "fr": "⚠️ « {tool} » demande votre confirmation. Répondez « confirmer » ou « annuler ».",
+                         "ar": "⚠️ «{tool}» يتطلب تأكيدك. أجب بـ«تأكيد» أو «إلغاء»."},
+    "approval_cancelled": {"en": "Cancelled — nothing was changed.", "fr": "Annulé — rien n’a été modifié.", "ar": "أُلغي — لم يتغير شيء."},
     "choose_open": {
         "en": "I found {count} of them. Which one should I open? Reply with its number (1, 2, …), say “all” to open every one, or “cancel”.\n{list}",
         "fr": "J’en ai trouvé {count}. Lequel veux-tu que j’ouvre ? Réponds avec son numéro (1, 2, …), « tous » pour tout ouvrir, ou « annule » pour ne rien faire.\n{list}",
@@ -217,6 +227,20 @@ def process_command(backend, text, reply_language="auto", previous_language=None
     if choice.language_only:
         reply = message("auto" if choice.preference == "auto" else "language", choice.language)
         return {"action": "language", "response": reply or languages.LANGUAGES[choice.language]["native_name"] + " ✓", **metadata}
+    if _PENDING_APPROVAL and not chat_only:
+        pick = match_approval_choice(text)
+        waiting = _PENDING_APPROVAL
+        clear_pending_approval()  # One question, one answer; anything else expires it.
+        if pick is not None:
+            import kira_agents
+            if pick == "cancel":
+                kira_agents.resolve_approval(waiting["id"], approve=False, source="ui")
+                return {"action": waiting["action"], "success": False, "approval": "rejected",
+                        "response": message("approval_cancelled", choice.language) or message("approval_cancelled", "en"),
+                        **metadata}
+            result = kira_agents.resolve_approval(waiting["id"], approve=True, source="ui")
+            return _format_approved(waiting["action"], result, choice.language, metadata)
+
     pending = pending_open()
     if pending and not chat_only and backend is not None:
         pick = match_open_choice(text, len(pending["paths"]))
@@ -315,6 +339,52 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         return {"error": str(error), "error_code": "command_failed", **metadata}
 
 
+# ── Approval flow: consequential tools confirm in the conversation ──────────
+
+_PENDING_APPROVAL = None
+
+_CONFIRM_WORDS = {"yes", "y", "confirm", "confirmed", "ok", "okay", "proceed", "go ahead", "do it",
+                  "oui", "confirmer", "je confirme", "d'accord", "vas-y", "نعم", "تأكيد", "أكد"}
+_CANCEL_WORDS = {"no", "n", "cancel", "stop", "abort", "non", "annule", "annuler", "لا", "إلغاء", "ألغ"}
+
+
+def pending_approval():
+    return _PENDING_APPROVAL
+
+
+def clear_pending_approval():
+    global _PENDING_APPROVAL
+    _PENDING_APPROVAL = None
+
+
+def _set_pending_approval(approval_id, action):
+    global _PENDING_APPROVAL
+    _PENDING_APPROVAL = {"id": approval_id, "action": action}
+
+
+def match_approval_choice(text):
+    value = languages.fold(str(text or "")).strip(" .!!؟?,،;:«»\"'")
+    if value in _CONFIRM_WORDS:
+        return "confirm"
+    if value in _CANCEL_WORDS:
+        return "cancel"
+    return None
+
+
+def _format_approved(action, result, language, metadata):
+    """Localize the data of an approved tool run, same shapes as the routes."""
+    def msg(key, **values):
+        return message(key, language, **values) or message(key, "en", **values) or ""
+    if result.ok and action == "clear_completed_tasks":
+        count = int(result.data or 0)
+        if count <= 0:
+            result.response = msg("tasks_none_cleared")
+        else:
+            result.response = msg("tasks_cleared_one" if count == 1 else "tasks_cleared", count=count)
+        result.extra["cleared"] = count
+    return result.to_payload(**metadata)
+
+
 # Actions answered directly from tools: data out, no backend speech, no model.
 DIRECT_TOOL_ACTIONS = frozenset({
     "search_shared_knowledge", "share_project_knowledge",
@@ -341,8 +411,16 @@ def _direct_tool_route(action, parsed, metadata, language):
         return result.to_payload(**metadata)
 
     if action == "share_project_knowledge":
-        result = kira_agents.run(action, {"topic": str(parsed.get("topic", "")).strip(),
+        topic = str(parsed.get("topic", "")).strip()
+        result = kira_agents.run(action, {"topic": topic,
                                           "content": str(parsed.get("content", "")).strip()})
+        if result.error_code == "approval_required":
+            approval_id = result.extra["approval_id"]
+            _set_pending_approval(approval_id, action)
+            return {"action": action, "success": False, "needs_approval": True,
+                    "approval_id": approval_id,
+                    "response": msg("approval_share", topic=topic) or msg("approval_generic", tool=action),
+                    **metadata}
         return result.to_payload(**metadata)
 
     if action in {"add_reminder", "add_todo"}:
@@ -377,6 +455,13 @@ def _direct_tool_route(action, parsed, metadata, language):
 
     if action == "clear_completed_tasks":
         result = kira_agents.run(action, {})
+        if result.error_code == "approval_required":
+            approval_id = result.extra["approval_id"]
+            _set_pending_approval(approval_id, action)
+            return {"action": action, "success": False, "needs_approval": True,
+                    "approval_id": approval_id,
+                    "response": msg("approval_clear") or msg("approval_generic", tool=action),
+                    **metadata}
         if result.ok:
             count = int(result.data or 0)
             if count <= 0:

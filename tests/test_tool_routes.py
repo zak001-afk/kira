@@ -7,12 +7,18 @@ HTTP/UI path it blocked the response and double-spoke (backend voice plus the
 browser voice). These regressions pin the direct tool routes added in
 kira_commands: execute_action and Ollama must never run for them.
 """
+import os
 import types
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import kira_commands as commands
+
+
+def approvals_off():
+    """These tests pin execution mechanics; test_approval.py covers the gate."""
+    return patch.dict(os.environ, {"KIRA_REQUIRE_APPROVAL": "0"})
 
 
 def make_backend(parsed):
@@ -95,8 +101,9 @@ class TaskRouteTests(unittest.TestCase):
 
     def test_clear_completed_reports_count(self):
         for cleared, fragment in [(0, "No completed tasks"), (1, "1 completed task"), (3, "3 completed tasks")]:
-            backend, result = self.run_route({"action": "clear_completed_tasks"}, "clear completed tasks",
-                                             tasks_module=fake_tasks(cleared=cleared))
+            with approvals_off():
+                backend, result = self.run_route({"action": "clear_completed_tasks"}, "clear completed tasks",
+                                                 tasks_module=fake_tasks(cleared=cleared))
             self.assertTrue(result["success"])
             self.assertIn(fragment, result["response"])
             self.assertEqual(result["cleared"], cleared)
@@ -117,7 +124,7 @@ class ShareRouteTests(unittest.TestCase):
                                 "topic": "deploy", "content": "use the bat script"})
         web = types.SimpleNamespace(
             share_project_knowledge=Mock(return_value="I've shared that project knowledge about 'deploy'."))
-        with patch.dict("sys.modules", kira_web=web):
+        with approvals_off(), patch.dict("sys.modules", kira_web=web):
             result = commands.process_command(backend, "share knowledge deploy: use the bat script")
         self.assertTrue(result["success"])
         self.assertIn("deploy", result["response"])
@@ -129,7 +136,7 @@ class ShareRouteTests(unittest.TestCase):
         backend = make_backend({"action": "share_project_knowledge", "kind": "project_knowledge",
                                 "topic": "t", "content": "c"})
         web = types.SimpleNamespace(share_project_knowledge=Mock(side_effect=RuntimeError("offline")))
-        with patch.dict("sys.modules", kira_web=web):
+        with approvals_off(), patch.dict("sys.modules", kira_web=web):
             result = commands.process_command(backend, "share knowledge t: c")
         self.assertFalse(result["success"])
         self.assertEqual(result["error_code"], "tool_failed")
@@ -151,7 +158,7 @@ class RouteBoundaryTests(unittest.TestCase):
                                     share_project_knowledge=Mock(return_value="shared"))
         for action, parsed in samples.items():
             backend = make_backend(parsed)
-            with patch.dict("sys.modules", kira_web=web, kira_tasks=fake_tasks()):
+            with approvals_off(), patch.dict("sys.modules", kira_web=web, kira_tasks=fake_tasks()):
                 result = commands.process_command(backend, "anything")
             self.assertEqual(result["action"], action)
             self.assertIn("elapsed_ms", result)

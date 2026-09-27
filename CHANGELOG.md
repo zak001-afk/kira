@@ -1,5 +1,22 @@
 # KIRA Changelog
 
+## Unreleased — Approbation conversationnelle des actions conséquentes
+
+- **Porte d'approbation** : les outils marqués `consequential`
+  (`share_project_knowledge`, `clear_completed_tasks`) ne s'exécutent plus
+  immédiatement. L'appel est mis en attente dans `kira_agents` (identifiant à
+  usage unique, expiration 180 s) et KIRA demande confirmation dans la
+  conversation, en français/anglais/arabe : « confirmer » exécute, « annuler »
+  abandonne, tout autre message fait expirer la question. Le flux d'activité
+  consigne `approval_required` / `approval_rejected` honnêtement.
+- La confirmation est traitée AVANT l'analyse de commande : « confirmer » ne
+  peut jamais être réinterprété comme une nouvelle commande.
+- Désactivable explicitement avec `KIRA_REQUIRE_APPROVAL=0` (compatibilité) ;
+  les charges utiles gagnent `needs_approval` + `approval_id` pour un futur
+  bouton de confirmation dans l'UI (aucun fichier `ui/` modifié).
+- **Tests** : `tests/test_approval.py` (11 tests). Suite complète 273 tests
+  Python + 64 JS au vert.
+
 ## Unreleased — Fondation multi-agents : registre d'outils et activité réelle
 
 - **`kira_agents.py`** : premier étage du contrôleur. Trois spécialistes —
