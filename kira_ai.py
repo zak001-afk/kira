@@ -46,8 +46,38 @@ class AIReply:
     elapsed_ms: int = 0
 
 
+_ENV_LOADED = False
+
+
+def ensure_env_loaded(path=None):
+    """Load .env (next to the code) into os.environ without any dependency.
+
+    Real environment variables always win (setdefault). Tolerates a Windows
+    Notepad BOM and quoted values. Values are never logged or printed."""
+    global _ENV_LOADED
+    if path is None:
+        if _ENV_LOADED:
+            return
+        _ENV_LOADED = True
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    try:
+        with open(path, encoding="utf-8-sig") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key:
+                    os.environ.setdefault(key, value)
+    except OSError:
+        pass
+
+
 def cloud_enabled() -> bool:
     """Cloud AI is opt-in via KIRA_CLOUD_AI; absence means local-only."""
+    ensure_env_loaded()
     return os.environ.get("KIRA_CLOUD_AI", "").strip().lower() in _TRUE_VALUES
 
 
@@ -57,6 +87,7 @@ def cloud_ready() -> bool:
 
 
 def _gemini_key() -> str:
+    ensure_env_loaded()
     return (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
 
 

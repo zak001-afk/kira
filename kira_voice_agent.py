@@ -538,6 +538,11 @@ def chat_budget():
     """Answer budget in seconds: KIRA_CHAT_BUDGET env, else kira_config.json
     'chat_budget_seconds', else the 5-second default. Clamped to 2..60."""
     import os
+    try:
+        import kira_ai
+        kira_ai.ensure_env_loaded()  # .env works even without python-dotenv
+    except Exception:
+        pass
     value = None
     raw = os.environ.get("KIRA_CHAT_BUDGET", "").strip()
     if raw:
@@ -2295,11 +2300,63 @@ def _name_capture(command, language):
     return f"Nice to meet you, {name}. I will remember your name."
 
 
+def _diagnostic_answer(command, language):
+    """'cloud status' explains, honestly and instantly, whether Gemini can
+    answer — so a silent cloud is diagnosable without reading logs.
+    Never shows any part of the key."""
+    import re
+    text = str(command or "").strip().rstrip(".!?؟").strip().lower()
+    if not re.fullmatch(r"(?:cloud\s+status|status\s+cloud|statut\s+(?:du\s+)?cloud"
+                        r"|[ée]tat\s+du\s+cloud|حالة\s+السحابة)", text):
+        return None
+    enabled = key_present = False
+    model = "?"
+    try:
+        import kira_ai
+        kira_ai.ensure_env_loaded()
+        enabled = bool(kira_ai.cloud_enabled())
+        key_present = bool(kira_ai._gemini_key())
+        model = kira_ai.gemini_model()
+    except Exception:
+        pass
+    provider = chat_provider()
+    budget = int(chat_budget())
+    ready = enabled and key_present
+    if language == "fr":
+        yes, no = "oui", "non"
+        lines = [f"Mode de chat : {provider} · budget {budget} s.",
+                 f"Cloud activé (KIRA_CLOUD_AI) : {yes if enabled else no}. "
+                 f"Clé Gemini présente : {yes if key_present else no}. Modèle : {model}."]
+        if ready:
+            lines.append("Gemini est prêt à répondre.")
+        elif not enabled:
+            lines.append("Il manque KIRA_CLOUD_AI=1 dans le fichier .env (puis redémarrez KIRA).")
+        else:
+            lines.append("Il manque GEMINI_API_KEY dans le fichier .env (puis redémarrez KIRA).")
+        return " ".join(lines)
+    yes, no = "yes", "no"
+    lines = [f"Chat mode: {provider} · budget {budget} s.",
+             f"Cloud enabled (KIRA_CLOUD_AI): {yes if enabled else no}. "
+             f"Gemini key present: {yes if key_present else no}. Model: {model}."]
+    if ready:
+        lines.append("Gemini is ready to answer.")
+    elif not enabled:
+        lines.append("KIRA_CLOUD_AI=1 is missing from the .env file (then restart KIRA).")
+    else:
+        lines.append("GEMINI_API_KEY is missing from the .env file (then restart KIRA).")
+    return " ".join(lines)
+
+
 def chat_provider():
     """KIRA_CHAT_PROVIDER: 'auto' (local first, cloud rescue — default),
     'gemini'/'cloud' (cloud first, local pipeline as fallback),
     'ollama'/'local' (never use the cloud for chat)."""
     import os
+    try:
+        import kira_ai
+        kira_ai.ensure_env_loaded()  # .env works even without python-dotenv
+    except Exception:
+        pass
     value = os.environ.get("KIRA_CHAT_PROVIDER", "").strip().lower()
     if value in {"gemini", "cloud"}:
         return "gemini"
@@ -2335,7 +2392,8 @@ def ask_chat(command: str, language=None):
     if language == "auto":
         language = detect_language(command)
     _LAST_REPLY_LANGUAGE = language
-    instant = direct_answer(command, language) or _name_capture(command, language)
+    instant = (direct_answer(command, language) or _name_capture(command, language)
+               or _diagnostic_answer(command, language))
     if instant:
         _CHAT_HISTORY.append({"role": "user", "content": command})
         _CHAT_HISTORY.append({"role": "assistant", "content": instant})

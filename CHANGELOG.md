@@ -1,5 +1,23 @@
 # KIRA Changelog
 
+## Unreleased — Chargement .env fiabilisé + commande « cloud status »
+
+- **`.env` chargé sans dépendance** : `kira_ai.ensure_env_loaded()` lit le
+  fichier `.env` à côté du code même sans python-dotenv, tolère le BOM de
+  Notepad et les valeurs entre guillemets ; les vraies variables
+  d'environnement gagnent toujours. `KIRA_CHAT_PROVIDER`, `KIRA_CHAT_BUDGET`,
+  `KIRA_CLOUD_AI` et la clé Gemini fonctionnent désormais quel que soit
+  l'ordre d'import ou l'installation de dotenv.
+- **Nouvelle commande de diagnostic** : tapez **« cloud status »** (ou
+  « statut cloud », « حالة السحابة ») — KIRA affiche instantanément le mode
+  de chat, le budget, si KIRA_CLOUD_AI et la clé Gemini sont détectés, le
+  modèle, et nomme précisément la pièce manquante. La clé n'est jamais
+  affichée, même partiellement.
+- **Tests** : +5 dans `tests/test_direct_answers.py` (22 là-bas ; parsing
+  .env avec BOM/guillemets/priorité, fichier absent inoffensif, statut
+  prêt/manquant EN+FR, la clé ne fuit pas). Suite complète 321 tests Python
+  + 64 JS au vert. Aucun fichier `ui/` modifié.
+
 ## Unreleased — KIRA ne se prend plus pour JARVIS + capture instantanée du prénom
 
 - **Identité corrigée** : l'ancien prompt disait « modeled after JARVIS from

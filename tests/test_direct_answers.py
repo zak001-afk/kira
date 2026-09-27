@@ -33,7 +33,7 @@ DIRECT_NAMES = {"direct_answer", "_safe_math", "_is_personal",
                 "_FR_DAYS", "_FR_MONTHS", "_EN_DAYS", "_EN_MONTHS",
                 "_AR_DAYS", "_AR_MONTHS",
                 "_TIME_QUESTIONS", "_DATE_QUESTIONS", "_MATH_LEADINS", "_MATH_WORDS",
-                "_name_capture", "_NAME_STATEMENTS"}
+                "_name_capture", "_NAME_STATEMENTS", "_diagnostic_answer"}
 
 
 class DirectAnswerTests(unittest.TestCase):
@@ -152,6 +152,76 @@ class NameCaptureTests(unittest.TestCase):
                        "tell me a joke", "my name is a b c d e f"]:
             self.assertIsNone(ns["_name_capture"](phrase, "en"), phrase)
         self.assertEqual(saved, [])
+
+
+class EnvLoadingTests(unittest.TestCase):
+    """.env must work without python-dotenv, with a Notepad BOM and quotes;
+    real environment variables always win."""
+
+    def test_env_file_is_parsed_and_never_overrides_real_env(self):
+        import tempfile
+        import kira_ai
+        content = "\ufeffKIRA_TEST_ALPHA=1\n# comment\nKIRA_TEST_BETA=\"quoted value\"\nKIRA_TEST_GAMMA=from-file\nbroken line\n"
+        with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False,
+                                         encoding="utf-8") as handle:
+            handle.write(content)
+            path = handle.name
+        try:
+            with patch.dict(os.environ, {"KIRA_TEST_GAMMA": "from-real-env"}, clear=False):
+                for key in ("KIRA_TEST_ALPHA", "KIRA_TEST_BETA"):
+                    os.environ.pop(key, None)
+                kira_ai.ensure_env_loaded(path)
+                self.assertEqual(os.environ.get("KIRA_TEST_ALPHA"), "1")  # BOM tolerated
+                self.assertEqual(os.environ.get("KIRA_TEST_BETA"), "quoted value")
+                self.assertEqual(os.environ.get("KIRA_TEST_GAMMA"), "from-real-env")
+        finally:
+            os.unlink(path)
+            for key in ("KIRA_TEST_ALPHA", "KIRA_TEST_BETA"):
+                os.environ.pop(key, None)
+
+    def test_missing_file_is_harmless(self):
+        import kira_ai
+        kira_ai.ensure_env_loaded("/nonexistent/definitely/not/here.env")
+
+
+class DiagnosticTests(unittest.TestCase):
+    def namespace(self, fake_ai):
+        extra = {"logging": __import__("logging")}
+        ns = load_names(DIRECT_NAMES | {"_diagnostic_answer", "chat_provider",
+                                        "chat_budget", "CHAT_ANSWER_BUDGET"}, extra=extra)
+        return ns
+
+    def test_cloud_status_reports_ready(self):
+        fake_ai = types.SimpleNamespace(ensure_env_loaded=lambda path=None: None,
+                                        cloud_enabled=lambda: True,
+                                        _gemini_key=lambda: "secret-key",
+                                        gemini_model=lambda: "gemini-2.5-flash",
+                                        cloud_ready=lambda: True)
+        ns = self.namespace(fake_ai)
+        with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": "gemini", "KIRA_CHAT_BUDGET": "12"}), \
+                patch.dict(sys.modules, kira_ai=fake_ai):
+            answer = ns["_diagnostic_answer"]("cloud status", "en")
+        self.assertIn("gemini", answer)
+        self.assertIn("ready", answer)
+        self.assertIn("12", answer)
+        self.assertNotIn("secret-key", answer)  # the key never leaks
+
+    def test_cloud_status_names_the_missing_piece_in_french(self):
+        fake_ai = types.SimpleNamespace(ensure_env_loaded=lambda path=None: None,
+                                        cloud_enabled=lambda: False,
+                                        _gemini_key=lambda: "",
+                                        gemini_model=lambda: "gemini-2.5-flash",
+                                        cloud_ready=lambda: False)
+        ns = self.namespace(fake_ai)
+        with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": "", "KIRA_CHAT_BUDGET": ""}), \
+                patch.dict(sys.modules, kira_ai=fake_ai):
+            answer = ns["_diagnostic_answer"]("statut cloud", "fr")
+        self.assertIn("KIRA_CLOUD_AI", answer)
+
+    def test_other_messages_are_ignored(self):
+        ns = self.namespace(None)
+        self.assertIsNone(ns["_diagnostic_answer"]("tell me a joke", "en"))
+        self.assertIsNone(ns["_diagnostic_answer"]("status", "en"))
 
 
 class AskChatWiringTests(unittest.TestCase):
