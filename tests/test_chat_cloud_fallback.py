@@ -146,7 +146,11 @@ class ChatProviderTests(unittest.TestCase):
         }
         ns = load_names({"ask_chat", "chat_budget", "chat_provider", "_local_chat_answer",
                          "chat_answer_with_web", "_run_bounded", "CHAT_ANSWER_BUDGET",
-                         "_cloud_chat_answer", "CLOUD_CHAT_PROMPTS"}, extra=ns_extra)
+                         "_cloud_chat_answer", "CLOUD_CHAT_PROMPTS",
+                         "direct_answer", "_is_personal", "_safe_math",
+                         "_FR_DAYS", "_FR_MONTHS", "_EN_DAYS", "_EN_MONTHS",
+                         "_AR_DAYS", "_AR_MONTHS", "_TIME_QUESTIONS",
+                         "_DATE_QUESTIONS", "_MATH_LEADINS", "_MATH_WORDS"}, extra=ns_extra)
         # _cloud_chat_answer imports kira_ai lazily; patch happens per test.
         return ns
 

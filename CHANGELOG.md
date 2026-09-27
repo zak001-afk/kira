@@ -1,5 +1,24 @@
 # KIRA Changelog
 
+## Unreleased — Réponses directes instantanées + les questions personnelles restent locales
+
+- **Bon sens instantané** : l'heure, la date et le calcul mental sont
+  maintenant calculés hors ligne, en moins d'une milliseconde — jamais par un
+  modèle. « Quelle heure est-il ? », « quel jour sommes-nous ? »,
+  « combien font 12 fois 7 ? » (EN/FR/AR) reçoivent la réponse exacte ;
+  fini le petit modèle qui hallucine 2 + 2, fini le détour cloud d'une
+  seconde. La division par zéro reçoit une phrase sensée.
+- **Garde-fou personnel** : « quel est mon nom ? », « souviens-toi… »,
+  « oublie mon nom »… ne partent JAMAIS vers Gemini, même en mode
+  `KIRA_CHAT_PROVIDER=gemini` — le cloud ne connaît pas la réponse et la
+  formulation ne doit pas quitter la machine. Ces questions passent par la
+  mémoire locale, comme avant.
+- **Sécurité du calcul** : évaluateur arithmétique restreint (AST : + − × ÷
+  et parenthèses uniquement) ; refuse toute expression non numérique (testé
+  contre l'injection).
+- **Tests** : `tests/test_direct_answers.py` (12 tests). Suite complète
+  311 tests Python + 64 JS au vert. Aucun fichier `ui/` modifié.
+
 ## Unreleased — Choix du cerveau de chat + l'excuse « modèle injoignable » ne bloque plus
 
 - **`KIRA_CHAT_PROVIDER`** dans `.env` : `auto` (défaut — local d'abord,

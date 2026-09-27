@@ -2137,6 +2137,127 @@ def ask_agent(command: str):
         return {"action": "none"}
 
 
+_FR_DAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+_FR_MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+              "août", "septembre", "octobre", "novembre", "décembre"]
+_EN_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_EN_MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+              "August", "September", "October", "November", "December"]
+_AR_DAYS = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
+_AR_MONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو",
+              "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
+
+_TIME_QUESTIONS = (r"(?:what\s+time\s+is\s+it|what(?:'?s|\s+is)\s+the\s+time"
+                   r"|quelle\s+heure\s+est[\s-]il|il\s+est\s+quelle\s+heure"
+                   r"|donne[\s-]moi\s+l'?heure|كم\s+الساعة|كم\s+الوقت)")
+_DATE_QUESTIONS = (r"(?:what(?:'?s|\s+is)\s+(?:today'?s\s+date|the\s+date(?:\s+today)?)"
+                   r"|what\s+day\s+is\s+it(?:\s+today)?|what\s+day\s+are\s+we"
+                   r"|quelle\s+est\s+la\s+date(?:\s+(?:d'?aujourd'?hui|du\s+jour))?"
+                   r"|quel\s+jour\s+sommes[\s-]nous|on\s+est\s+quel\s+jour"
+                   r"|ما\s+هو\s+تاريخ\s+اليوم|ما\s+التاريخ\s+اليوم|ما\s+هو\s+اليوم)")
+_MATH_LEADINS = (r"^(?:what\s+is|what'?s|whats|how\s+much\s+is|calculate|compute"
+                 r"|calcule|combien\s+font|combien\s+fait|ça\s+fait\s+combien"
+                 r"|احسب|كم\s+يساوي)\s+")
+_MATH_WORDS = [
+    (r"\bdivided\s+by\b|\bdivisé\s+par\b|÷", "/"),
+    (r"\btimes\b|\bmultiplied\s+by\b|\bfois\b|\bmultiplié\s+par\b|[x×]", "*"),
+    (r"\bplus\b", "+"),
+    (r"\bminus\b|\bmoins\b", "-"),
+]
+
+
+def _safe_math(expr):
+    """Evaluate pure arithmetic (+ - * / and parentheses) safely, or None."""
+    import ast
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError:
+        return None
+    allowed = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant,
+               ast.Add, ast.Sub, ast.Mult, ast.Div, ast.USub, ast.UAdd)
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed):
+            return None
+        if isinstance(node, ast.Constant) and not isinstance(node.value, (int, float)):
+            return None
+    try:
+        return eval(compile(tree, "<math>", "eval"), {"__builtins__": {}}, {})
+    except ZeroDivisionError:
+        return "zero-division"
+    except Exception:
+        return None
+
+
+def direct_answer(command, language):
+    """Instant offline answers for questions with exactly one logical answer:
+    time, date and arithmetic. No model, no cloud, no waiting — a tiny model
+    must never get the chance to hallucinate 2 + 2."""
+    import re
+    from datetime import datetime
+    text = str(command or "").strip().rstrip(".!?؟").strip().lower()
+    if not text:
+        return None
+    lang = language if language in {"fr", "ar"} else "en"
+    now = datetime.now()
+
+    if re.fullmatch(_TIME_QUESTIONS, text, flags=re.IGNORECASE):
+        if lang == "fr":
+            return f"Il est {now:%H} h {now:%M}."
+        if lang == "ar":
+            return f"الساعة الآن {now:%H}:{now:%M}."
+        return f"It is {now:%H}:{now:%M}."
+
+    if re.fullmatch(_DATE_QUESTIONS, text, flags=re.IGNORECASE):
+        index = now.weekday()
+        if lang == "fr":
+            return (f"Nous sommes le {_FR_DAYS[index]} {now.day} "
+                    f"{_FR_MONTHS[now.month - 1]} {now.year}.")
+        if lang == "ar":
+            return (f"اليوم هو {_AR_DAYS[index]}، {now.day} "
+                    f"{_AR_MONTHS[now.month - 1]} {now.year}.")
+        return (f"Today is {_EN_DAYS[index]}, {now.day} "
+                f"{_EN_MONTHS[now.month - 1]} {now.year}.")
+
+    candidate = re.sub(_MATH_LEADINS, "", text, flags=re.IGNORECASE)
+    candidate = candidate.rstrip("=").strip()
+    for pattern, symbol in _MATH_WORDS:
+        candidate = re.sub(pattern, symbol, candidate, flags=re.IGNORECASE)
+    candidate = re.sub(r"(?<=\d),(?=\d)", ".", candidate)  # 7,5 -> 7.5
+    if not re.fullmatch(r"[0-9+\-*/(). ]+", candidate):
+        return None
+    if not (re.search(r"\d", candidate) and re.search(r"[+\-*/]", candidate)):
+        return None
+    result = _safe_math(candidate)
+    if result == "zero-division":
+        return {"fr": "On ne peut pas diviser par zéro.",
+                "ar": "لا يمكن القسمة على صفر."}.get(lang, "You cannot divide by zero.")
+    if result is None:
+        return None
+    if isinstance(result, float) and result.is_integer():
+        result = int(result)
+    elif isinstance(result, float):
+        result = round(result, 6)
+    pretty = re.sub(r"\s+", " ", candidate).strip()
+    return f"{pretty} = {result}"
+
+
+def _is_personal(command):
+    """True when the question is about the user's own data (name, memories,
+    preferences). Those must be answered from LOCAL memory — the cloud cannot
+    know the answer, and the phrasing should never leave the machine."""
+    import re
+    text = str(command or "").strip().lower()
+    if not text:
+        return False
+    keywords = (r"(?:\bmy\s+name\b|\bmy\s+favou?rite\b|\bremember\b|\bmemorize\b"
+                r"|\bforget\b|\bdid\s+i\s+(?:say|tell)\b|\bcall\s+me\b"
+                r"|mon\s+nom|mon\s+prénom|je\s+m'appelle|appelle[\s-]moi"
+                r"|souviens[\s-]toi|rappelle[\s-]toi|oublie|retiens"
+                r"|ma\s+langue\s+préférée|mon\s+\S+\s+préférée?"
+                r"|اسمي|ما\s+اسمي|تذكر|احفظ|انسَ?\s)")
+    return re.search(keywords, text, flags=re.IGNORECASE) is not None
+
+
 def chat_provider():
     """KIRA_CHAT_PROVIDER: 'auto' (local first, cloud rescue — default),
     'gemini'/'cloud' (cloud first, local pipeline as fallback),
@@ -2177,9 +2298,20 @@ def ask_chat(command: str, language=None):
     if language == "auto":
         language = detect_language(command)
     _LAST_REPLY_LANGUAGE = language
+    instant = direct_answer(command, language)
+    if instant:
+        _CHAT_HISTORY.append({"role": "user", "content": command})
+        _CHAT_HISTORY.append({"role": "assistant", "content": instant})
+        try:
+            kira_memory.save_message(_SESSION_ID, "user", command)
+            kira_memory.save_message(_SESSION_ID, "assistant", instant)
+        except Exception:
+            pass
+        return instant
     budget = chat_budget()
     provider = chat_provider()
-    if provider == "gemini":
+    personal = _is_personal(command)
+    if provider == "gemini" and not personal:
         direct = _run_bounded(lambda: _cloud_chat_answer(command, language),
                               max(2.0, budget - 1.0))
         if direct:
@@ -2194,7 +2326,7 @@ def ask_chat(command: str, language=None):
     answer, source = chat_answer_with_web(command, language, _local_chat_answer,
                                           _web_lookup, _synthesize_web_answer,
                                           budget=budget,
-                                          ask_cloud=None if provider == "ollama" else _cloud_chat_answer)
+                                          ask_cloud=None if provider == "ollama" or personal else _cloud_chat_answer)
     if not str(answer or "").strip():
         seconds = int(budget)
         answer = {
