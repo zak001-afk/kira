@@ -3,8 +3,8 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { HoloMouth } from "./holo-mouth.mjs?v=command-center-27";
-import { lipDemoPose } from "./lips.mjs?v=command-center-27";
+import { HoloMouth } from "./holo-mouth.mjs?v=command-center-28";
+import { lipDemoPose } from "./lips.mjs?v=command-center-28";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
@@ -194,7 +194,7 @@ scene.add(avatarGroup);
 // ── HOLOGRAMME DE KIRA (image + lèvres animées) ──
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
-  const avatarTexture = avatarLoader.load("assets/avatar_notext.png?v=command-center-27", (texture) => {
+  const avatarTexture = avatarLoader.load("assets/avatar_notext.png?v=command-center-28", (texture) => {
     // Valeurs sRGB brutes : le shader holographique gère lui-même le rendu.
     if (texture) texture.needsUpdate = true;
     // Lèvres animées : maillage visème sur les mesures réelles de la bouche,
@@ -235,8 +235,8 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
         uv.x += glitch * (fract(sin(slot * 12.9898) * 78.233) - 0.5) * 0.014
               * step(0.4, fract(uv.y * 2.0 - time * 3.0));
         vec4 tex = texture2D(map, uv);
-        // Luminosité 10 %, contraste 30 % (demande explicite).
-        const float BRIGHTNESS = 0.10;
+        // Luminosité 0 %, contraste 30 % (demande explicite).
+        const float BRIGHTNESS = 0.00;
         const float CONTRAST = 0.30;
         vec3 dim = ((tex.rgb - 0.5) * CONTRAST + 0.5) * BRIGHTNESS;
         float lum = dot(dim, vec3(0.299, 0.587, 0.114));
