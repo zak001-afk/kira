@@ -3,8 +3,8 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { HoloMouth } from "./holo-mouth.mjs?v=command-center-40";
-import { lipDemoPose } from "./lips.mjs?v=command-center-40";
+import { HoloMouth } from "./holo-mouth.mjs?v=command-center-41";
+import { lipDemoPose } from "./lips.mjs?v=command-center-41";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
@@ -194,7 +194,7 @@ scene.add(avatarGroup);
 // ── HOLOGRAMME DE KIRA (image + lèvres animées) ──
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
-  const avatarTexture = avatarLoader.load("assets/avatar_notext.png?v=command-center-40", (texture) => {
+  const avatarTexture = avatarLoader.load("assets/avatar_final.png?v=command-center-41", (texture) => {
     // Valeurs sRGB brutes : le shader holographique gère lui-même le rendu.
     if (texture) texture.needsUpdate = true;
     // Lèvres animées : maillage visème sur les mesures réelles de la bouche,
@@ -235,11 +235,11 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
         uv.x += glitch * (fract(sin(slot * 12.9898) * 78.233) - 0.5) * 0.014
               * step(0.4, fract(uv.y * 2.0 - time * 3.0));
         vec4 tex = texture2D(map, uv);
-        // Luminosité 150 %, contraste 90 % — équivalent de la capture utilisateur
-        // (visage lumineux « brûlé » de l'ancien rendu additif, demandé tel quel).
-        const float BRIGHTNESS = 0.85;
-        const float CONTRAST = 0.60;
+        // Rendu fidèle à la référence utilisateur : l'image est déjà au bon niveau.
+        const float BRIGHTNESS = 1.00;
+        const float CONTRAST = 1.00;
         vec3 dim = ((tex.rgb - 0.5) * CONTRAST + 0.5) * BRIGHTNESS;
+        dim *= 0.93 + 0.07 * sin(uv.y * 460.0); // scanlines douces
         float lum = dot(dim, vec3(0.299, 0.587, 0.114));
         float alpha = smoothstep(0.002, 0.03, lum);
         float fade = smoothstep(0.02, 0.1, uv.y) * smoothstep(1.0, 0.94, uv.y);
