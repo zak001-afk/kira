@@ -432,6 +432,7 @@ class OpenAppFallbackTests(unittest.TestCase):
              patch.object(kira_open, "find_start_menu_app", return_value=None), \
              patch.object(kira_open, "find_installed_exe", return_value=None), \
              patch.object(kira_open, "find_installed_exe_deep", return_value=None), \
+             patch.object(kira_open, "_browser_controller", return_value=None), \
              patch.object(kira_open.webbrowser, "open", side_effect=lambda url: opened.append(url) or True), \
              patch.object(kira_open, "find_file", side_effect=AssertionError("open_app must not scan user files")):
             result = kira_open.open_app(name)
@@ -604,6 +605,22 @@ class NestedLocationTests(unittest.TestCase):
             self.assertEqual(kira_open.resolve_parent_dir(str(parent)), str(parent))
             self.assertEqual(kira_open.resolve_parent_dir("documents", base_home=home), str(documents))
             self.assertIsNone(kira_open.resolve_parent_dir("zzqq", base_home=home))
+
+    def test_an_existing_path_never_collapses_to_the_drive_root(self):
+        """Live Windows failure: fold() splits 'C:\\Users\\...' into words, the
+        lone 'c' looked like a drive phrase, and resolve_parent_dir returned
+        'c:\\' instead of the existing directory. Simulated here by making the
+        drive root 'exist' on any OS."""
+        with tempfile.TemporaryDirectory() as home:
+            parent = Path(home) / "Documents" / "travail"
+            parent.mkdir(parents=True)
+            real_isdir = os.path.isdir
+            def fake_isdir(path):
+                if str(path) in ("c:\\", "c:/", "C:\\", "C:/"):
+                    return True  # pretend the C: drive exists, as on Windows
+                return real_isdir(path)
+            with patch.object(kira_open.os.path, "isdir", side_effect=fake_isdir):
+                self.assertEqual(kira_open.resolve_parent_dir(str(parent)), str(parent))
 
     def test_folder_inside_a_named_parent_opens_directly(self):
         with tempfile.TemporaryDirectory() as home:
@@ -1194,7 +1211,9 @@ class ContainsSearchTests(unittest.TestCase):
         result = commands.process_command(self.backend, "cherche dell dans le c", reply_language="fr")
         self.assertTrue(result["needs_choice"])
         self.assertNotEqual(result.get("action"), "chat")
-        labels = [path.replace(self.drive_c + "/", "") for path in result["candidates"]]
+        # Windows candidates use backslashes; compare drive-relative, "/" form.
+        labels = [str(Path(path).relative_to(self.drive_c)).replace("\\", "/")
+                  for path in result["candidates"]]
         self.assertEqual(labels, ["dell", "mm/dell", "programme/dell",
                                   "dell sauvegarde", "documents/dell prix.txt"])
         picked = commands.process_command(self.backend, "3", reply_language="fr")

@@ -1409,13 +1409,21 @@ def resolve_parent_dir(parent, base_home=None):
     raw = str(parent or "").strip()
     if not raw:
         return None
-    letter = parse_drive(raw)
-    if letter:
-        drive = letter + ":\\"
-        if os.path.isdir(drive):
-            return drive
-        if os.path.isdir(letter + ":/"):
-            return letter + ":/"
+    expanded = os.path.expanduser(raw)
+    if "\\" in raw or "/" in raw:
+        # A real path never goes through phrase parsing: fold() turns
+        # 'C:\Users\...\travail' into 'c users ...' and the lone 'c' would
+        # collapse the whole path to the drive root (live Windows bug).
+        if os.path.isdir(expanded):
+            return expanded
+    else:
+        letter = parse_drive(raw)
+        if letter:
+            drive = letter + ":\\"
+            if os.path.isdir(drive):
+                return drive
+            if os.path.isdir(letter + ":/"):
+                return letter + ":/"
     key = fold(raw)
     if key in FOLDER_ALIASES:
         folder = FOLDER_ALIASES[key]

@@ -1,5 +1,23 @@
 # KIRA Changelog
 
+## Unreleased — Les 5 échecs Windows de test_open corrigés
+
+- **Bug produit réel** : `resolve_parent_dir("C:\\Users\\...\\travail")`
+  renvoyait `c:\\` (la racine du disque !) — `fold()` découpe le chemin en
+  mots, le « c » isolé ressemblait à une phrase de disque. Un chemin existant
+  est maintenant résolu tel quel, sans passer par l'analyse de phrases.
+  Régression testée sur tout OS (racine C: simulée).
+- **Isolation des tests réparée** : les 3 tests de repli navigateur
+  (facebook/spotify/recherche) ouvraient de VRAIS onglets Chrome sur Windows —
+  le contrôleur Chrome réel court-circuitait le `webbrowser.open` simulé.
+  `_browser_controller` est maintenant neutralisé dans ces tests.
+- **Portabilité** : le test de liste « cherche dell dans le c » comparait des
+  chemins avec « / » ; les séparateurs Windows « \\ » cassaient la
+  comparaison. Étiquettes désormais relatives via `Path.relative_to`.
+- **Suite complète** : 337 tests Python + 64 JS au vert — et désormais
+  attendus 337/337 sur Windows aussi (0 échec connu restant). Aucun fichier
+  `ui/` modifié.
+
 ## Unreleased — Le modèle Gemini se répare tout seul (fini les 404)
 
 - **Cause trouvée par « cloud test » en direct** : Google a retiré
