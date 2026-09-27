@@ -3,8 +3,8 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { HoloMouth } from "./holo-mouth.mjs?v=command-center-23";
-import { lipDemoPose } from "./lips.mjs?v=command-center-23";
+import { HoloMouth } from "./holo-mouth.mjs?v=command-center-24";
+import { lipDemoPose } from "./lips.mjs?v=command-center-24";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
@@ -194,7 +194,7 @@ scene.add(avatarGroup);
 // ── HOLOGRAMME DE KIRA (image + lèvres animées) ──
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
-  const avatarTexture = avatarLoader.load("assets/avatar_matrix.png?v=command-center-23", (texture) => {
+  const avatarTexture = avatarLoader.load("assets/avatar_notext.png?v=command-center-24", (texture) => {
     // Valeurs sRGB brutes : le shader holographique gère lui-même le rendu.
     if (texture) texture.needsUpdate = true;
     // Lèvres animées : maillage visème sur les mesures réelles de la bouche,
@@ -204,9 +204,8 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
       catch (error) { console.error("HoloMouth :", error); holoMouth = null; }
     }
   });
-  // Vrai rendu holographique : fusion additive (les zones sombres deviennent
-  // transparentes), lignes de balayage qui montent, scintillement de projecteur,
-  // légères instabilités de signal — une projection, pas une photo.
+  // Holographique MAT : fusion additive conservée pour fond noir invisible,
+  // mais SANS boost, SANS scintillement, SANS accent — image atténuée, mate.
   holoUniforms = { map: { value: avatarTexture }, time: { value: 0 } };
   const avatarMaterial = new THREE.ShaderMaterial({
     uniforms: holoUniforms,
@@ -233,17 +232,13 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
         vec2 uv = vUv;
         float slot = floor(time * 6.0);
         float glitch = step(0.94, fract(sin(slot * 91.3458) * 47453.5453));
-        uv.x += glitch * (fract(sin(slot * 12.9898) * 78.233) - 0.5) * 0.018
+        uv.x += glitch * (fract(sin(slot * 12.9898) * 78.233) - 0.5) * 0.014
               * step(0.4, fract(uv.y * 2.0 - time * 3.0));
         vec4 tex = texture2D(map, uv);
-        float lum = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
-        float scan = 0.84 + 0.16 * sin(uv.y * 460.0 - time * 7.0);
-        float bandPos = abs(fract(uv.y * 0.5 - time * 0.06) - 0.5);
-        float sweep = 1.0 - 0.22 * smoothstep(0.18, 0.02, bandPos);
-        float flicker = 0.93 + 0.07 * sin(time * 23.0) + 0.05 * sin(time * 57.0 + 1.7);
+        // Aucune luminosité ajoutée : image atténuée, scanlines discrètes, fixe.
+        float scan = 0.96 + 0.04 * sin(uv.y * 460.0);
         float fade = smoothstep(0.02, 0.1, uv.y) * smoothstep(1.0, 0.94, uv.y);
-        vec3 accent = vec3(0.35, 1.0, 0.45);
-        vec3 col = tex.rgb * (0.6 + 0.8 * lum) * scan * sweep * flicker + accent * lum * 0.16;
+        vec3 col = tex.rgb * 0.78 * scan;
         gl_FragColor = vec4(col * fade, 1.0);
       }`,
   });

@@ -158,20 +158,15 @@ export class HoloMouth {
     this.interior = document.createElement("canvas");
     this.interior.width = 180; this.interior.height = 62;
     const interiorContext = this.interior.getContext("2d");
-    // Intérieur lumineux : dans un hologramme MATRIX, la bouche ouverte rayonne.
+    // Intérieur SOMBRE et mat : aucune luminosité, juste une ombre verte.
     const gradient = interiorContext.createLinearGradient(0, 0, 0, 62);
-    gradient.addColorStop(0, "#aaff9c");
-    gradient.addColorStop(0.45, "#1d8a2c");
-    gradient.addColorStop(1, "#06310f");
+    gradient.addColorStop(0, "#143d20");
+    gradient.addColorStop(0.5, "#071508");
+    gradient.addColorStop(1, "#0c2413");
     interiorContext.fillStyle = gradient;
     interiorContext.fillRect(0, 0, 180, 62);
-    const mouthGlow = interiorContext.createRadialGradient(90, 24, 4, 90, 24, 58);
-    mouthGlow.addColorStop(0, "rgba(130, 255, 150, 0.95)");
-    mouthGlow.addColorStop(1, "rgba(130, 255, 150, 0)");
-    interiorContext.fillStyle = mouthGlow;
-    interiorContext.fillRect(0, 0, 180, 62);
-    // Lignes de balayage cohérentes avec la projection.
-    interiorContext.fillStyle = "rgba(4, 40, 12, 0.25)";
+    // Lignes de balayage sombres cohérentes avec la projection.
+    interiorContext.fillStyle = "rgba(2, 8, 3, 0.35)";
     for (let ly = 3; ly < 62; ly += 6) interiorContext.fillRect(0, ly, 180, 2);
     this.interiorReady = true;
 
