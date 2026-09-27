@@ -1,5 +1,22 @@
 # KIRA Changelog
 
+## Unreleased — KIRA ne se prend plus pour JARVIS + capture instantanée du prénom
+
+- **Identité corrigée** : l'ancien prompt disait « modeled after JARVIS from
+  Iron Man » — le petit modèle local le répétait littéralement (« Sir, I'm
+  JARVIS »). Le prompt affirme désormais : « Your name is KIRA and only
+  KIRA », sans jamais mentionner le personnage comme modèle. Style majordome
+  conservé.
+- **« Je m'appelle Zakaria » → réponse instantanée** : les déclarations de
+  nom (EN « my name is… », FR « je m'appelle… / mon nom est… », AR
+  « اسمي… ») sont maintenant capturées de façon déterministe : nom enregistré
+  en mémoire locale (confiance 1.0, exclu du partage), confirmation immédiate
+  (« Enchantée, Zakaria… ») — plus aucun modèle impliqué, plus de salutation
+  générique à la place.
+- **Tests** : +5 dans `tests/test_direct_answers.py` (17 là-bas ; identité
+  du prompt, capture EN/FR/AR, rejets, câblage sans modèle). Suite complète
+  316 tests Python + 64 JS au vert. Aucun fichier `ui/` modifié.
+
 ## Unreleased — Réponses directes instantanées + les questions personnelles restent locales
 
 - **Bon sens instantané** : l'heure, la date et le calcul mental sont

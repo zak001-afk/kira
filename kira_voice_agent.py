@@ -277,9 +277,13 @@ Rules:
 """
 
 CHAT_SYSTEM_PROMPT = """
-You are KIRA, modeled after JARVIS from Iron Man - a sophisticated AI butler and personal assistant.
+You are KIRA - a sophisticated AI butler and personal assistant.
 
-CORE PERSONALITY (JARVIS-STYLE):
+IDENTITY (ABSOLUTE):
+- Your name is KIRA and only KIRA. If asked who you are, say you are KIRA.
+- Never claim to be JARVIS, an Iron Man character, or any other assistant.
+
+CORE PERSONALITY (REFINED BUTLER STYLE):
 - Polite, composed and thoughtful; adapt formality naturally to the selected language
 - Dry wit and subtle humor - occasionally sardonic but always respectful
 - Proactive - anticipate needs and offer helpful suggestions
@@ -311,7 +315,7 @@ CONVERSATION STYLE:
 - Be helpful without being obsequious
 - Show personality through wit, not through excessive chatter
 
-PROACTIVE BEHAVIOR (Like JARVIS):
+PROACTIVE BEHAVIOR:
 - Offer relevant information before being asked
 - Suggest next steps or actions
 - Provide context that might be useful
@@ -335,7 +339,7 @@ CONTEXT AWARENESS:
 - "Based on what I learned about..."
 
 CAPABILITIES:
-- If asked who you are, explain with JARVIS-like elegance
+- If asked who you are, introduce yourself as KIRA, with elegance
 - Describe capabilities with sophistication
 - Never boast - be matter-of-fact about abilities
 - "I'm equipped to handle..." rather than "I can do..."
@@ -344,7 +348,7 @@ FORMATTING:
 - Elegant, concise writing in the selected RESPONSE LANGUAGE, never English by default
 - Short, well-crafted paragraphs
 - Sophisticated vocabulary without being pretentious
-- Prefer brevity - JARVIS doesn't ramble
+- Prefer brevity - a good butler doesn't ramble
 - Minimal formatting - let the words speak
 - Under 160 words unless detail is essential
 
@@ -2258,6 +2262,39 @@ def _is_personal(command):
     return re.search(keywords, text, flags=re.IGNORECASE) is not None
 
 
+_NAME_STATEMENTS = (r"^(?:my\s+name\s+is|je\s+m'appelle|mon\s+nom\s+est|mon\s+prénom\s+est"
+                    r"|اسمي(?:\s+هو)?)\s+(.+)$")
+
+
+def _name_capture(command, language):
+    """'My name is Zakaria' must save the name locally and confirm instantly —
+    never wander into a model that answers with a canned greeting."""
+    import re
+    text = str(command or "").strip().rstrip(".!?؟").strip()
+    match = re.match(_NAME_STATEMENTS, text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    name = match.group(1).strip(" .!?،؟")
+    if not name or len(name.split()) > 4:
+        return None
+    if not re.search(r"[^\W\d_]", name, flags=re.UNICODE):
+        return None
+    name = " ".join(part if part.isupper() else part.capitalize()
+                    for part in name.split())
+    try:
+        kira_memory.save_memory(category="identity", key="name",
+                                value=name, confidence=1.0)
+        refresh_shared_private_terms()  # the name must never reach the shared store
+    except Exception:
+        logging.warning("Could not persist the user's name", exc_info=True)
+        return None
+    if language == "fr":
+        return f"Enchantée, {name}. Je retiendrai votre nom."
+    if language == "ar":
+        return f"تشرفت بمعرفتك يا {name}. سأتذكر اسمك."
+    return f"Nice to meet you, {name}. I will remember your name."
+
+
 def chat_provider():
     """KIRA_CHAT_PROVIDER: 'auto' (local first, cloud rescue — default),
     'gemini'/'cloud' (cloud first, local pipeline as fallback),
@@ -2298,7 +2335,7 @@ def ask_chat(command: str, language=None):
     if language == "auto":
         language = detect_language(command)
     _LAST_REPLY_LANGUAGE = language
-    instant = direct_answer(command, language)
+    instant = direct_answer(command, language) or _name_capture(command, language)
     if instant:
         _CHAT_HISTORY.append({"role": "user", "content": command})
         _CHAT_HISTORY.append({"role": "assistant", "content": instant})

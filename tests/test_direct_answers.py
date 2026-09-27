@@ -32,7 +32,8 @@ def load_names(names, extra=None):
 DIRECT_NAMES = {"direct_answer", "_safe_math", "_is_personal",
                 "_FR_DAYS", "_FR_MONTHS", "_EN_DAYS", "_EN_MONTHS",
                 "_AR_DAYS", "_AR_MONTHS",
-                "_TIME_QUESTIONS", "_DATE_QUESTIONS", "_MATH_LEADINS", "_MATH_WORDS"}
+                "_TIME_QUESTIONS", "_DATE_QUESTIONS", "_MATH_LEADINS", "_MATH_WORDS",
+                "_name_capture", "_NAME_STATEMENTS"}
 
 
 class DirectAnswerTests(unittest.TestCase):
@@ -104,6 +105,55 @@ class PersonalGuardTests(unittest.TestCase):
             self.assertFalse(self.personal(phrase), phrase)
 
 
+class IdentityTests(unittest.TestCase):
+    def test_the_persona_never_claims_to_be_jarvis(self):
+        source = (ROOT / "kira_voice_agent.py").read_text()
+        start = source.index('CHAT_SYSTEM_PROMPT = """')
+        prompt = source[start:source.index('"""', start + 30)]
+        self.assertNotIn("modeled after JARVIS", prompt)
+        self.assertIn("Your name is KIRA and only KIRA", prompt)
+        self.assertIn("Never claim to be JARVIS", prompt)
+
+
+class NameCaptureTests(unittest.TestCase):
+    def namespace(self):
+        from types import SimpleNamespace
+        saved = []
+        extra = {
+            "kira_memory": SimpleNamespace(
+                save_memory=lambda **kw: saved.append(kw),
+                save_message=lambda *a, **k: None),
+            "refresh_shared_private_terms": lambda: None,
+            "logging": __import__("logging"),
+        }
+        ns = load_names(DIRECT_NAMES | {"_name_capture"}, extra=extra)
+        return ns, saved
+
+    def test_english_name_statement_saves_and_confirms_instantly(self):
+        ns, saved = self.namespace()
+        reply = ns["_name_capture"]("my name is zakaria", "en")
+        self.assertEqual(reply, "Nice to meet you, Zakaria. I will remember your name.")
+        self.assertEqual(saved[0]["category"], "identity")
+        self.assertEqual(saved[0]["key"], "name")
+        self.assertEqual(saved[0]["value"], "Zakaria")
+
+    def test_french_and_arabic_statements_work(self):
+        ns, saved = self.namespace()
+        reply = ns["_name_capture"]("Je m'appelle Zakaria !", "fr")
+        self.assertIn("Zakaria", reply)
+        self.assertIn("Enchantée", reply)
+        reply = ns["_name_capture"]("اسمي زكريا", "ar")
+        self.assertIn("زكريا", reply)
+        self.assertEqual(len(saved), 2)
+
+    def test_questions_and_junk_are_not_captured(self):
+        ns, saved = self.namespace()
+        for phrase in ["what is my name", "my name is", "my name is 12345",
+                       "tell me a joke", "my name is a b c d e f"]:
+            self.assertIsNone(ns["_name_capture"](phrase, "en"), phrase)
+        self.assertEqual(saved, [])
+
+
 class AskChatWiringTests(unittest.TestCase):
     """direct_answer preempts every model; personal questions skip the cloud."""
 
@@ -114,12 +164,15 @@ class AskChatWiringTests(unittest.TestCase):
             "kira_commands": kira_commands,
             "kira_language": SimpleNamespace(normalize_language=lambda l, d=None: l or d,
                                              ensure_reply_language=lambda a, l, m: a),
-            "kira_memory": SimpleNamespace(save_message=lambda *a, **k: None),
+            "kira_memory": SimpleNamespace(save_message=lambda *a, **k: None,
+                                           save_memory=lambda **kw: None),
             "call_ollama": Mock(),
             "detect_language": lambda text: "en",
             "_web_lookup": lambda c, l: None,
             "_synthesize_web_answer": lambda c, l, p: None,
             "_ask_chat_response": local or Mock(return_value="local answer"),
+            "refresh_shared_private_terms": lambda: None,
+            "logging": __import__("logging"),
             "_CHAT_HISTORY": [],
             "_SESSION_ID": "test",
             "_LAST_REPLY_LANGUAGE": "en",
@@ -164,6 +217,18 @@ class AskChatWiringTests(unittest.TestCase):
         self.assertEqual(answer, "Your name is Zakaria.")
         fake_ai.chat.assert_not_called()
         local.assert_called_once()
+
+    def test_name_statement_confirms_instantly_without_any_model(self):
+        fake_ai = types.SimpleNamespace(cloud_ready=Mock(return_value=True),
+                                        chat=Mock(), CLOUD_PROVIDER="gemini")
+        local = Mock(return_value="Sir, I'm JARVIS. What can I assist you with today?")
+        ns = self.namespace(local=local)
+        with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": "gemini", "KIRA_CHAT_BUDGET": ""}), \
+                patch.dict(sys.modules, kira_ai=fake_ai):
+            answer = ns["ask_chat"]("my name is zakaria", language="en")
+        self.assertEqual(answer, "Nice to meet you, Zakaria. I will remember your name.")
+        local.assert_not_called()
+        fake_ai.chat.assert_not_called()
 
     def test_personal_question_never_uses_cloud_rescue_either(self):
         fake_ai = types.SimpleNamespace(cloud_ready=Mock(return_value=True),
