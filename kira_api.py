@@ -118,6 +118,8 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._handle_plugins()
         elif path == "/api/ai":
             self._handle_ai_providers()
+        elif path == "/api/agents":
+            self._handle_agents()
         elif path == "/health":
             self._send_json({"status": "ok"})
         else:
@@ -277,6 +279,19 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._send_json(data)
         except Exception as e:
             self._send_json({"error": str(e)})
+
+    def _handle_agents(self):
+        """Real specialist/tool registry state and recent activity.
+
+        Metadata only: tool names, ok/elapsed/error codes and timestamps.
+        Queries, titles and results are never stored in the activity feed.
+        """
+        try:
+            import kira_agents
+            self._send_json({"agents": kira_agents.agents_snapshot(),
+                             "activity": kira_agents.recent_activity(30)})
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
 
     def _handle_ai_providers(self):
         """Report AI provider availability. Booleans only — never key material."""

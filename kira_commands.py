@@ -323,63 +323,44 @@ DIRECT_TOOL_ACTIONS = frozenset({
 
 
 def _direct_tool_route(action, parsed, metadata, language):
-    """Run one tool and answer with its data; speech stays in the interface.
+    """Run one specialist tool via the registry; speech stays in the interface.
 
-    The kira_voice_agent handlers for these actions speak every result
-    synchronously, which is right for the microphone loop but blocks HTTP
-    responses and double-speaks in the UI. Failures become structured error
-    payloads instead of an HTTP 500 or a stuck request. Imports are lazy so
-    optional dependencies only load for the routes that need them.
+    Execution goes through kira_agents (validated arguments, activity feed,
+    structured failures); this function only turns tool DATA into localized
+    response text. The kira_voice_agent handlers for these actions speak every
+    result synchronously, which is right for the microphone loop but blocks
+    HTTP responses and double-speaks in the UI.
     """
-    import kira_tools
+    import kira_agents
 
     def msg(key, **values):
         return message(key, language, **values) or message(key, "en", **values) or ""
 
     if action == "search_shared_knowledge":
-        query = str(parsed.get("query", "")).strip()
-
-        def lookup():
-            import kira_web  # Lazy: requests/bs4 stay optional for other routes.
-            return kira_web.search_shared_knowledge(query, limit=3)
-
-        return kira_tools.run_tool(action, lookup).to_payload(**metadata)
+        result = kira_agents.run(action, {"query": str(parsed.get("query", "")).strip(), "limit": 3})
+        return result.to_payload(**metadata)
 
     if action == "share_project_knowledge":
-        topic = str(parsed.get("topic", "")).strip()
-        content = str(parsed.get("content", "")).strip()
-
-        def share():
-            import kira_web
-            return kira_web.share_project_knowledge(topic, content)
-
-        return kira_tools.run_tool(action, share).to_payload(**metadata)
+        result = kira_agents.run(action, {"topic": str(parsed.get("topic", "")).strip(),
+                                          "content": str(parsed.get("content", "")).strip()})
+        return result.to_payload(**metadata)
 
     if action in {"add_reminder", "add_todo"}:
         title = str(parsed.get("title", "")).strip()
-        due_at = str(parsed.get("due_at", "")).strip()
         if not title:
             return {"action": action, "success": False, "response": msg("task_title_missing"),
                     "error": msg("task_title_missing"), "error_code": "task_title_missing", **metadata}
-
-        def add():
-            import kira_tasks
-            return kira_tasks.add_task(title=title,
-                                       task_type="reminder" if action == "add_reminder" else "todo",
-                                       due_at=due_at)
-
-        result = kira_tools.run_tool(action, add)
+        args = {"title": title}
+        if action == "add_reminder":
+            args["due_at"] = str(parsed.get("due_at", "")).strip()
+        result = kira_agents.run(action, args)
         if result.ok:
             result.response = msg("reminder_added" if action == "add_reminder" else "todo_added", title=title)
             result.extra["task_id"] = result.data
         return result.to_payload(**metadata)
 
     if action == "list_tasks":
-        def pending():
-            import kira_tasks
-            return kira_tasks.list_tasks(completed=False, limit=10)
-
-        result = kira_tools.run_tool(action, pending)
+        result = kira_agents.run(action, {})
         if result.ok:
             tasks = list(result.data or [])
             if not tasks:
@@ -395,11 +376,7 @@ def _direct_tool_route(action, parsed, metadata, language):
         return result.to_payload(**metadata)
 
     if action == "clear_completed_tasks":
-        def clear():
-            import kira_tasks
-            return kira_tasks.clear_completed()
-
-        result = kira_tools.run_tool(action, clear)
+        result = kira_agents.run(action, {})
         if result.ok:
             count = int(result.data or 0)
             if count <= 0:

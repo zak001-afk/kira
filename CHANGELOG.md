@@ -1,5 +1,25 @@
 # KIRA Changelog
 
+## Unreleased — Fondation multi-agents : registre d'outils et activité réelle
+
+- **`kira_agents.py`** : premier étage du contrôleur. Trois spécialistes —
+  `research` (base de connaissances partagée), `memory` (mémoire LOCALE
+  uniquement, nouveau `recall_memory`), `windows` (tâches/rappels). Chaque
+  outil est enregistré avec un schéma d'arguments validé AVANT exécution
+  (outil inconnu / argument manquant ou mal typé = échec structuré, jamais de
+  traceback) et un drapeau `consequential` (contrat pour l'approbation à
+  venir : `share_project_knowledge`, `clear_completed_tasks`).
+- **Flux d'activité honnête** : chaque exécution est consignée en métadonnées
+  seulement (agent, outil, ok, `elapsed_ms`, code d'erreur, horodatage) —
+  jamais les requêtes, titres ou résultats. `GET /api/agents` expose l'état
+  réel du registre et l'activité récente pour brancher plus tard le panneau
+  « Agents » de l'UI MED sur du vrai, sans toucher aux fichiers `ui/`.
+- **Routes commandes rebranchées sur le registre** : `_direct_tool_route`
+  exécute via `kira_agents.run(...)` ; les 25 tests de routes existants
+  passent inchangés (charges utiles identiques).
+- **Tests** : `tests/test_agents.py` (14 tests). Suite complète 262 tests
+  Python + 64 JS au vert.
+
 ## Unreleased — Couche IA multi-fournisseurs (Ollama local, Gemini opt-in)
 
 - **`kira_ai.py`** : couche IA indépendante du fournisseur. Ollama local par
