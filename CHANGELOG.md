@@ -1,5 +1,25 @@
 # KIRA Changelog
 
+## Unreleased — Shared-search fast path, disconnect handling, ToolResult
+
+- **Recherche partagée instantanée** : `search_shared_knowledge` répond
+  immédiatement avec le texte de recherche (`kira_web.search_shared_knowledge`,
+  limit=3) — plus d'appel à `backend.execute_action` (qui parlait en
+  synchrone et bloquait la réponse HTTP) ni de traduction Ollama sur cette
+  route. L'UI affiche le résultat puis le lit avec sa propre voix, comme
+  avant. Fix validé sur Windows, désormais committé avec tests de régression.
+- **Fermeture de fenêtre sans erreur** : `kira_api._send_json` et le proxy de
+  `kira_ui.py` absorbent `ConnectionAbortedError` / `ConnectionResetError` /
+  `BrokenPipeError` (WinError 10053/10054) quand le client ferme la fenêtre
+  pendant une requête — une ligne de log discrète, pas de traceback, jamais de
+  retry.
+- **`kira_tools.py`** : convention `ToolResult` (données + `elapsed_ms` +
+  erreurs structurées, jamais de parole côté outil) appliquée d'abord à la
+  recherche partagée ; modèle pour la migration progressive des autres outils.
+- **Tests** : `tests/test_shared_search_route.py` (13 tests) — la route rapide
+  échoue sur l'ancien code et passe sur le nouveau ; suite complète 220 tests
+  Python + 64 tests JS au vert. Aucun fichier `ui/` modifié.
+
 ## Unreleased — AI Command Center (thème or)
 
 - **Nouvelle interface web complète** (`ui/`) : KIRA adopte le look

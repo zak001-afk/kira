@@ -65,14 +65,22 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         logger.debug(format, *args)
 
     def _send_json(self, data, status=200):
-        """Send a JSON response."""
+        """Send a JSON response; a vanished client is not an error.
+
+        Closing the window mid-request aborts the socket (WinError 10053 /
+        ConnectionAbortedError). The work already ran and nobody is listening,
+        so log one quiet line and return — never retry, never re-raise.
+        """
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self._send_cors_headers()
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self._send_cors_headers()
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as error:
+            logger.debug("Client disconnected before the response was sent: %s", error)
 
     def _send_cors_headers(self):
         """Allow CORS for local development."""

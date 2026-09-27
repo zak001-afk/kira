@@ -247,6 +247,12 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         parsed = None if chat_only else backend.parse_simple_command(cleaned)
         if parsed and parsed.get("action", "none") != "none":
             action = parsed["action"]
+            if action == "search_shared_knowledge":
+                # Fast path: return the research text immediately. The backend
+                # voice handler speaks synchronously and would block this HTTP
+                # response; the UI already displays the text and speaks it on
+                # its own TTS path. No execute_action, no Ollama translation.
+                return _search_shared_knowledge(parsed, metadata)
             matches = None
             if action in {"open_file", "open_folder"} and hasattr(backend, "resolve_open_matches"):
                 try:
@@ -297,6 +303,25 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         return {"error": message("wrong_language", interface_language) or message("wrong_language", "en"), "error_code": "reply_language_unavailable", **metadata}
     except Exception as error:
         return {"error": str(error), "error_code": "command_failed", **metadata}
+
+
+def _search_shared_knowledge(parsed, metadata):
+    """Read-only shared-knowledge lookup as data, never as backend speech.
+
+    kira_web.search_shared_knowledge already formats results and covers the
+    "not configured" and "no results" cases with clear text; failures become a
+    structured error payload instead of an HTTP 500 or a stuck request.
+    """
+    import kira_tools
+
+    query = str(parsed.get("query", "")).strip()
+
+    def lookup():
+        import kira_web  # Lazy: requests/bs4 stay optional for other routes.
+        return kira_web.search_shared_knowledge(query, limit=3)
+
+    result = kira_tools.run_tool("search_shared_knowledge", lookup)
+    return result.to_payload(**metadata)
 
 
 _LEARN = re.compile(
