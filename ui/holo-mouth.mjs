@@ -1,6 +1,6 @@
 // Animation des lèvres de l'hologramme KIRA (portrait 1024×1024).
-// Mesures réelles de l'avatar actuel : bouche centrée à (516, 525),
-// coins x464→576, lèvres y512→540. Maillage visème (lips.mjs) synchronisé
+// Mesures réelles de l'avatar ROUGE actuel : bouche centrée à (498, 567),
+// coins x427→570, lèvres y549→600. Maillage visème (lips.mjs) synchronisé
 // sur l'horloge audio réelle (speech.mjs) — aucun décalage.
 import * as THREE from "three";
 import { LipMotion, REST_MOUTH } from "./lips.mjs";
@@ -8,10 +8,10 @@ import { LipMotion, REST_MOUTH } from "./lips.mjs";
 const PORTRAIT_W = 1024;
 const PORTRAIT_H = 1024;
 // Fenêtre prélevée sur le portrait (autour de la bouche, bords fixes).
-const REGION = { x: 436, y: 492, width: 160, height: 76 };
+const REGION = { x: 407, y: 530, width: 183, height: 90 };
 // Centre de la fente labiale dans le repère de la fenêtre.
-const CX = 80;  // 516 - 436
-const CY = 33;  // 525 - 492
+const CX = 91;  // 498 - 407
+const CY = 37;  // 567 - 530
 const COUNT = 32;
 const bounded = n => Math.min(1, Math.max(0, Number.isFinite(n) ? n : 0));
 
@@ -158,20 +158,20 @@ export class HoloMouth {
     this.interior = document.createElement("canvas");
     this.interior.width = 180; this.interior.height = 62;
     const interiorContext = this.interior.getContext("2d");
-    // Intérieur lumineux : dans un hologramme, la bouche ouverte rayonne.
+    // Intérieur lumineux : dans un hologramme ROUGE, la bouche ouverte rayonne.
     const gradient = interiorContext.createLinearGradient(0, 0, 0, 62);
-    gradient.addColorStop(0, "#f7df9a");
-    gradient.addColorStop(0.45, "#b98d3c");
-    gradient.addColorStop(1, "#5e411a");
+    gradient.addColorStop(0, "#ff8a76");
+    gradient.addColorStop(0.45, "#c22418");
+    gradient.addColorStop(1, "#5e0d08");
     interiorContext.fillStyle = gradient;
     interiorContext.fillRect(0, 0, 180, 62);
     const mouthGlow = interiorContext.createRadialGradient(90, 24, 4, 90, 24, 58);
-    mouthGlow.addColorStop(0, "rgba(255, 238, 186, 0.95)");
-    mouthGlow.addColorStop(1, "rgba(255, 238, 186, 0)");
+    mouthGlow.addColorStop(0, "rgba(255, 120, 100, 0.95)");
+    mouthGlow.addColorStop(1, "rgba(255, 120, 100, 0)");
     interiorContext.fillStyle = mouthGlow;
     interiorContext.fillRect(0, 0, 180, 62);
     // Lignes de balayage cohérentes avec la projection.
-    interiorContext.fillStyle = "rgba(70, 45, 10, 0.25)";
+    interiorContext.fillStyle = "rgba(60, 8, 4, 0.25)";
     for (let ly = 3; ly < 62; ly += 6) interiorContext.fillRect(0, ly, 180, 2);
     this.interiorReady = true;
 
