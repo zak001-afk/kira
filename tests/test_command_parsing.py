@@ -14,6 +14,42 @@ import kira_commands as commands
 from kira_commands import parse_tool_command
 
 
+class ChoiceHijackTests(unittest.TestCase):
+    """Regression: 'raconte-moi une blague' was answered with "Il n'y a rien
+    à choisir" because 'une' maps to choice 1. Only pure answers count."""
+
+    def test_real_sentences_are_not_choices(self):
+        for text in ["raconte-moi une blague", "tell me a joke", "donne-moi une idée",
+                     "j'ai deux questions", "ouvre le fichier rapport",
+                     "raconte une histoire", "the first thing I want is coffee"]:
+            self.assertFalse(commands.is_pure_choice(text), text)
+
+    def test_pure_answers_are_choices(self):
+        for text in ["2", "le 2", "n°2", "numero 2", "le deuxième", "une",
+                     "tous", "annule", "the second", "all", "cancel"]:
+            self.assertTrue(commands.is_pure_choice(text), text)
+
+    def test_stray_article_reaches_the_normal_pipeline(self):
+        commands.clear_pending_open()
+        backend = SimpleNamespace(
+            normalize_command=lambda text: text,
+            parse_simple_command=lambda text: {"action": "none"},
+            execute_action=Mock(),
+        )
+        result = commands.process_command(backend, "raconte-moi une blague", reply_language="fr")
+        self.assertNotIn("rien à choisir", result.get("response", ""))
+
+    def test_bare_number_without_pending_still_explains(self):
+        commands.clear_pending_open()
+        backend = SimpleNamespace(
+            normalize_command=lambda text: text,
+            parse_simple_command=lambda text: {"action": "none"},
+            execute_action=Mock(),
+        )
+        result = commands.process_command(backend, "2", reply_language="fr")
+        self.assertIn("rien à choisir", result.get("response", ""))
+
+
 class GrammarTests(unittest.TestCase):
     def test_todo_phrasings(self):
         for text in ["add a todo test kira", "add todo test kira", "add task test kira",

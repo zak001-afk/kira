@@ -191,6 +191,32 @@ def match_open_choice(text, count):
     return None
 
 
+def is_pure_choice(text, count=10):
+    """True only when the message is NOTHING BUT a choice answer ("2",
+    "le 2", "la deuxième", "tous", "annule").
+
+    Regression source: live test on 2026-09-27 where "raconte-moi une blague"
+    was hijacked as a stray pick — 'une' maps to 1 — and answered with
+    "Il n'y a rien à choisir". A French article inside a real sentence must
+    never be mistaken for a pick."""
+    tokens = [token.strip(".,!?;:»«()\"")
+              for token in languages.fold(text).replace("°", "").replace("_", " ").split()]
+    tokens = [token for token in tokens if token]
+    if not tokens:
+        return False
+    for token in tokens:
+        if token in _CANCEL_WORDS or token in _ALL_WORDS or token in _CHOICE_WORDS:
+            continue
+        if token.isdigit() or token in _CHOICE_PREFIXES:
+            continue
+        for prefix in _CHOICE_PREFIXES:
+            if token.startswith(prefix) and len(token) > len(prefix) and token[len(prefix):][:1].isdigit():
+                break
+        else:
+            return False
+    return match_open_choice(text, count) is not None
+
+
 def _shorten_path(path):
     home = str(Path.home()) if Path.home().exists() else ""
     return path.replace(home, "~", 1) if home and path.startswith(home) else path
@@ -243,7 +269,9 @@ def process_command(backend, text, reply_language="auto", previous_language=None
 
     pending = pending_open()
     if pending and not chat_only and backend is not None:
-        pick = match_open_choice(text, len(pending["paths"]))
+        # Only a pure answer counts ("le 2", "tous"...): a real sentence that
+        # merely contains 'une'/'deux' is a new request, not a pick.
+        pick = match_open_choice(text, len(pending["paths"])) if is_pure_choice(text, len(pending["paths"])) else None
         if pick == "cancel":
             clear_pending_open()
             return {"action": "none", "response": message("open_cancelled", choice.language) or message("open_cancelled", "en"), **metadata}
@@ -264,8 +292,7 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         clear_pending_open()
 
     if pending is None and not chat_only:
-        stray = match_open_choice(text, 10)
-        if stray is not None and len(text.split()) <= 3 and kira_open.parse_open_command(text) is None:
+        if is_pure_choice(text, 10) and len(text.split()) <= 3 and kira_open.parse_open_command(text) is None:
             return {"action": "none",
                     "response": message("no_pending_choice", choice.language) or message("no_pending_choice", "en"),
                     **metadata}

@@ -33,7 +33,7 @@ DIRECT_NAMES = {"direct_answer", "_safe_math", "_is_personal",
                 "_FR_DAYS", "_FR_MONTHS", "_EN_DAYS", "_EN_MONTHS",
                 "_AR_DAYS", "_AR_MONTHS",
                 "_TIME_QUESTIONS", "_DATE_QUESTIONS", "_MATH_LEADINS", "_MATH_WORDS",
-                "_name_capture", "_NAME_STATEMENTS", "_diagnostic_answer"}
+                "_name_capture", "_NAME_STATEMENTS", "_diagnostic_answer", "_cloud_test_answer"}
 
 
 class DirectAnswerTests(unittest.TestCase):
@@ -222,6 +222,63 @@ class DiagnosticTests(unittest.TestCase):
         ns = self.namespace(None)
         self.assertIsNone(ns["_diagnostic_answer"]("tell me a joke", "en"))
         self.assertIsNone(ns["_diagnostic_answer"]("status", "en"))
+
+
+class CloudTestCommandTests(unittest.TestCase):
+    """'cloud test' proves the Gemini round trip — or names the failure."""
+
+    def namespace(self):
+        extra = {"logging": __import__("logging")}
+        return load_names(DIRECT_NAMES | {"_cloud_test_answer", "_diagnostic_answer",
+                                          "chat_provider", "chat_budget",
+                                          "CHAT_ANSWER_BUDGET"}, extra=extra)
+
+    def test_successful_round_trip_reports_latency(self):
+        reply = types.SimpleNamespace(ok=True, model="gemini-2.5-flash", elapsed_ms=850,
+                                      error="", error_code="")
+        fake_ai = types.SimpleNamespace(ensure_env_loaded=lambda path=None: None,
+                                        cloud_ready=lambda: True,
+                                        chat=Mock(return_value=reply),
+                                        CLOUD_PROVIDER="gemini")
+        ns = self.namespace()
+        with patch.dict(sys.modules, kira_ai=fake_ai):
+            answer = ns["_cloud_test_answer"]("cloud test", "en")
+        self.assertIn("850 ms", answer)
+        self.assertIn("operational", answer)
+
+    def test_failed_call_names_the_error_code(self):
+        reply = types.SimpleNamespace(ok=False, model="", elapsed_ms=0,
+                                      error="HTTP 429: quota exceeded", error_code="http_429")
+        fake_ai = types.SimpleNamespace(ensure_env_loaded=lambda path=None: None,
+                                        cloud_ready=lambda: True,
+                                        chat=Mock(return_value=reply),
+                                        CLOUD_PROVIDER="gemini")
+        ns = self.namespace()
+        with patch.dict(sys.modules, kira_ai=fake_ai):
+            answer = ns["_cloud_test_answer"]("cloud test", "en")
+        self.assertIn("FAILED", answer)
+        self.assertIn("http_429", answer)
+        self.assertIn("quota", answer)
+
+    def test_not_ready_falls_back_to_the_status_report(self):
+        fake_ai = types.SimpleNamespace(ensure_env_loaded=lambda path=None: None,
+                                        cloud_ready=lambda: False,
+                                        cloud_enabled=lambda: False,
+                                        _gemini_key=lambda: "",
+                                        gemini_model=lambda: "gemini-2.5-flash",
+                                        chat=Mock(),
+                                        CLOUD_PROVIDER="gemini")
+        ns = self.namespace()
+        with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": "", "KIRA_CHAT_BUDGET": ""}), \
+                patch.dict(sys.modules, kira_ai=fake_ai):
+            answer = ns["_cloud_test_answer"]("cloud test", "en")
+        self.assertIn("KIRA_CLOUD_AI", answer)
+        fake_ai.chat.assert_not_called()
+
+    def test_other_messages_are_ignored(self):
+        ns = self.namespace()
+        self.assertIsNone(ns["_cloud_test_answer"]("tell me a joke", "en"))
+        self.assertIsNone(ns["_cloud_test_answer"]("test", "en"))
 
 
 class AskChatWiringTests(unittest.TestCase):

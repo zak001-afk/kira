@@ -2347,6 +2347,45 @@ def _diagnostic_answer(command, language):
     return " ".join(lines)
 
 
+def _cloud_test_answer(command, language):
+    """'cloud test' performs ONE real Gemini round trip and reports the
+    latency — or the exact (key-scrubbed) error. A present key does not
+    guarantee working calls: quota, network and region failures are silent
+    otherwise."""
+    import re
+    text = str(command or "").strip().rstrip(".!?؟").strip().lower()
+    if not re.fullmatch(r"(?:cloud\s+test|test\s+(?:du\s+)?cloud|teste\s+le\s+cloud"
+                        r"|اختبار\s+السحابة)", text):
+        return None
+    reply = None
+    detail = ""
+    try:
+        import kira_ai
+        kira_ai.ensure_env_loaded()
+        if not kira_ai.cloud_ready():
+            return _diagnostic_answer("cloud status", language)
+        reply = kira_ai.chat([{"role": "user", "content": "Reply with exactly one word: pong"}],
+                             provider=kira_ai.CLOUD_PROVIDER, timeout=15)
+    except Exception as exc:
+        detail = str(exc)[:200]
+    if reply is not None and getattr(reply, "ok", False):
+        model = getattr(reply, "model", "") or "gemini"
+        ms = getattr(reply, "elapsed_ms", 0)
+        if language == "fr":
+            return f"Gemini répond correctement ({model}, {ms} ms). Le chat cloud est opérationnel."
+        return f"Gemini answered correctly ({model}, {ms} ms). Cloud chat is operational."
+    if reply is not None:
+        code = getattr(reply, "error_code", "") or "error"
+        detail = (getattr(reply, "error", "") or "")[:200]
+    else:
+        code = "exception"
+    if language == "fr":
+        return (f"L'appel Gemini a ÉCHOUÉ [{code}] : {detail} — vérifiez la clé, le quota "
+                "(aistudio.google.com), la connexion réseau, puis réessayez « cloud test ».")
+    return (f"The Gemini call FAILED [{code}]: {detail} — check the key, the quota "
+            "(aistudio.google.com) and the network, then try 'cloud test' again.")
+
+
 def chat_provider():
     """KIRA_CHAT_PROVIDER: 'auto' (local first, cloud rescue — default),
     'gemini'/'cloud' (cloud first, local pipeline as fallback),
@@ -2393,7 +2432,7 @@ def ask_chat(command: str, language=None):
         language = detect_language(command)
     _LAST_REPLY_LANGUAGE = language
     instant = (direct_answer(command, language) or _name_capture(command, language)
-               or _diagnostic_answer(command, language))
+               or _diagnostic_answer(command, language) or _cloud_test_answer(command, language))
     if instant:
         _CHAT_HISTORY.append({"role": "user", "content": command})
         _CHAT_HISTORY.append({"role": "assistant", "content": instant})

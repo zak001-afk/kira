@@ -1,5 +1,25 @@
 # KIRA Changelog
 
+## Unreleased — « une blague » n'est plus un choix de fichier + commande « cloud test »
+
+- **Correctif de routage (vécu en direct)** : « raconte-moi une blague »
+  recevait « Il n'y a rien à choisir pour le moment… » — le mot « une »
+  (= choix n° 1) suffisait à détourner toute phrase courte vers le
+  gestionnaire de choix de fichiers. Désormais, seule une réponse PUREMENT
+  composée d'un choix (« 2 », « le 2 », « la deuxième », « tous »,
+  « annule ») est traitée comme un choix ; une vraie phrase part au chat,
+  même pendant une question de fichier en attente.
+- **Nouvelle commande « cloud test »** (ou « test du cloud », « اختبار
+  السحابة ») : effectue UN vrai aller-retour Gemini et affiche la latence —
+  ou l'erreur exacte (clé masquée) avec son code : quota, réseau, clé
+  invalide… « cloud status » vérifie la configuration ; « cloud test »
+  prouve que l'appel fonctionne.
+- **Tests** : +4 dans `tests/test_command_parsing.py` (phrases vs choix
+  purs, régression « raconte-moi une blague », « 2 » seul garde son
+  explication) et +4 dans `tests/test_direct_answers.py` (latence, code
+  d'erreur http_429, repli vers le statut, messages ignorés). Suite complète
+  329 tests Python + 64 JS au vert. Aucun fichier `ui/` modifié.
+
 ## Unreleased — Chargement .env fiabilisé + commande « cloud status »
 
 - **`.env` chargé sans dépendance** : `kira_ai.ensure_env_loaded()` lit le

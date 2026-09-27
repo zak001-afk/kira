@@ -151,7 +151,7 @@ class ChatProviderTests(unittest.TestCase):
                          "_FR_DAYS", "_FR_MONTHS", "_EN_DAYS", "_EN_MONTHS",
                          "_AR_DAYS", "_AR_MONTHS", "_TIME_QUESTIONS",
                          "_DATE_QUESTIONS", "_MATH_LEADINS", "_MATH_WORDS",
-                         "_name_capture", "_NAME_STATEMENTS", "_diagnostic_answer"}, extra=ns_extra)
+                         "_name_capture", "_NAME_STATEMENTS", "_diagnostic_answer", "_cloud_test_answer"}, extra=ns_extra)
         # _cloud_chat_answer imports kira_ai lazily; patch happens per test.
         return ns
 
