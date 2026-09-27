@@ -77,7 +77,7 @@ function appRig(options = {}) {
     },
   });
   context.window = context;
-  const source = readFileSync(new URL("../ui/app.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "");
+  const source = readFileSync(new URL("../ui/app.js", import.meta.url), "utf8").replace(/^import .*;\r?\n/gm, ""); // \r?: Windows checkouts are CRLF
   vm.runInContext(source + `\nglobalThis.probe = {
     speech, speak, stopSpeaking, sendCommand, setActivity, animate,
     core, neuralCore, coreGlow, reactor, voiceUniforms, energyMaterial,

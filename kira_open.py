@@ -1431,7 +1431,8 @@ def resolve_parent_dir(parent, base_home=None):
             folder = folder.replace("~", str(base_home))
         folder = os.path.expanduser(folder)
         if os.path.isdir(folder):
-            return folder
+            # normpath: '~' substitution leaves a '/' inside Windows paths.
+            return os.path.normpath(folder)
     candidate = Path(raw).expanduser()
     if base_home and not candidate.is_absolute():
         candidate = Path(base_home) / candidate

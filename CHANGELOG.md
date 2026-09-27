@@ -1,5 +1,18 @@
 # KIRA Changelog
 
+## Unreleased — Derniers accrocs Windows : séparateur d'alias + tests JS en CRLF
+
+- **`resolve_parent_dir("documents")` sous Windows** : la branche alias
+  remplaçait `~` par le dossier personnel en laissant un « / » au milieu du
+  chemin (`C:\\...\\tmp/Documents`). Normalisé via `os.path.normpath` —
+  exposé par le tout premier passage complet de la suite sous Windows.
+- **12 tests JS du réacteur** : le retrait des lignes `import` utilisait une
+  regex terminée par `\\n` ; les checkouts Windows sont en CRLF (`\\r\\n`),
+  les imports restaient et `vm.runInContext` levait une SyntaxError. Regex
+  désormais tolérante (`\\r?\\n`). Fichier de test uniquement — aucun
+  fichier `ui/` modifié.
+- **Attendu sous Windows après ce correctif : 337/337 Python et 64/64 JS.**
+
 ## Unreleased — Les 5 échecs Windows de test_open corrigés
 
 - **Bug produit réel** : `resolve_parent_dir("C:\\Users\\...\\travail")`
