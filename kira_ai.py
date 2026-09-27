@@ -21,6 +21,7 @@ from dataclasses import dataclass
 import json
 import logging
 import os
+import re
 import time
 
 import requests
@@ -95,6 +96,57 @@ def gemini_model() -> str:
     return os.environ.get("KIRA_GEMINI_MODEL", "").strip() or "gemini-2.5-flash"
 
 
+# Filled when the configured model 404s and a working one is discovered.
+_GEMINI_RESOLVED = {"model": ""}
+
+
+def active_gemini_model() -> str:
+    """The model actually used: an auto-discovered fallback wins over a
+    configured name that the API rejected."""
+    return _GEMINI_RESOLVED["model"] or gemini_model()
+
+
+def _discover_gemini_model(key: str, timeout: int = 10) -> str:
+    """Ask the API which models this key can use; prefer the newest flash.
+
+    Regression source: live test 2026-09-27 where 'gemini-2.5-flash'
+    returned HTTP 404 ('no longer available to new users') and cloud chat
+    silently died. Model names rot; the list endpoint does not."""
+    try:
+        response = requests.get(
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            headers={"x-goog-api-key": key},  # Header, never the URL.
+            params={"pageSize": 200},
+            timeout=timeout,
+        )
+        if response.status_code != 200:
+            return ""
+        models = (response.json() or {}).get("models") or []
+    except Exception:
+        return ""
+    names = []
+    for entry in models:
+        if "generateContent" not in (entry.get("supportedGenerationMethods") or []):
+            continue
+        name = str(entry.get("name", ""))
+        names.append(name[7:] if name.startswith("models/") else name)
+    if not names:
+        return ""
+    if "gemini-flash-latest" in names:
+        return "gemini-flash-latest"
+    versioned = []
+    for name in names:
+        match = re.fullmatch(r"gemini-(\d+(?:\.\d+)?)-flash", name)
+        if match:
+            versioned.append((float(match.group(1)), name))
+    if versioned:
+        return max(versioned)[1]
+    flashes = sorted((n for n in names if "flash" in n and "lite" not in n), reverse=True)
+    if flashes:
+        return flashes[0]
+    return names[0]
+
+
 def ollama_url() -> str:
     return os.environ.get("KIRA_OLLAMA_URL", "").strip() or "http://127.0.0.1:11434"
 
@@ -122,7 +174,7 @@ def availability() -> dict:
         "gemini": {
             "cloud_enabled": cloud_enabled(),
             "key_present": bool(_gemini_key()),
-            "model": gemini_model(),
+            "model": active_gemini_model(),
         },
     }
 
@@ -170,7 +222,7 @@ def chat(prompt_or_messages, provider: str = "", model: str = "",
             if not key:
                 return fail("missing_api_key",
                             "GEMINI_API_KEY is not set in the backend environment (.env).")
-            return _chat_gemini(messages, model or gemini_model(), key, timeout, started)
+            return _chat_gemini(messages, model or active_gemini_model(), key, timeout, started)
         return _chat_ollama(messages, model or ollama_model(), timeout, started, options or {})
     except requests.Timeout:
         return fail("timeout", f"The {provider} request exceeded {timeout} seconds.")
@@ -198,7 +250,7 @@ def _chat_ollama(messages, model, timeout, started, options) -> AIReply:
     return AIReply(ok=True, text=text, provider=LOCAL_PROVIDER, model=model, elapsed_ms=elapsed)
 
 
-def _chat_gemini(messages, model, key, timeout, started) -> AIReply:
+def _chat_gemini(messages, model, key, timeout, started, allow_discovery=True) -> AIReply:
     system_parts = [m["content"] for m in messages if m["role"] == "system" and m["content"].strip()]
     contents = [{"role": "model" if m["role"] == "assistant" else "user",
                  "parts": [{"text": m["content"]}]}
@@ -213,6 +265,15 @@ def _chat_gemini(messages, model, key, timeout, started) -> AIReply:
         timeout=timeout,
     )
     elapsed = int((time.perf_counter() - started) * 1000)
+    if response.status_code == 404 and allow_discovery:
+        # The configured model name rotted ('no longer available...').
+        # Ask the API what this key CAN use, retry once, remember the answer.
+        fallback = _discover_gemini_model(key, timeout)
+        if fallback and fallback != model:
+            _GEMINI_RESOLVED["model"] = fallback
+            logger.warning("Gemini model '%s' unavailable (HTTP 404); switching to '%s'.",
+                           model, fallback)
+            return _chat_gemini(messages, fallback, key, timeout, started, allow_discovery=False)
     if response.status_code != 200:
         detail = _scrub(str(response.text)[:300])
         return AIReply(ok=False, provider=CLOUD_PROVIDER, model=model, elapsed_ms=elapsed,

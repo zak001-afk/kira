@@ -2316,7 +2316,8 @@ def _diagnostic_answer(command, language):
         kira_ai.ensure_env_loaded()
         enabled = bool(kira_ai.cloud_enabled())
         key_present = bool(kira_ai._gemini_key())
-        model = kira_ai.gemini_model()
+        model = (kira_ai.active_gemini_model() if hasattr(kira_ai, "active_gemini_model")
+                 else kira_ai.gemini_model())
     except Exception:
         pass
     provider = chat_provider()

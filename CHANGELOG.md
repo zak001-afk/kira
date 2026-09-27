@@ -1,5 +1,24 @@
 # KIRA Changelog
 
+## Unreleased — Le modèle Gemini se répare tout seul (fini les 404)
+
+- **Cause trouvée par « cloud test » en direct** : Google a retiré
+  `gemini-2.5-flash` (« no longer available to new users », HTTP 404) — le
+  chat cloud mourait en silence. Les noms de modèles pourrissent avec le
+  temps ; le code ne doit plus jamais en dépendre.
+- **Auto-découverte** : sur un 404, KIRA interroge l'API pour savoir quels
+  modèles VOTRE clé peut utiliser, choisit le meilleur flash (alias
+  `gemini-flash-latest` s'il existe, sinon la version la plus récente),
+  réessaie une fois et mémorise le choix pour les appels suivants.
+  `cloud status` et `cloud test` affichent le modèle réellement actif.
+- **`KIRA_GEMINI_MODEL`** dans `.env` reste prioritaire tant que l'API
+  l'accepte ; documentation mise à jour dans `.env.example`.
+- **Tests** : `tests/test_gemini_discovery.py` (7 tests : préférence alias,
+  version la plus haute, échec réseau inoffensif, 404→découverte→retry,
+  mémorisation, 404 d'origine conservé si la découverte échoue, jamais de
+  découverte sur les autres erreurs). Suite complète 336 tests Python +
+  64 JS au vert. Aucun fichier `ui/` modifié.
+
 ## Unreleased — « une blague » n'est plus un choix de fichier + commande « cloud test »
 
 - **Correctif de routage (vécu en direct)** : « raconte-moi une blague »
