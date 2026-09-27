@@ -1,5 +1,23 @@
 # KIRA Changelog
 
+## Unreleased — Couche IA multi-fournisseurs (Ollama local, Gemini opt-in)
+
+- **`kira_ai.py`** : couche IA indépendante du fournisseur. Ollama local par
+  défaut (rien ne quitte la machine) ; Gemini disponible uniquement en
+  double opt-in : `KIRA_CLOUD_AI=1` **et** `GEMINI_API_KEY` dans le `.env`
+  backend. Sans opt-in, le refus est structuré et **aucune requête réseau**
+  n'est émise. La clé voyage en en-tête HTTP (jamais dans l'URL), n'est
+  jamais journalisée et est effacée des messages d'erreur.
+- **`GET /api/ai`** : disponibilité des fournisseurs en booléens uniquement
+  (jamais la clé) pour un futur affichage dans l'UI.
+- Réponses en données (`AIReply`) : erreurs structurées (timeout, fournisseur
+  injoignable, réponse bloquée/vide), `elapsed_ms` systématique. Rien n'est
+  encore rebranché sur le chat existant — intégration progressive à venir.
+- `.env.example` documente `GEMINI_API_KEY`, `KIRA_CLOUD_AI`,
+  `KIRA_GEMINI_MODEL`, `KIRA_OLLAMA_URL`, `KIRA_OLLAMA_MODEL`.
+- **Tests** : `tests/test_ai_provider.py` (16 tests hors-ligne, réseau mocké).
+  Suite complète 248 tests Python + 64 JS au vert. Aucun fichier `ui/` modifié.
+
 ## Unreleased — Tâches et partage sans blocage vocal
 
 - **Tâches et partage instantanés** : `add_reminder`, `add_todo`, `list_tasks`,

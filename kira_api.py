@@ -116,6 +116,8 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._handle_system()
         elif path == "/api/plugins":
             self._handle_plugins()
+        elif path == "/api/ai":
+            self._handle_ai_providers()
         elif path == "/health":
             self._send_json({"status": "ok"})
         else:
@@ -275,6 +277,14 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._send_json(data)
         except Exception as e:
             self._send_json({"error": str(e)})
+
+    def _handle_ai_providers(self):
+        """Report AI provider availability. Booleans only — never key material."""
+        try:
+            import kira_ai
+            self._send_json(kira_ai.availability())
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
 
     def _handle_plugins(self):
         """Return loaded plugins."""
