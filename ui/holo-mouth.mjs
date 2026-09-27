@@ -61,22 +61,27 @@ export function deformMouth(pose, output = new Float32Array(MESH.vertices.length
       const x = MESH.vertices[index], y = MESH.vertices[index + 1];
       const angle = i / COUNT * Math.PI * 2;
       const s = Math.sin(angle), c = Math.cos(angle);
-      const influence = [1, 0.96, 0.25, 0][ring];
-      output[index] = CX + (x - CX) * (1 + (wide * 0.12 - round * 0.34 - press * 0.012) * influence);
+      const influence = [1, 0.96, 0.5, 0][ring];
+      output[index] = CX + (x - CX) * (1 + (wide * 0.2 - round * 0.42 - press * 0.012) * influence);
       let dy = 0;
       if (ring <= 1) {
-        dy = open * (s >= 0 ? 2 + 19 * s : (ring === 0 ? 7 : 4.2) * s + 2 * c * c);
-        dy += round * s * 1.4;
+        // Ouverture ample et humaine : lèvre inférieure qui descend, supérieure
+        // qui se lève, commissures entraînées — toute la bouche articule.
+        dy = open * (s >= 0
+          ? (ring === 0 ? 3 + 24 * s : 4 + 30 * s)
+          : (ring === 0 ? 11 : 6.5) * s + (ring === 0 ? 3 : 2.4) * c * c);
+        dy += round * s * 2.2;
         if (ring === 0) {
           const seam = CY - Math.cos(2 * angle) * 1.6;
           dy += press * (seam + s * 0.1 - y);
-          if (s > 0) dy -= bite * Math.min(4.6, open * 18) * s;
+          if (s > 0) dy -= bite * Math.min(5.4, open * 22) * s;
         } else {
           dy -= press * s * 1.1;
-          if (s > 0) dy -= bite * s * 1.4;
+          if (s > 0) dy -= bite * s * 1.6;
         }
       } else if (ring === 2) {
-        dy = open * (s > 0 ? 6 : 1) * s;
+        // Menton et joues suivent la mâchoire (mouvement complet du bas du visage).
+        dy = open * (s > 0 ? 11 * s : 2.4 * s);
       }
       output[index + 1] = y + dy;
     }
@@ -153,14 +158,21 @@ export class HoloMouth {
     this.interior = document.createElement("canvas");
     this.interior.width = 180; this.interior.height = 62;
     const interiorContext = this.interior.getContext("2d");
+    // Intérieur lumineux : dans un hologramme, la bouche ouverte rayonne.
     const gradient = interiorContext.createLinearGradient(0, 0, 0, 62);
-    gradient.addColorStop(0, "#2a1c08");
-    gradient.addColorStop(0.5, "#120b03");
-    gradient.addColorStop(1, "#33220a");
+    gradient.addColorStop(0, "#f7df9a");
+    gradient.addColorStop(0.45, "#b98d3c");
+    gradient.addColorStop(1, "#5e411a");
     interiorContext.fillStyle = gradient;
     interiorContext.fillRect(0, 0, 180, 62);
-    interiorContext.fillStyle = "rgba(227, 211, 166, 0.25)";
-    interiorContext.fillRect(0, 28, 180, 4); // reflet dent supérieure discret
+    const mouthGlow = interiorContext.createRadialGradient(90, 24, 4, 90, 24, 58);
+    mouthGlow.addColorStop(0, "rgba(255, 238, 186, 0.95)");
+    mouthGlow.addColorStop(1, "rgba(255, 238, 186, 0)");
+    interiorContext.fillStyle = mouthGlow;
+    interiorContext.fillRect(0, 0, 180, 62);
+    // Lignes de balayage cohérentes avec la projection.
+    interiorContext.fillStyle = "rgba(70, 45, 10, 0.25)";
+    for (let ly = 3; ly < 62; ly += 6) interiorContext.fillRect(0, ly, 180, 2);
     this.interiorReady = true;
 
     this.canvas2texture = null;
@@ -175,7 +187,10 @@ export class HoloMouth {
     this.innerSource[COUNT * 2] = 90; this.innerSource[COUNT * 2 + 1] = 30;
 
     // Plan Three.js superposé exactement sur la bouche de l'hologramme.
-    const geometry = new three.PlaneGeometry(W / PORTRAIT_W * plane.scale.x, H / PORTRAIT_H * plane.scale.y);
+    // Taille RÉELLE du plan avatar (geometry.parameters) — mesh.scale reste à 1.
+    const planeW = (plane.geometry && plane.geometry.parameters && plane.geometry.parameters.width) || 6.4;
+    const planeH = (plane.geometry && plane.geometry.parameters && plane.geometry.parameters.height) || 6.4;
+    const geometry = new three.PlaneGeometry(W / PORTRAIT_W * planeW, H / PORTRAIT_H * planeH);
     this.texture = new three.CanvasTexture(this.canvas);
     const material = new three.MeshBasicMaterial({
       map: this.texture,
@@ -189,8 +204,8 @@ export class HoloMouth {
     const centerX = (REGION.x + CX) / PORTRAIT_W - 0.5;
     const centerY = 0.5 - (REGION.y + CY) / PORTRAIT_H;
     this.overlay.position.set(
-      plane.position.x + centerX * plane.scale.x,
-      plane.position.y + centerY * plane.scale.y,
+      plane.position.x + centerX * planeW,
+      plane.position.y + centerY * planeH,
       plane.position.z + 0.01
     );
     scene.add(this.overlay);

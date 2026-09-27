@@ -3,8 +3,8 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { HoloMouth } from "./holo-mouth.mjs?v=command-center-17";
-import { lipDemoPose } from "./lips.mjs?v=command-center-17";
+import { HoloMouth } from "./holo-mouth.mjs?v=command-center-18";
+import { lipDemoPose } from "./lips.mjs?v=command-center-18";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
@@ -187,6 +187,7 @@ energySphere.position.z = -3.2;
    ========================================================= */
 
 let holoMouth = null;
+let holoUniforms = null;
 const avatarGroup = new THREE.Group();
 scene.add(avatarGroup);
 
@@ -194,22 +195,57 @@ scene.add(avatarGroup);
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
   const avatarTexture = avatarLoader.load("assets/avatar_gold.png", (texture) => {
-    if (texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    // Valeurs sRGB brutes : le shader holographique gère lui-même le rendu.
     if (texture) texture.needsUpdate = true;
     // Lèvres animées : maillage visème sur les mesures réelles de la bouche,
     // synchronisé sur l'horloge audio réelle (aucun décalage).
     if (texture && texture.image && typeof HoloMouth === "function") {
       try { holoMouth = new HoloMouth(texture.image, THREE, scene, avatarPlane); }
-      catch { holoMouth = null; }
+      catch (error) { console.error("HoloMouth :", error); holoMouth = null; }
     }
   });
-  const avatarMaterial = new THREE.MeshBasicMaterial({
-    map: avatarTexture,
+  // Vrai rendu holographique : fusion additive (les zones sombres deviennent
+  // transparentes), lignes de balayage qui montent, scintillement de projecteur,
+  // légères instabilités de signal — une projection, pas une photo.
+  holoUniforms = { map: { value: avatarTexture }, time: { value: 0 } };
+  const avatarMaterial = new THREE.ShaderMaterial({
+    uniforms: holoUniforms,
     transparent: true,
-    opacity: 1.0,
     depthWrite: false,
     depthTest: false,
-    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+    vertexShader: `
+      varying vec2 vUv;
+      uniform float time;
+      void main() {
+        vUv = uv;
+        vec3 p = position;
+        float band = floor(uv.y * 26.0 - time * 2.2);
+        float rnd = fract(sin(band * 78.233) * 43758.5453);
+        p.x += (rnd - 0.5) * 0.012 * step(0.965, rnd);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: `
+      uniform sampler2D map;
+      uniform float time;
+      varying vec2 vUv;
+      void main() {
+        vec2 uv = vUv;
+        float slot = floor(time * 6.0);
+        float glitch = step(0.94, fract(sin(slot * 91.3458) * 47453.5453));
+        uv.x += glitch * (fract(sin(slot * 12.9898) * 78.233) - 0.5) * 0.018
+              * step(0.4, fract(uv.y * 2.0 - time * 3.0));
+        vec4 tex = texture2D(map, uv);
+        float lum = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
+        float scan = 0.84 + 0.16 * sin(uv.y * 460.0 - time * 7.0);
+        float bandPos = abs(fract(uv.y * 0.5 - time * 0.06) - 0.5);
+        float sweep = 1.0 - 0.22 * smoothstep(0.18, 0.02, bandPos);
+        float flicker = 0.93 + 0.07 * sin(time * 23.0) + 0.05 * sin(time * 57.0 + 1.7);
+        float fade = smoothstep(0.02, 0.1, uv.y) * smoothstep(1.0, 0.94, uv.y);
+        vec3 gold = vec3(1.0, 0.84, 0.52);
+        vec3 col = tex.rgb * (0.6 + 0.8 * lum) * scan * sweep * flicker + gold * lum * 0.16;
+        gl_FragColor = vec4(col * fade, 1.0);
+      }`,
   });
   const avatarPlane = new THREE.Mesh(
     new THREE.PlaneGeometry(6.4, 6.4),
@@ -1408,7 +1444,9 @@ function animate() {
   const light = level * (disabled ? 0.12 : 1);
   const motionTime = disabled ? 0 : time;
   const step = disabled ? 0 : dt;
-// Lèvres de l'hologramme : même horloge audio que le son (zéro décalage).
+  // Projection holographique : horloge d'animation (scanlines, scintillement).
+  if (holoUniforms) holoUniforms.time.value = now * 0.001;
+  // Lèvres de l'hologramme : même horloge audio que le son (zéro décalage).
   if (holoMouth) {
     holoMouth.update(
       { mouth: voice.mouth, active: voice.active, level },
