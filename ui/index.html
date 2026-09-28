@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr">
   <head>
-  <meta name="kira-ui-build" content="med-command-center-merged-01">
+  <meta name="kira-ui-build" content="med-natural-avatar-01">
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KIRA // AI Command Center</title>
@@ -16,8 +16,8 @@
     </script>
   </head>
   <body>
-    <!-- FOND 3D : avatar + anneaux holographiques dorés -->
-    <div id="scene-container"></div>
+    <!-- FOND 3D : portrait naturel + décor holographique vert -->
+    <div id="scene-container" role="img" aria-label="KIRA, avatar au visage naturel dans un décor holographique vert"></div>
 
     <!-- HUD -->
     <main id="hud">
@@ -318,10 +318,10 @@
             <div class="param-block">
               <h3>Luminosité de l'avatar</h3>
               <div class="brightness-row">
-                <input type="range" id="avatar-brightness" min="10" max="100" step="5" value="45" aria-label="Luminosité du visage de KIRA">
-                <span id="avatar-brightness-value">45 %</span>
+                <input type="range" id="avatar-brightness" min="10" max="100" step="5" value="90" aria-label="Luminosité du visage de KIRA">
+                <span id="avatar-brightness-value">90 %</span>
               </div>
-              <p class="view-note">Réduit l'éclat du visage de KIRA (100 % = image d'origine).</p>
+              <p class="view-note">Visage aux couleurs naturelles, indépendant du décor vert (100 % = image d'origine).</p>
             </div>
             <div class="param-block diagnostics">
               <h3>Diagnostics</h3>
@@ -414,6 +414,6 @@
       <div id="toast" class="toast"></div>
     </main>
 
-    <script type="module" src="./app.js?v=command-center-46"></script>
+    <script type="module" src="./app.js?v=natural-face-1"></script>
   </body>
 </html>

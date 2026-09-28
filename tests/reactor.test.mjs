@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
 import { SpeechPlayer } from "../ui/speech.mjs";
+import { AVATAR_BRIGHTNESS_DEFAULT } from "../ui/avatar.mjs";
 import { playerRig } from "./support/speech-fakes.mjs";
 
 // Run the actual app code, with lightweight rendering/DOM doubles. These tests
@@ -33,7 +34,7 @@ function appRig(options = {}) {
   class Geometry { setAttribute() {} }
   class Renderer {
     constructor() { this.domElement = {}; }
-    setPixelRatio() {} setSize() {} render() {} addPass() {}
+    setPixelRatio() {} setSize() {} render() {} addPass() {} clearDepth() {}
   }
   const drawing = { fillRect() {}, fillText() {} };
   function element(id) {
@@ -56,7 +57,7 @@ function appRig(options = {}) {
     WebGLRenderer: Renderer, Color: Vector, Vector2: Vector, Euler: Vector,
   };
   const context = vm.createContext({
-    ...rig.env, THREE: three,
+    ...rig.env, THREE: three, AVATAR_BRIGHTNESS_DEFAULT,
     SpeechPlayer: class extends SpeechPlayer {
       constructor(options) { super({ ...options, env: rig.env }); }
     },

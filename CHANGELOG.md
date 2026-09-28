@@ -1,5 +1,19 @@
 # KIRA Changelog
 
+## Unreleased — Visage naturel de KIRA
+
+- Nouveau portrait fictif photoréaliste (`avatar-natural.webp`, généré par IA) :
+  teint humain, yeux non lumineux et lèvres naturelles. Le décor reste vert.
+- Couleurs photo conservées sur le visage **et** la bouche ; suppression du
+  monochrome vert, des glitches et des scanlines sur le portrait. Composition
+  après le bloom du décor pour préserver les détails et éviter la surexposition.
+- Lèvres recalibrées sur le nouveau portrait, patch coplanaire attaché au visage
+  et luminosité partagée pour éviter le décalage et les changements de teinte.
+- Luminosité initiale **90 %** ; les préférences déjà enregistrées restent
+  respectées. Le réglage n'affecte plus le bloom du décor.
+- Bundle natif/navigateur `med-natural-avatar-01` validant les nouveaux fichiers.
+  Tests de rendu, maillage labial, serveur statique et pixels WebGL dans Chromium.
+
 ## Unreleased — AI Command Center (thème or)
 
 - **Nouvelle interface web complète** (`ui/`) : KIRA adopte le look
