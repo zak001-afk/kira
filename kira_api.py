@@ -14,7 +14,7 @@ import threading
 import base64
 import kira_language
 import kira_commands
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
@@ -499,7 +499,9 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
 
 def start_server(host=DEFAULT_HOST, port=DEFAULT_PORT, daemon=True):
     """Start the API server in a background thread."""
-    server = HTTPServer((host, port), KiraAPIHandler)
+    # Threading : une commande lente ne bloque plus les autres requêtes.
+    server = ThreadingHTTPServer((host, port), KiraAPIHandler)
+    server.daemon_threads = True
     server.timeout = 1
 
     thread = threading.Thread(target=_run_server, args=(server,), daemon=daemon)

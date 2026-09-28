@@ -3,8 +3,8 @@ import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { HoloMouth } from "./holo-mouth.mjs?v=command-center-43";
-import { lipDemoPose } from "./lips.mjs?v=command-center-43";
+import { HoloMouth } from "./holo-mouth.mjs?v=command-center-44";
+import { lipDemoPose } from "./lips.mjs?v=command-center-44";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
@@ -194,7 +194,7 @@ scene.add(avatarGroup);
 // ── HOLOGRAMME DE KIRA (image + lèvres animées) ──
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
-  const avatarTexture = avatarLoader.load("assets/avatar_core.png?v=command-center-43", (texture) => {
+  const avatarTexture = avatarLoader.load("assets/avatar_core.png?v=command-center-44", (texture) => {
     // Valeurs sRGB brutes : le shader holographique gère lui-même le rendu.
     if (texture) texture.needsUpdate = true;
     // Lèvres animées : maillage visème sur les mesures réelles de la bouche,
@@ -676,6 +676,9 @@ async function sendCommand(text) {
     });
 
     if (!response.ok) {
+      if (response.status === 503) {
+        throw new Error("Le moteur KIRA n'est pas démarré. Ferme complètement KIRA (ancienne fenêtre comprise) et relance main_window.py.");
+      }
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
