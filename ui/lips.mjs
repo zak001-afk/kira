@@ -204,14 +204,14 @@ export class LipMotion {
 
       let attack, release;
       if (key === "open") {
-        attack = gate < 0.02 ? 0.028 : 0.038;
-        release = gate < 0.02 ? 0.032 : 0.055;
+        attack = gate < 0.02 ? 0.018 : 0.024;
+        release = gate < 0.02 ? 0.024 : 0.036;
       } else if (key === "press" || key === "bite") {
         attack = 0.016;
         release = 0.026;
       } else {
-        attack = 0.028;
-        release = gate < 0.02 ? 0.030 : 0.040;
+        attack = 0.018;
+        release = gate < 0.02 ? 0.022 : 0.030;
       }
 
       const tau = isOpening ? attack : release;

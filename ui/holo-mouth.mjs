@@ -331,12 +331,23 @@ export class HoloMouth {
     this.texture = new three.CanvasTexture(this.canvas);
     this.texture.minFilter = three.LinearFilter;
     this.texture.magFilter = three.LinearFilter;
-    const material = new three.MeshBasicMaterial({
-      map: this.texture,
+    // Même rendu que le visage : monochrome #5FBF17 + même luminosité,
+    // ainsi la bouche se fond dans l'avatar sans différence de couleur.
+    const material = new three.ShaderMaterial({
+      uniforms: { map: { value: this.texture }, brightness: { value: 0.45 } },
       transparent: true,
       depthWrite: false,
       depthTest: false,
       toneMapped: false,
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `
+        uniform sampler2D map; uniform float brightness; varying vec2 vUv;
+        void main(){
+          vec4 t = texture2D(map, vUv);
+          float tone = clamp(dot(t.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
+          vec3 g = clamp(vec3(0.3725, 0.7490, 0.0902) * tone * 1.7, 0.0, 1.0) * brightness;
+          gl_FragColor = vec4(g, t.a * 0.92);
+        }`,
     });
     this.overlay = new three.Mesh(geometry, material);
     this.overlay.renderOrder = (plane.renderOrder || 0) + 1;
@@ -347,7 +358,9 @@ export class HoloMouth {
       plane.position.y + centerY * planeH,
       plane.position.z + 0.015
     );
-    scene.add(this.overlay);
+    // Attaché au même parent que le visage : aucun décalage possible.
+    this.parent = plane.parent || scene;
+    this.parent.add(this.overlay);
     this.ready = true;
   }
 
@@ -459,7 +472,7 @@ export class HoloMouth {
     this.destroyed = true;
     this.reset();
     if (this.overlay) {
-      this.scene?.remove?.(this.overlay);
+      (this.parent || this.scene)?.remove?.(this.overlay);
       this.overlay.geometry?.dispose?.();
       this.overlay.material?.dispose?.();
     }
