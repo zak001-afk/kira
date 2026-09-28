@@ -10,11 +10,11 @@ import { lipDemoPose } from "./lips.mjs?v=command-center-45";
    KIRA // AI COMMAND CENTER — thème or
    ========================================================= */
 
-const GOLD = 0xF5B72C;
-const GOLD_BRIGHT = 0xFFE7A0;
-const GOLD_SOFT = 0xFFC94A;
-const GOLD_DARK = 0x6E521A;
-const GOLD_DEEP = 0x1A1206;
+const GOLD = 0x5FBF17;
+const GOLD_BRIGHT = 0x8EFF4D;
+const GOLD_SOFT = 0x7AD63A;
+const GOLD_DARK = 0x2E6B0A;
+const GOLD_DEEP = 0x0A1804;
 
 /* =========================================================
    SCÈNE
@@ -54,7 +54,7 @@ container.appendChild(renderer.domElement);
    LUMIÈRES
    ========================================================= */
 
-const ambient = new THREE.AmbientLight(0x0F0B04, 2);
+const ambient = new THREE.AmbientLight(0x0A1204, 2);
 scene.add(ambient);
 
 const goldLight = new THREE.PointLight(GOLD, 16, 14);
@@ -90,7 +90,7 @@ const shellMaterial = new THREE.MeshStandardMaterial({
   color: 0x030201,
   metalness: 0.95,
   roughness: 0.25,
-  emissive: 0x1A1206,
+  emissive: 0x0A1804,
   emissiveIntensity: 0.18,
   transparent: true,
   opacity: 0.16,
@@ -102,7 +102,7 @@ const shell = new THREE.Mesh(shellGeometry, shellMaterial);
 // --- COQUILLE FILAIRE ---
 const wireGeometry = new THREE.SphereGeometry(2.3, 32, 32);
 const wireMaterial = new THREE.MeshBasicMaterial({
-  color: 0xB98A2E,
+  color: 0x4A8A2E,
   wireframe: true,
   transparent: true,
   opacity: 0.03,
@@ -115,10 +115,10 @@ const armorGroup = new THREE.Group();
 // reactor.add(armorGroup); // retiré : centre vide
 
 const armorMaterial = new THREE.MeshStandardMaterial({
-  color: 0x14100A,
+  color: 0x0A1408,
   metalness: 1.0,
   roughness: 0.18,
-  emissive: 0x8A6A1F,
+  emissive: 0x2E6B0A,
   emissiveIntensity: 0.4,
 });
 
@@ -147,7 +147,7 @@ for (let i = 0; i < 8; i++) {
 // --- AURA D'ÉNERGIE (derrière l'avatar, se déforme avec la voix) ---
 const energyGeometry = new THREE.SphereGeometry(2.6, 64, 64);
 const energyMaterial = new THREE.MeshBasicMaterial({
-  color: 0xF5B72C,
+  color: 0x5FBF17,
   transparent: true,
   opacity: 0.1,
   blending: THREE.AdditiveBlending,
@@ -333,7 +333,7 @@ coreCluster.add(core);
 // --- HALO DU CŒUR ---
 const glowGeometry = new THREE.SphereGeometry(0.78, 64, 64);
 const glowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xF5B72C,
+  color: 0x5FBF17,
   transparent: true,
   opacity: 0.42,
   blending: THREE.AdditiveBlending,
@@ -384,10 +384,10 @@ neuralCore.add(secondRing);
 
 const frameGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.16, 32);
 const frameMat = new THREE.MeshStandardMaterial({
-  color: 0x14100A,
+  color: 0x0A1408,
   metalness: 1,
   roughness: 0.2,
-  emissive: 0x8A6A1F,
+  emissive: 0x2E6B0A,
   emissiveIntensity: 0.3,
 });
 const coreFrame = new THREE.Mesh(frameGeo, frameMat);
@@ -396,7 +396,7 @@ neuralCore.add(coreFrame);
 
 const discGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.18, 64);
 const discMat = new THREE.MeshBasicMaterial({
-  color: 0xF5B72C,
+  color: 0x5FBF17,
   transparent: true,
   opacity: 1.0,
   blending: THREE.AdditiveBlending,
@@ -463,7 +463,7 @@ halo.rotation.x = Math.PI / 2;
 // reactor.add(halo); // retiré : centre vide
 
 // --- LUMIÈRE DU RÉACTEUR ---
-const reactorLight = new THREE.PointLight(0xF5B72C, 3, 9);
+const reactorLight = new THREE.PointLight(0x5FBF17, 3, 9);
 reactorLight.position.set(0, -4.1, 1.0);
 scene.add(reactorLight);
 
@@ -471,7 +471,7 @@ scene.add(reactorLight);
 function createReactorRing(radius, tube, rotation, opacity) {
   const geo = new THREE.TorusGeometry(radius, tube, 12, 180);
   const mat = new THREE.MeshBasicMaterial({
-    color: 0xF5B72C,
+    color: 0x5FBF17,
     transparent: true,
     opacity: opacity,
   });

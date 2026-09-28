@@ -27,12 +27,12 @@ PANEL2 = "#091722"
 BORDER = "#12344A"
 TEXT = "#F4F8FF"
 MUTED = "#6F879C"
-CYAN = "#FF2A2A"
-BLUE = "#FF3B30"
-PURPLE = "#FF1744"
-GREEN = "#FF5252"
-RED = "#FF1A1A"
-AMBER = "#FFB84D"
+CYAN = "#5FBF17"
+BLUE = "#7AD63A"
+PURPLE = "#4A9A15"
+GREEN = "#8EFF4D"
+RED = "#FF3B30"
+AMBER = "#5FBF17"
 FONT = "Segoe UI"
 
 
@@ -450,7 +450,7 @@ class KiraUI(ctk.CTk):
             fg_color="transparent",
             corner_radius=18,
             border_width=1,
-            border_color="#DA1923",
+            border_color="#5FBF17",
         )
 
         composer.grid(row=0, column=0, sticky="ew")
@@ -464,7 +464,7 @@ class KiraUI(ctk.CTk):
             border_width=0,
             fg_color="transparent",
             text_color="#E7F8FC",
-            placeholder_text_color="#DA1923",
+            placeholder_text_color="#5FBF17",
             font=ctk.CTkFont(size=13),
         )
 
@@ -481,8 +481,8 @@ class KiraUI(ctk.CTk):
             height=42,
             corner_radius=21,
             fg_color="transparent",
-            hover_color="#DA1923",
-            text_color="#DA1923",
+            hover_color="#5FBF17",
+            text_color="#5FBF17",
             font=ctk.CTkFont(size=14),
             command=self.toggle_listening,
         )
@@ -498,7 +498,7 @@ class KiraUI(ctk.CTk):
             height=42,
             corner_radius=21,
             fg_color="transparent",
-            hover_color="#FF5555",
+            hover_color="#8EFF4D",
             text_color="#021015",
             font=ctk.CTkFont(size=15, weight="bold"),
             command=self.send_message,
@@ -522,7 +522,7 @@ class KiraUI(ctk.CTk):
                 fg_color="#120304",
                 hover_color="#350707",
                 border_width=1,
-                border_color="#5A0A0A",
+                border_color="#2E6B0A",
                 text_color="#466877",
                 font=ctk.CTkFont(size=8),
                 command=lambda t=text: self._use_suggestion(t),
@@ -737,7 +737,7 @@ class KiraUI(ctk.CTk):
             fg_color="#020913",
             corner_radius=18,
             border_width=1,
-            border_color="#3A0808",
+            border_color="#1A3A0A",
         )
         stage.grid(row=1, column=0, sticky="nsew", padx=12, pady=12)
         stage.grid_rowconfigure(0, weight=1)
@@ -884,7 +884,7 @@ class KiraUI(ctk.CTk):
             height=49,
             corner_radius=14,
             fg_color=BLUE,
-            hover_color="#FF625A",
+            hover_color="#7AD63A",
             font=ctk.CTkFont(size=18, weight="bold"),
             command=self.send_message,
         )
@@ -1311,9 +1311,9 @@ class KiraUI(ctk.CTk):
 
         # Outer orbit rings
         rings = [
-            (235, "#210506", 1),
-            (215, "#3A0808", 1),
-            (192, "#5C0D0D", 1),
+            (235, "#0A1804", 1),
+            (215, "#1A3A0A", 1),
+            (192, "#2E6B0A", 1),
             (170, profile["edge"], 2),
         ]
 
@@ -1439,7 +1439,7 @@ class KiraUI(ctk.CTk):
                     mid - amp,
                     x,
                     mid + amp,
-                    fill="#FF2A2A" if i % 4 == 0 else "#7A0C0C",
+                    fill="#5FBF17" if i % 4 == 0 else "#2E6B0A",
                     width=2 if i % 4 == 0 else 1,
                 )
 
@@ -1490,7 +1490,7 @@ class KiraUI(ctk.CTk):
                     continue
 
                 if i == 0:
-                    color = "#FF4545"
+                    color = "#8EFF4D"
                 elif i < 3:
                     color = "#D71919"
                 elif i < 6:
@@ -1589,11 +1589,11 @@ class KiraUI(ctk.CTk):
 
                 # Bright glowing head
                 if i == 0:
-                    color = "#FF5555"
+                    color = "#8EFF4D"
 
                 # Bright red
                 elif i == 1:
-                    color = "#FF2A2A"
+                    color = "#5FBF17"
 
                 # Medium red
                 elif i < 4:

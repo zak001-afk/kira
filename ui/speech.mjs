@@ -182,9 +182,12 @@ export class SpeechMotion {
       }
     }
     for (const [key, target] of [["energy", energy], ["low", low], ["high", high]]) {
-      const smoothing = 1 - Math.exp(-dt / (target > this.frame[key] ? 0.045 : 0.16));
+      const attack = key === "energy" ? 0.058 : 0.065;
+      const release = key === "energy" ? 0.11 : 0.14;
+      const tau = target > this.frame[key] ? attack : release;
+      const smoothing = 1 - Math.exp(-dt / tau);
       this.frame[key] += (target - this.frame[key]) * smoothing;
-      if (this.frame[key] < 0.0001) this.frame[key] = 0;
+      if (this.frame[key] < 0.0003) this.frame[key] = 0;
     }
     this.frame.active = active;
     this.frame.source = !active ? "idle" : this.analyser ? "audio"
