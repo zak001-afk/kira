@@ -188,6 +188,18 @@ energySphere.position.z = -3.2;
 
 let holoMouth = null;
 let holoUniforms = null;
+// Luminosité du visage (0.1 à 1.0), réglable dans Paramètres et mémorisée.
+const AVATAR_BRIGHTNESS_DEFAULT = 0.55;
+let avatarBrightness = AVATAR_BRIGHTNESS_DEFAULT;
+try {
+  const savedB = parseFloat(localStorage.getItem("kira.avatarBrightness"));
+  if (savedB >= 0.1 && savedB <= 1) avatarBrightness = savedB;
+} catch { /* stockage optionnel */ }
+function applyAvatarBrightness() {
+  if (holoUniforms) holoUniforms.brightness.value = avatarBrightness;
+  const mat = holoMouth && holoMouth.overlay && holoMouth.overlay.material;
+  if (mat && mat.color) mat.color.setScalar(avatarBrightness);
+}
 const avatarGroup = new THREE.Group();
 scene.add(avatarGroup);
 
@@ -203,10 +215,11 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
       try { holoMouth = new HoloMouth(texture.image, THREE, scene, avatarPlane); }
       catch (error) { console.error("HoloMouth :", error); holoMouth = null; }
     }
+    applyAvatarBrightness();
   });
   // Holographique à 10 % de luminosité : fusion normale (aucune accumulation,
   // le bloom ne peut plus brûler le visage), fond noir rendu transparent.
-  holoUniforms = { map: { value: avatarTexture }, time: { value: 0 } };
+  holoUniforms = { map: { value: avatarTexture }, time: { value: 0 }, brightness: { value: avatarBrightness } };
   const avatarMaterial = new THREE.ShaderMaterial({
     uniforms: holoUniforms,
     transparent: true,
@@ -227,6 +240,7 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
     fragmentShader: `
       uniform sampler2D map;
       uniform float time;
+      uniform float brightness;
       varying vec2 vUv;
       void main() {
         vec2 uv = vUv;
@@ -236,11 +250,11 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
               * step(0.4, fract(uv.y * 2.0 - time * 3.0));
         vec4 tex = texture2D(map, uv);
         // Rendu fidèle à la référence utilisateur : l'image est déjà au bon niveau.
-        const float BRIGHTNESS = 1.00;
         const float CONTRAST = 1.00;
-        vec3 dim = ((tex.rgb - 0.5) * CONTRAST + 0.5) * BRIGHTNESS;
+        vec3 src = (tex.rgb - 0.5) * CONTRAST + 0.5;
+        vec3 dim = src * brightness;
         dim *= 0.93 + 0.07 * sin(uv.y * 460.0); // scanlines douces
-        float lum = dot(dim, vec3(0.299, 0.587, 0.114));
+        float lum = dot(src, vec3(0.299, 0.587, 0.114));
         float alpha = smoothstep(0.002, 0.03, lum);
         float fade = smoothstep(0.02, 0.1, uv.y) * smoothstep(1.0, 0.94, uv.y);
         gl_FragColor = vec4(dim * fade, alpha * fade * 0.92);
@@ -1425,6 +1439,20 @@ microSelect.addEventListener("change", () => {
    MOUVEMENT PILOTE PAR LA VOIX
    ========================================================= */
 
+// Réglage de luminosité de l'avatar (Paramètres).
+const brightnessSlider = document.getElementById("avatar-brightness");
+const brightnessValue = document.getElementById("avatar-brightness-value");
+if (brightnessSlider) {
+  brightnessSlider.value = String(Math.round(avatarBrightness * 100));
+  if (brightnessValue) brightnessValue.textContent = `${brightnessSlider.value} %`;
+  brightnessSlider.addEventListener("input", () => {
+    avatarBrightness = Number(brightnessSlider.value) / 100;
+    if (brightnessValue) brightnessValue.textContent = `${brightnessSlider.value} %`;
+    applyAvatarBrightness();
+    try { localStorage.setItem("kira.avatarBrightness", String(avatarBrightness)); } catch { /* optionnel */ }
+  });
+}
+
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let motionPreference = "auto";
 try {
@@ -1561,7 +1589,8 @@ function animate() {
   whiteGlow.scale.setScalar(1 + breath + high * 0.22 + energy * 0.1);
   whiteGlowMaterial.opacity = 0.22 + light * 0.07;
   reactorLight.intensity = 9 + light * 3;
-  bloomPass.strength = 1.1 + light * 0.16;
+  // Le halo (bloom) suit la luminosité de l'avatar pour ne pas re-brûler le visage.
+  bloomPass.strength = (1.1 + light * 0.16) * (0.4 + 0.6 * avatarBrightness);
 
   reactorParticles.rotation.y = motionTime * 0.025;
   reactorParticles.rotation.x = Math.sin(motionTime * 0.15) * 0.15;

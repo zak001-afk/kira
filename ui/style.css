@@ -1376,3 +1376,8 @@ body { position: relative; }
   .top-bar { flex-wrap: wrap; gap: 10px; }
   .dock { overflow-x: auto; }
 }
+
+/* Réglage de luminosité de l'avatar */
+.brightness-row { display: flex; align-items: center; gap: 12px; }
+.brightness-row input[type="range"] { flex: 1; accent-color: var(--gold, #F5B72C); }
+#avatar-brightness-value { min-width: 48px; text-align: right; color: var(--gold-bright); }
