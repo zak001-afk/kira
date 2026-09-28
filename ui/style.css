@@ -442,7 +442,7 @@ body { position: relative; }
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.command-box input::placeholder { color: rgba(184, 138, 46, 0.75); }
+.command-box input::placeholder { color: #5FBF17; }
 
 .command-box input:focus {
   border-color: var(--border-bright);
@@ -1358,18 +1358,19 @@ body { position: relative; }
   box-shadow: 0 0 18px var(--gold-glow);
   color: var(--gold-bright);
 }
-.cc1 { top: 13%; left: 3%; }
-.cc2 { top: 32%; right: 1%; }
-.cc3 { bottom: 24%; left: 5%; }
-.cc4 { bottom: 9%; right: 9%; }
-.cc5 { top: 7%; right: 13%; }
-.cc6 { bottom: 3%; left: 21%; }
+/* Pastilles alignées sur les bords du module central : le visage de KIRA
+   reste entièrement dégagé, aucune n'est posée sur la photo. */
+.cc1 { top: 2.5%; left: 0; }
+.cc5 { top: 2.5%; right: 0; }
+.cc2 { top: 12%; left: 0; }
+.cc6 { top: 12%; right: 0; }
+.cc3 { bottom: 12.5%; left: 0; }
+.cc4 { bottom: 12.5%; right: 0; }
 
 /* ─── RESPONSIVE ─── */
 @media (max-width: 1280px) {
   .header-nav { gap: 16px; }
   .gauges { grid-template-columns: repeat(2, 1fr); }
-  .cc1 { left: 0; } .cc2 { right: 0; }
 }
 
 @media (max-width: 980px) {

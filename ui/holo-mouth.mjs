@@ -1,7 +1,7 @@
 // KIRA — articulation du portrait naturel (avatar-natural.webp).
 // Les pixels des lèvres/peau viennent du portrait, sans recoloration verte.
 import { LipMotion, REST_MOUTH } from "./lips.mjs";
-import { AVATAR_PORTRAIT, createPortraitMaterial } from "./avatar.mjs?v=natural-face-1";
+import { AVATAR_PORTRAIT, createPortraitMaterial } from "./avatar.mjs?v=lipsync-fix-1";
 
 const PORTRAIT_W = AVATAR_PORTRAIT.width;
 const PORTRAIT_H = AVATAR_PORTRAIT.height;
@@ -128,8 +128,9 @@ export function deformMouth(pose, output = new Float32Array(MESH.vertices.length
           yDeform -= press * s * 0.9;
           yDeform -= bite * s * 3.5; // dents tirent lèvre inférieure vers haut
         }
-        // Coins restent plus stables verticalement
-        yDeform *= (0.4 + 0.6 * (1 - cornerFactor * 0.7)) * Math.abs(s);
+        // Les lèvres se rejoignent aux coins : l'ouverture se referme là
+        // au lieu d'étirer une fente rectiligne d'un coin à l'autre.
+        yDeform *= Math.pow(Math.abs(s), 0.85) * (1 - 0.85 * cornerFactor ** 3);
       } else if (ring === 1) {
         // Bord externe lèvres
         if (isUpper) {
@@ -139,7 +140,7 @@ export function deformMouth(pose, output = new Float32Array(MESH.vertices.length
           yDeform -= press * s * 1.2;
           yDeform -= bite * s * 1.8;
         }
-        yDeform *= (0.5 + 0.5 * (1 - cornerFactor * 0.5)) * Math.abs(s);
+        yDeform *= Math.pow(Math.abs(s), 0.85) * (1 - 0.75 * cornerFactor ** 3);
       } else if (ring === 2) {
         // Péri-oral: joues et peau autour
         if (isLower) {
@@ -241,60 +242,6 @@ export class HoloMouth {
     this.context = this.canvas.getContext("2d", { willReadFrequently: true });
     this.destination = new Float32Array(MESH.vertices.length);
 
-    // === Intérieur de bouche RÉALISTE ===
-    this.interior = document.createElement("canvas");
-    this.interior.width = 200; this.interior.height = 90;
-    const ictx = this.interior.getContext("2d");
-    // Cavité buccale sombre avec profondeur
-    const cavityGrad = ictx.createRadialGradient(100, 45, 0, 100, 55, 85);
-    cavityGrad.addColorStop(0, "#1a0f08");
-    cavityGrad.addColorStop(0.25, "#0f0804");
-    cavityGrad.addColorStop(0.55, "#080401");
-    cavityGrad.addColorStop(1, "#020100");
-    ictx.fillStyle = cavityGrad;
-    ictx.fillRect(0, 0, 200, 90);
-
-    // Langue - forme naturelle rosée en bas
-    ictx.fillStyle = "#3a1a12";
-    ictx.beginPath();
-    ictx.ellipse(100, 68, 38, 14, 0, 0, Math.PI * 2);
-    ictx.fill();
-    ictx.fillStyle = "#5a2a1e";
-    ictx.beginPath();
-    ictx.ellipse(100, 66, 30, 9, 0, 0, Math.PI * 2);
-    ictx.fill();
-    // Reflet langue
-    ictx.fillStyle = "rgba(120, 60, 50, 0.25)";
-    ictx.beginPath();
-    ictx.ellipse(100, 62, 18, 4, 0, 0, Math.PI * 2);
-    ictx.fill();
-
-    // Dents supérieures - rangée réaliste
-    ictx.fillStyle = "#e8ddd0";
-    ictx.fillRect(52, 8, 96, 3);
-    // Dents individuelles subtiles
-    ictx.fillStyle = "#d8cec0";
-    for (let tx = 54; tx < 146; tx += 12) {
-      ictx.fillRect(tx, 8, 1, 11);
-    }
-    // Dents supérieures - corps
-    const upperTeethGrad = ictx.createLinearGradient(0, 8, 0, 22);
-    upperTeethGrad.addColorStop(0, "#f5efe6");
-    upperTeethGrad.addColorStop(0.4, "#e8ddd0");
-    upperTeethGrad.addColorStop(1, "#c8b8a0");
-    ictx.fillStyle = upperTeethGrad;
-    ictx.beginPath();
-    ictx.roundRect(52, 11, 96, 12, [0, 0, 3, 3]);
-    ictx.fill();
-
-    // Ombres internes pour profondeur
-    ictx.fillStyle = "rgba(0,0,0,0.35)";
-    ictx.beginPath();
-    ictx.ellipse(100, 45, 62, 28, 0, 0, Math.PI * 2);
-    ictx.fill();
-
-    this.interiorReady = true;
-
     // Plan Three.js
     const planeW = (plane.geometry && plane.geometry.parameters && plane.geometry.parameters.width) || 6.4;
     const planeH = (plane.geometry && plane.geometry.parameters && plane.geometry.parameters.height) || 6.4;
@@ -323,6 +270,111 @@ export class HoloMouth {
     const pose = this.motion.sample(voice, { now, disabled, demo });
     this.render(pose);
     return pose;
+  }
+
+  // Intérieur vivant, dessiné sur la géométrie RÉELLE de ce frame : cavité
+  // sombre, langue discrète et arc des dents supérieures qui suit la courbe
+  // déformée des lèvres. Plus jamais de bande blanche rectiligne étirée sur
+  // toute la largeur, ni de fente qui traverse les coins de la bouche.
+  drawInterior(ctx, left, top, right, bottom) {
+    const width = right - left;
+    const height = bottom - top;
+    if (width < 4 || height < 3) return;
+    const midX = (left + right) / 2;
+    const midY = (top + bottom) / 2;
+
+    // 1. Cavité buccale : presque noire, légèrement plus chaude vers le fond.
+    const cavity = ctx.createLinearGradient(0, top, 0, bottom);
+    cavity.addColorStop(0, "#160a06");
+    cavity.addColorStop(0.45, "#0a0402");
+    cavity.addColorStop(1, "#030101");
+    ctx.fillStyle = cavity;
+    ctx.fillRect(left, top, width, height);
+
+    // 2. Langue discrète au fond, visible seulement en vraie ouverture.
+    if (this.pose.open > 0.3 && height > 18) {
+      const tongue = ctx.createRadialGradient(midX, bottom - height * 0.18, 2, midX, bottom - height * 0.18, width * 0.3);
+      tongue.addColorStop(0, "rgba(122, 62, 48, 0.8)");
+      tongue.addColorStop(0.55, "rgba(74, 31, 22, 0.5)");
+      tongue.addColorStop(1, "rgba(40, 16, 10, 0)");
+      ctx.fillStyle = tongue;
+      ctx.beginPath();
+      ctx.ellipse(midX, bottom - height * 0.2, width * 0.3, height * 0.26, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 3. Arc des dents supérieures : échantillonné sur le contour labial
+    // déformé de ce frame, il s'amincit vers les coins et disparaît quand
+    // l'ouverture est petite (aucune ligne dure, aucun bord rectiligne).
+    if (this.pose.open > 0.12 && height > 7) {
+      const upper = [], lower = [];
+      for (let i = 0; i < COUNT; i++) {
+        const x = this.destination[i * 2], y = this.destination[i * 2 + 1];
+        (y < CY ? upper : lower).push([x, y]);
+      }
+      upper.sort((a, b) => a[0] - b[0]);
+      lower.sort((a, b) => a[0] - b[0]);
+      if (upper.length > 2 && lower.length > 0) {
+        const lowerAt = x => {
+          let best = lower[0];
+          for (const point of lower) {
+            if (Math.abs(point[0] - x) < Math.abs(best[0] - x)) best = point;
+          }
+          return best[1];
+        };
+        const maxDepth = Math.min(12, height * 0.36);
+        const tops = [], bottoms = [];
+        const step = Math.max(1, Math.floor(upper.length / 14));
+        for (let k = 0; k < upper.length; k += step) {
+          const [x, y] = upper[k];
+          const u = Math.min(1, Math.max(0, (x - left) / width));
+          const opening = Math.max(0, lowerAt(x) - y);
+          const depth = Math.min(maxDepth, opening * 0.5) * (0.35 + 0.65 * Math.sqrt(Math.sin(Math.PI * u)));
+          tops.push([x, y + 1.4]);
+          bottoms.push([x, y + 1.4 + depth]);
+        }
+        if (tops.length > 2) {
+          ctx.beginPath();
+          ctx.moveTo(tops[0][0], tops[0][1]);
+          for (const [x, y] of tops) ctx.lineTo(x, y);
+          for (let k = bottoms.length - 1; k >= 0; k--) ctx.lineTo(bottoms[k][0], bottoms[k][1]);
+          ctx.closePath();
+          const teeth = ctx.createLinearGradient(0, top, 0, top + maxDepth + 4);
+          teeth.addColorStop(0, "#f6efe2");
+          teeth.addColorStop(0.55, "#e2d3b8");
+          teeth.addColorStop(1, "#b09471");
+          ctx.fillStyle = teeth;
+          ctx.fill();
+          // Séparations douces entre les dents, fondues dans l'arc.
+          ctx.save();
+          ctx.clip();
+          ctx.fillStyle = "rgba(96, 74, 52, 0.3)";
+          for (let k = 1; k < 8; k++) {
+            const x = left + (width * k) / 8;
+            ctx.fillRect(x - 0.5, top, 1, maxDepth + 3);
+          }
+          // Ombre portée de la lèvre supérieure : détache les dents du visage.
+          ctx.fillStyle = "rgba(8, 3, 2, 0.55)";
+          ctx.beginPath();
+          ctx.moveTo(tops[0][0], tops[0][1]);
+          for (const [x, y] of tops) ctx.lineTo(x, y);
+          for (let k = tops.length - 1; k >= 0; k--) ctx.lineTo(tops[k][0], tops[k][1] + 2.6);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+    }
+
+    // 4. Les coins de la bouche restent dans l'ombre : les lèvres s'y
+    // rejoignent, la cavité s'y fond sans découpe visible.
+    for (const x of [left, right]) {
+      const shadow = ctx.createRadialGradient(x, midY, 1, x, midY, width * 0.3);
+      shadow.addColorStop(0, "rgba(2, 1, 1, 0.92)");
+      shadow.addColorStop(1, "rgba(2, 1, 1, 0)");
+      ctx.fillStyle = shadow;
+      ctx.fillRect(left, top, width, height);
+    }
   }
 
   render(pose) {
@@ -369,11 +421,8 @@ export class HoloMouth {
 
       // Fond opaque dans le contour : l'antialias des triangles ne doit pas
       // laisser réapparaître les lèvres fermées entre les facettes internes.
-      ctx.fillStyle = "#090404";
-      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-      // Les dents occupent le haut de l'ouverture, la cavité et la langue
-      // le fond. Pas de trait lumineux ni de dents inférieures artificielles.
-      ctx.drawImage(this.interior, 36, 8, 128, 72, left, top, right - left, bottom - top);
+      // Cavité, langue et arc dentaire suivent la vraie courbe des lèvres.
+      this.drawInterior(ctx, left, top, right, bottom);
 
       ctx.restore();
     }

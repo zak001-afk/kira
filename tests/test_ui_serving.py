@@ -57,8 +57,8 @@ class StaticUiTests(unittest.TestCase):
             for path, expected in [("index.html", "text/html"), ("hologram.mjs", "javascript"),
                                    ("assets/kira-hologram.webp", "image/webp"),
                                    ("assets/avatar-natural.webp?v=natural-face-1", "image/webp"),
-                                   ("avatar.mjs?v=natural-face-1", "javascript"),
-                                   ("holo-mouth.mjs?v=natural-face-1", "javascript"),
+                                   ("avatar.mjs?v=lipsync-fix-1", "javascript"),
+                                   ("holo-mouth.mjs?v=lipsync-fix-1", "javascript"),
                                    ("assets/reticle.svg", "image/svg+xml"),
                                    ("assets/fonts/rajdhani-latin-500-normal.woff2", "font/woff2")]:
                 request = Request(f"http://127.0.0.1:{server.server_port}/{path}", headers={"Host": "8766-preview.e2b.app"})

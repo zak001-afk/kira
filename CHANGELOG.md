@@ -1,5 +1,31 @@
 # KIRA Changelog
 
+## Unreleased — Synchronisation labiale douce (med-lipsync-fix-01)
+
+- **Fini le « glitch » quand l'avatar parle** (`ui/holo-mouth.mjs`) : la bande
+  de dents statique, étirée mécaniquement sur toute l'ouverture, est supprimée.
+  Cavité buccale, langue et arc dentaire sont désormais dessinés sur la
+  géométrie réelle de chaque frame : les dents suivent la courbe déformée des
+  lèvres, s'amincissent vers les coins et disparaissent quand l'ouverture est
+  petite — plus aucun trait rectiligne figé sur le visage.
+- **Les lèvres se rejoignent aux coins de la bouche** : la fente ne s'étire
+  plus d'un coin à l'autre ; l'ouverture se referme naturellement aux coins
+  (exposant 0,85 sur |sin|, coins verrouillés), comme une vraie bouche. Le
+  reste du visage ne bouge toujours pas d'un pixel.
+- La synchronisation avec la voix est inchangée : horloge audio réelle,
+  chronométrage par mot d'edge-tts, visèmes articulés (MBP fermé, FV, AH, EE,
+  OH, OO) — c'est le rendu qui suit enfin la parole, sans saccades ni
+  clignotement d'artefacts.
+- **Disposition des pastilles d'agents** (`ui/style.css`) : les 6 chips
+  (Data Analyst, Web Developer, etc.) sont alignées sur les bords du module
+  central, en 3 paires gauche/droite — le visage de KIRA n'est plus recouvert.
+- **Placeholder « Tapez votre commande ici… » en vert #5FBF17** (il restait
+  doré hérité de l'ancien thème or).
+- Bundle UI `med-lipsync-fix-01` (étiquettes de cache des modules
+  actualisées). Vérifié sous Chromium headless (SwiftShader) : poses AH, OH,
+  OO, EE, MBP, FV rendues sans artefact, coins refermés, dents courbes ; les
+  79 tests Node et les tests de service UI passent inchangés.
+
 ## Unreleased — Visage naturel de KIRA
 
 - Nouveau portrait fictif photoréaliste (`avatar-natural.webp`, généré par IA) :
