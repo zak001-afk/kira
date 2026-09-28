@@ -3,8 +3,8 @@ import { SpeechPlayer, cleanForSpeech } from "./speech.mjs?v=speech-sync-3";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { HoloMouth } from "./holo-mouth.mjs?v=natural-face-1";
-import { AVATAR_PORTRAIT, AVATAR_BRIGHTNESS_DEFAULT, createPortraitMaterial } from "./avatar.mjs?v=natural-face-1";
+import { HoloMouth } from "./holo-mouth.mjs?v=lipsync-fix-1";
+import { AVATAR_PORTRAIT, AVATAR_BRIGHTNESS_DEFAULT, createPortraitMaterial } from "./avatar.mjs?v=lipsync-fix-1";
 import { lipDemoPose } from "./lips.mjs?v=command-center-45";
 
 /* =========================================================
