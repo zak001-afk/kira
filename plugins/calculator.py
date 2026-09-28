@@ -9,9 +9,20 @@ import re
 import math
 
 PLUGIN_NAME = "Calculator"
-PLUGIN_VERSION = "1.0"
+PLUGIN_VERSION = "1.1"
 PLUGIN_DESCRIPTION = "Evaluate mathematical expressions and perform calculations."
 PLUGIN_AUTHOR = "KIRA"
+
+# Managed-registry metadata: where the tool lives and how it is called.
+PLUGIN_AGENT = "research"
+PLUGIN_DESCRIPTIONS = {
+    "calculate": "Evaluate a mathematical expression (e.g. '12*7+sqrt(2)'). "
+                 "Supports + - * / % ^ **, parentheses, pi, e, sqrt, sin, "
+                 "cos, tan, log, log2, log10, exp, ceil, floor, factorial, gcd.",
+}
+PLUGIN_ARGS = {
+    "calculate": {"expression": {"type": str, "required": True}},
+}
 
 
 # Safe math environment

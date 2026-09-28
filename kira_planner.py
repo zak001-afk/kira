@@ -69,7 +69,9 @@ def build_planner_prompt(catalog, command):
     for spec in catalog:
         args = ", ".join(
             f"{name}:{rules['type']}{'' if rules['required'] else '?'}"
-            for name, rules in spec["args"].items()) or "no arguments"
+            for name, rules in spec["args"].items())
+        if not args:
+            args = "any arguments" if spec.get("accepts_extra") else "no arguments"
         lines.append(f"- {spec['name']} ({args}): {spec['description']}")
     tools = "\n".join(lines)
     return (

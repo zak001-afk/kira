@@ -161,6 +161,12 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._handle_web_learn(data)
         elif path == "/api/web/search-learn":
             self._handle_web_search_learn(data)
+        elif path == "/api/plugins/load":
+            self._handle_plugin_load(data)
+        elif path == "/api/plugins/unload":
+            self._handle_plugin_unload(data)
+        elif path == "/api/plugins/reload":
+            self._handle_plugin_reload(data)
         else:
             self._send_json({"error": "Not found"}, 404)
 
@@ -302,13 +308,22 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
     def _handle_plugins(self):
-        """Return loaded plugins."""
+        """Return loaded plugins (with their contributed tools) and the
+        plugins available on disk that are not loaded."""
         try:
             import kira_plugins
+            kira_plugins.load_all_plugins()  # idempotent; picks up new files
             plugins = kira_plugins.list_plugins()
-            self._send_json({"plugins": plugins})
         except Exception:
-            self._send_json({"plugins": []})
+            plugins = []
+        try:
+            import kira_plugins
+            loaded_ids = {p["id"] for p in plugins}
+            available = [n for n in kira_plugins.discover_plugins()
+                         if n not in loaded_ids]
+        except Exception:
+            available = []
+        self._send_json({"plugins": plugins, "available": available})
 
     # ─────────────────────────────────────────
     # POST Handlers
@@ -346,6 +361,48 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
 
     def _handle_chat(self, data):
         self._handle_command(data, chat_only=True)
+
+    def _handle_plugin_load(self, data):
+        """Load one plugin by id (must exist in plugins/)."""
+        name = str(data.get("id", data.get("name", ""))).strip()
+        if not name or "/" in name or "\\" in name or ".." in name:
+            self._send_json({"error": "Plugin id required", "error_code": "invalid_plugin_id"}, 400)
+            return
+        try:
+            import kira_plugins
+            ok = kira_plugins.load_plugin(name)
+            self._send_json({"success": ok, "id": name,
+                             "error" if not ok else "loaded": name},
+                            404 if not ok else 200)
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_plugin_unload(self, data):
+        """Unload one plugin: its tools, parsers and middleware are removed."""
+        name = str(data.get("id", data.get("name", ""))).strip()
+        if not name:
+            self._send_json({"error": "Plugin id required", "error_code": "invalid_plugin_id"}, 400)
+            return
+        try:
+            import kira_plugins
+            ok = kira_plugins.unload_plugin(name)
+            self._send_json({"success": ok, "id": name}, 404 if not ok else 200)
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_plugin_reload(self, data):
+        """Reload one plugin (id in body) or all plugins (empty body)."""
+        name = str(data.get("id", data.get("name", ""))).strip()
+        try:
+            import kira_plugins
+            if name:
+                ok = kira_plugins.reload_plugin(name)
+                self._send_json({"success": ok, "id": name}, 404 if not ok else 200)
+            else:
+                kira_plugins.reload_all_plugins()
+                self._send_json({"success": True, "plugins": kira_plugins.list_plugins()})
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
 
     def _handle_add_task(self, data):
         """Add a new task."""

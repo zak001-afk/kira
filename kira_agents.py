@@ -29,6 +29,7 @@ AGENTS = {
     "research": "Web research and the shared (non-personal) knowledge base.",
     "memory": "Controlled access to LOCAL memory. Nothing here leaves the machine.",
     "windows": "Tasks, reminders and Windows desktop helpers.",
+    "plugins": "Capabilities contributed by plugins/ extensions. Manageable at runtime.",
 }
 
 
@@ -40,27 +41,48 @@ class ToolSpec:
     args: dict            # arg name -> {"type": type, "required": bool}
     handler: object
     consequential: bool = False
+    accepts_extra: bool = False   # forward unknown args instead of dropping them
+    owner: str = ""               # plugin id when the tool came from plugins/
 
 
 _REGISTRY = {}
+_TOOL_OWNER = {}      # tool name -> owner id ("" for built-ins)
 _ACTIVITY = deque(maxlen=200)
 _LOCK = threading.Lock()
 _BUILTINS_READY = False
 
 
-def register_tool(name, agent, description, args, handler, consequential=False):
+def register_tool(name, agent, description, args, handler, consequential=False,
+                  accepts_extra=False, owner=""):
     if agent not in AGENTS:
         raise ValueError(f"Unknown agent '{agent}'. Agents: {', '.join(AGENTS)}.")
     with _LOCK:
         _REGISTRY[str(name)] = ToolSpec(name=str(name), agent=agent, description=description,
                                         args=dict(args or {}), handler=handler,
-                                        consequential=bool(consequential))
+                                        consequential=bool(consequential),
+                                        accepts_extra=bool(accepts_extra),
+                                        owner=str(owner or ""))
+        _TOOL_OWNER[str(name)] = str(owner or "")
 
 
 def unregister_tool(name):
     """Test/plugin hygiene; built-ins are simply re-registered on demand."""
     with _LOCK:
         _REGISTRY.pop(str(name), None)
+        _TOOL_OWNER.pop(str(name), None)
+
+
+def unregister_tools_of(owner):
+    """Remove every tool contributed by one plugin (unload/reload)."""
+    owner = str(owner or "")
+    if not owner:
+        return []
+    with _LOCK:
+        names = [name for name, spec in _REGISTRY.items() if spec.owner == owner]
+        for name in names:
+            _REGISTRY.pop(name, None)
+            _TOOL_OWNER.pop(name, None)
+    return sorted(names)
 
 
 def validate_args(spec, raw):
@@ -82,6 +104,12 @@ def validate_args(spec, raw):
                 return None, (f"Argument '{arg_name}' of tool '{spec.name}' must be "
                               f"{expected.__name__}, got {type(value).__name__}.")
         kwargs[arg_name] = value
+    if spec.accepts_extra:
+        # Tools that declare no schema (typical simple plugins) receive every
+        # argument they were given, as-is.
+        for arg_name, value in raw.items():
+            if arg_name not in kwargs:
+                kwargs[arg_name] = value
     return kwargs, None
 
 
@@ -182,6 +210,8 @@ def tool_catalog():
         "agent": spec.agent,
         "description": spec.description,
         "consequential": spec.consequential,
+        "accepts_extra": spec.accepts_extra,
+        "owner": spec.owner,
         "args": {name: {"type": rules.get("type", str).__name__,
                         "required": bool(rules.get("required", False))}
                  for name, rules in spec.args.items()},
@@ -212,6 +242,8 @@ def agents_snapshot():
             "consequential_tools": sorted(s.name for s in specs
                                           if s.agent == agent_id and s.consequential),
             "last_activity": last_by_agent.get(agent_id),
+            "plugin_tools": sorted(s.name for s in specs
+                                   if s.agent == agent_id and s.owner),
         })
     return snapshot
 
