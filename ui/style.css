@@ -381,6 +381,16 @@ body { position: relative; }
   word-wrap: break-word;
 }
 
+.message.typing::after {
+  content: "▍";
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--gold-bright);
+  animation: caption-caret 0.8s steps(2, start) infinite;
+}
+
+@keyframes caption-caret { to { opacity: 0; } }
+
 .user-block .message {
   border-left: none;
   border-right: 2px solid var(--gold);

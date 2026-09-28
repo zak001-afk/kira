@@ -26,7 +26,7 @@ function lastBefore(items, value, key) {
 export class SpeechMotion {
   constructor(now = () => performance.now()) {
     this.now = now;
-    this.frame = { energy: 0, low: 0, high: 0, level: 0, active: false, source: "idle", mouth: { ...REST_MOUTH } };
+    this.frame = { energy: 0, low: 0, high: 0, level: 0, active: false, source: "idle", mouth: { ...REST_MOUTH }, charIndex: 0 };
     this.last = now();
     this.stop();
   }
@@ -40,9 +40,13 @@ export class SpeechMotion {
     this.offset = 0;
     this.hasBoundary = false;
     this.articulation = null;
+    this.captionWords = [];
+    this.captionLength = 0;
     this.audioOnset = null;
+    this.onProgress = null;
     this.frame.mouth = { ...REST_MOUTH };
     this.frame.level = 0;
+    this.frame.charIndex = 0;
     // Keep the envelope: sample() releases it gently back to idle.
   }
 
@@ -58,6 +62,13 @@ export class SpeechMotion {
     }
     this.words = wordTimeline(text);
     this.articulation = new VisemeTimeline(text, { timings });
+    this.captionLength = String(text || "").length;
+    // Reuse the measured TTS word boundaries so the visible reply advances on
+    // the same audio clock as the mouth; estimate only when metadata is absent.
+    this.captionWords = wordTimeline(text).map((word, index) => {
+      const measured = this.articulation.measured && this.articulation.words[index];
+      return measured ? { ...word, start: measured.start, duration: measured.duration } : word;
+    });
   }
 
   startBrowser(text, rate = 1) {
@@ -65,6 +76,8 @@ export class SpeechMotion {
     this.mode = "browser";
     this.started = this.now();
     this.words = wordTimeline(text, rate);
+    this.captionWords = this.words;
+    this.captionLength = String(text || "").length;
     this.articulation = new VisemeTimeline(text, { rate });
   }
 
@@ -155,9 +168,18 @@ export class SpeechMotion {
           duration = Math.max(0, duration - (this.audioOnset || 0));
         }
       }
-      if (ready) this.frame.mouth = this.articulation.sample(elapsed, {
-        duration, boundaries: this.hasBoundary, keepAlive: this.mode === "browser",
-      });
+      if (ready) {
+        this.frame.mouth = this.articulation.sample(elapsed, {
+          duration, boundaries: this.hasBoundary, keepAlive: this.mode === "browser",
+        });
+        let captionElapsed = elapsed;
+        if (this.mode === "audio" && !this.articulation.measured && duration > 0) {
+          captionElapsed *= this.articulation.duration / duration;
+        }
+        const captionWord = lastBefore(this.captionWords, captionElapsed, "start");
+        if (captionWord) this.frame.charIndex = captionWord.index + captionWord.text.length;
+        if (this.onProgress) this.onProgress(this.frame.charIndex);
+      }
     }
     for (const [key, target] of [["energy", energy], ["low", low], ["high", high]]) {
       const smoothing = 1 - Math.exp(-dt / (target > this.frame[key] ? 0.045 : 0.16));
@@ -219,6 +241,7 @@ export class SpeechPlayer {
   finish(session) {
     if (this.session !== session) return;
     this.session = null; // invalidate callbacks before cancelling playback
+    if (session.onProgress) session.onProgress(session.text.length);
     this.clearTimer(session);
     session.abort.abort();
     this.releaseMedia(session);
@@ -238,11 +261,15 @@ export class SpeechPlayer {
     if (!enabled) this.stop();
   }
 
-  async speak(text, { language = "en-US" } = {}) {
+  async speak(text, { language = "en-US", onProgress = null } = {}) {
     this.stop();
     const cleanText = cleanForSpeech(text);
     if (!this.enabled || !cleanText) return;
-    const session = { abort: new this.env.AbortController(), fallback: false, language: speechLocale(language) };
+    const session = {
+      abort: new this.env.AbortController(), fallback: false,
+      language: speechLocale(language), text: cleanText,
+      onProgress: typeof onProgress === "function" ? onProgress : null,
+    };
     this.session = session;
     this.unlock();
     this.onState("THINKING");
@@ -278,6 +305,7 @@ export class SpeechPlayer {
         if (!this.isCurrent(session) || session.fallback) return;
         if (this.motion.mode === "audio" && this.motion.media === audio) this.motion.resume();
         else this.motion.startAudio(session.analyser, audio, cleanText, data.word_timings);
+        this.motion.onProgress = session.onProgress;
         this.onState("SPEAKING");
       };
       const pause = () => {
@@ -328,6 +356,7 @@ export class SpeechPlayer {
           if (!this.isCurrent(session)) return;
           this.clearTimer(session);
           this.motion.startBrowser(text, utterance.rate);
+          this.motion.onProgress = session.onProgress;
           this.onState("SPEAKING");
         };
         utterance.onboundary = event => {
