@@ -167,7 +167,7 @@
             <div class="corner tl"></div><div class="corner tr"></div>
             <div class="corner bl"></div><div class="corner br"></div>
             <div class="panel-head">
-              <span class="panel-title">Activité des agents</span>
+              <span class="panel-title">Télémétrie</span>
             </div>
             <div class="panel-line"></div>
             <div class="act-rows">
@@ -196,6 +196,20 @@
                 <span class="act-bar"><span id="bar-net"></span></span>
                 <strong id="val-net-act">--</strong>
               </div>
+            </div>
+          </section>
+
+          <!-- ACTIVITÉ DES AGENTS (flux réel du registre) -->
+          <section class="hud-panel feed-panel">
+            <div class="corner tl"></div><div class="corner tr"></div>
+            <div class="corner bl"></div><div class="corner br"></div>
+            <div class="panel-head">
+              <span class="panel-title">Activité des agents</span>
+              <span class="panel-note" id="feed-count"></span>
+            </div>
+            <div class="panel-line"></div>
+            <div class="feed-list" id="agent-feed">
+              <div class="task-empty">Aucune activité — demandez une action à KIRA</div>
             </div>
           </section>
 

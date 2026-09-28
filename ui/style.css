@@ -850,6 +850,61 @@ body { position: relative; }
 }
 
 /* =========================================================
+   FLUX D'ACTIVITÉ DES AGENTS
+   ========================================================= */
+
+.feed-panel { flex: 1.2; }
+.panel-note {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  font-family: 'Share Tech Mono', monospace;
+}
+
+.feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.feed-row {
+  display: grid;
+  grid-template-columns: 44px 74px 1fr 74px 56px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  background: rgba(194, 166, 107, 0.04);
+  border-left: 2px solid rgba(194, 166, 107, 0.35);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.feed-time { color: var(--muted); }
+.feed-agent { color: var(--gold); text-transform: uppercase; letter-spacing: 0.5px; }
+.feed-tool { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.feed-status { text-align: right; letter-spacing: 0.5px; }
+.feed-status.feed-ok { color: var(--green); }
+.feed-status.feed-ko { color: var(--danger); }
+
+.feed-ms { text-align: right; color: var(--muted); }
+
+/* Carte d'approbation dans la conversation */
+.approval-card .approval-warning { color: var(--gold-bright); margin-right: 6px; }
+.approval-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.approval-actions .mini-btn.chosen { opacity: 1; outline: 1px solid var(--gold); }
+.approval-actions .mini-btn:disabled { opacity: 0.45; cursor: default; }
+.approval-block .approval-no { color: var(--danger); }
+
+/* =========================================================
    DOCK DE NAVIGATION
    ========================================================= */
 

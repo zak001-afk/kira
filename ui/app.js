@@ -495,6 +495,65 @@ function addMessage(sender, text, isUser = false, extraClass = "") {
   conversation.scrollTop = conversation.scrollHeight;
 }
 
+// Carte d'approbation : un outil "consequentiel" (ex. delete_file,
+// share_project_knowledge) attend confirm/cancel avant de s'exécuter.
+function addApprovalCard(data) {
+  const conversation = document.getElementById("conversation");
+  const time = new Date().toTimeString().slice(0, 5);
+  const approvalId = String(data.approval_id || "");
+  const tool = String(data.tool || data.action || "action");
+
+  const block = document.createElement("div");
+  block.className = "message-block approval-block";
+  block.innerHTML = `
+    <div class="message-meta">KIRA &nbsp;//&nbsp; ${time}</div>
+    <div class="message approval-card">
+      <span class="approval-warning">⚠</span>
+      <span>${escapeHtml(data.response || `« ${tool} » demande votre confirmation.`)}</span>
+      <div class="approval-actions">
+        <button class="mini-btn approval-yes" data-approval="${escapeHtml(approvalId)}">Confirmer</button>
+        <button class="mini-btn approval-no" data-approval="${escapeHtml(approvalId)}">Annuler</button>
+      </div>
+    </div>
+  `;
+
+  block.querySelectorAll("[data-approval]").forEach((button) => {
+    button.addEventListener("click", () => {
+      resolveApproval(approvalId, button.classList.contains("approval-yes"), block, button);
+    });
+  });
+
+  conversation.appendChild(block);
+  conversation.scrollTop = conversation.scrollHeight;
+}
+
+window.addApprovalCard = addApprovalCard;
+
+async function resolveApproval(approvalId, approve, block, button) {
+  const buttons = block.querySelectorAll("[data-approval]");
+  buttons.forEach((b) => { b.disabled = true; });
+  button.classList.add("chosen");
+  try {
+    const response = await fetch(`${API_BASE}/api/approval`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approval_id: approvalId, approve }),
+    });
+    const data = await response.json();
+    const verdict = approve ? "Confirmé — exécution…" : "Annulé — rien n'a été modifié.";
+    if (data.ok === false && data.error && approve) {
+      addMessage("KIRA", `Échec : ${data.error}`);
+    } else {
+      addMessage("KIRA", data.response || verdict);
+      speak(data.response || verdict);
+    }
+  } catch (error) {
+    addMessage("Système", `Erreur : ${error.message}`);
+  }
+  updateTasks();
+}
+window.resolveApproval = resolveApproval;
+
 function addHistoryDivider() {
   const conversation = document.getElementById("conversation");
   const divider = document.createElement("div");
@@ -642,6 +701,9 @@ async function sendCommand(text) {
 
     if (data.error) {
       addMessage("Système", `Erreur : ${data.error}`);
+    } else if (data.needs_approval) {
+      addApprovalCard(data);
+      speak(data.response || "Une action demande votre confirmation.");
     } else if (data.response) {
       addMessage("KIRA", data.response);
       speak(data.response);
@@ -656,6 +718,7 @@ async function sendCommand(text) {
 
     setActivity("READY");
     updateTasks();
+    updateAgentFeed();
   } catch (error) {
     console.error("Commande échouée :", error);
 
@@ -810,13 +873,13 @@ function drawSpark(canvas, values) {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = "rgba(194, 166, 107, 0.85)";
-  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = "rgba(230, 205, 140, 0.95)";
+  ctx.lineWidth = 1.6;
   ctx.stroke();
   ctx.lineTo(w, h);
   ctx.lineTo(0, h);
   ctx.closePath();
-  ctx.fillStyle = "rgba(194, 166, 107, 0.14)";
+  ctx.fillStyle = "rgba(230, 205, 140, 0.22)";
   ctx.fill();
 }
 
@@ -1021,6 +1084,38 @@ window.agentClick = function(id) {
   else if (mod.action === "__web") promptWebSearch();
   else if (mod.action) window.quickCmd(mod.action);
 };
+
+// Flux d'activité réel du registre d'agents (kira_agents.recent_activity).
+async function updateAgentFeed() {
+  const list = document.getElementById("agent-feed");
+  if (!list) return;
+  try {
+    const response = await fetch(`${API_BASE}/api/agents`);
+    const data = await response.json();
+    const activity = Array.isArray(data.activity) ? data.activity : [];
+    const count = document.getElementById("feed-count");
+    if (count) count.textContent = activity.length ? `${activity.length} évènements` : "";
+    if (activity.length === 0) {
+      list.innerHTML = '<div class="task-empty">Aucune activité — demandez une action à KIRA</div>';
+      return;
+    }
+    list.innerHTML = activity.slice(0, 6).map((entry) => {
+      const time = String(entry.time || "").slice(11, 16) || "--:--";
+      const status = entry.ok ? "OK" : (entry.error_code || "échec");
+      const statusClass = entry.ok ? "feed-ok" : "feed-ko";
+      return `
+        <div class="feed-row">
+          <span class="feed-time">${escapeHtml(time)}</span>
+          <span class="feed-agent">${escapeHtml(String(entry.agent || "—"))}</span>
+          <span class="feed-tool">${escapeHtml(String(entry.tool || "—"))}</span>
+          <span class="feed-status ${statusClass}">${escapeHtml(String(status))}</span>
+          <span class="feed-ms">${Number(entry.elapsed_ms || 0)} ms</span>
+        </div>`;
+    }).join("");
+  } catch (error) {
+    // Backend indisponible : garder l'affichage courant.
+  }
+}
 
 async function updatePlugins() {
   try {
@@ -1571,6 +1666,7 @@ loadBootHistory();
 
 setInterval(updateTelemetry, 3000);
 setInterval(updateTasks, 5000);
+setInterval(updateAgentFeed, 5000);
 setInterval(updatePlugins, 60000);
 
 animate();

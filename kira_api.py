@@ -161,6 +161,8 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._handle_web_learn(data)
         elif path == "/api/web/search-learn":
             self._handle_web_search_learn(data)
+        elif path == "/api/approval":
+            self._handle_approval(data)
         elif path == "/api/plugins/load":
             self._handle_plugin_load(data)
         elif path == "/api/plugins/unload":
@@ -362,6 +364,26 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
 
     def _handle_chat(self, data):
         self._handle_command(data, chat_only=True)
+
+    def _handle_approval(self, data):
+        """Resolve a pending consequential-tool approval from the UI."""
+        approval_id = str(data.get("approval_id", "")).strip()
+        approve = bool(data.get("approve"))
+        if not approval_id:
+            self._send_json({"error": "Approval id required",
+                             "error_code": "invalid_approval"}, 400)
+            return
+        try:
+            import kira_agents
+            import kira_commands
+            pending = kira_commands.pending_approval()
+            if pending and pending.get("id") == approval_id:
+                kira_commands.clear_pending_approval()
+            result = kira_agents.resolve_approval(approval_id, approve=approve,
+                                                  source="ui")
+            self._send_json(result.to_payload())
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
 
     def _handle_plugin_load(self, data):
         """Load one plugin by id (must exist in plugins/)."""
