@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
+import { SpeechPlayer, cleanForSpeech } from "./speech.mjs?v=speech-sync-3";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
@@ -591,6 +591,48 @@ function addMessage(sender, text, isUser = false, extraClass = "") {
 
   conversation.appendChild(block);
   conversation.scrollTop = conversation.scrollHeight;
+  return block.querySelector?.(".message") || null;
+}
+
+function addSpokenMessage(text) {
+  const message = addMessage("KIRA", "", false, "spoken-message");
+  if (!message) { speak(text); return null; }
+  const spoken = cleanForSpeech(text);
+  const spokenWords = Array.from(spoken.matchAll(/\S+/gu));
+  const displayWords = Array.from(String(text).matchAll(/\S+/gu));
+  const conversation = document.getElementById("conversation");
+  const render = value => {
+    message.innerHTML = escapeHtml(value).replace(/\n/g, "<br />");
+    conversation.scrollTop = conversation.scrollHeight;
+  };
+
+  if (!speechEnabled || !spokenWords.length || !displayWords.length) {
+    render(text);
+    speak(text);
+    return message;
+  }
+
+  message.classList.add("typing");
+  let lastEnd = -1;
+  const reveal = charIndex => {
+    if (charIndex >= spoken.length) {
+      if (lastEnd !== String(text).length) {
+        render(text);
+        lastEnd = String(text).length;
+      }
+      message.classList.remove("typing");
+      return;
+    }
+    const wordCount = spokenWords.filter(word => word.index + word[0].length <= charIndex).length;
+    const displayCount = Math.min(displayWords.length,
+      Math.floor(wordCount * displayWords.length / spokenWords.length));
+    const end = displayCount ? displayWords[displayCount - 1].index + displayWords[displayCount - 1][0].length : 0;
+    if (end === lastEnd) return;
+    lastEnd = end;
+    render(String(text).slice(0, end));
+  };
+  speak(text, { onProgress: reveal });
+  return message;
 }
 
 function addHistoryDivider() {
@@ -663,11 +705,11 @@ const speech = new SpeechPlayer({
   },
 });
 
-function speak(text) {
+function speak(text, options = {}) {
   const voice = currentVoice();
   const language = ["denise", "eloise", "vivienne", "henri"].includes(voice)
     ? "fr-FR" : voice === "aria_uk" ? "en-GB" : "en-US";
-  return speech.speak(text, { language });
+  return speech.speak(text, { language, ...options });
 }
 
 function stopSpeaking() {
@@ -750,11 +792,9 @@ async function sendCommand(text) {
     if (data.error) {
       addMessage("Système", `Erreur : ${data.error}`);
     } else if (data.response) {
-      addMessage("KIRA", data.response);
-      speak(data.response);
+      addSpokenMessage(data.response);
     } else if (data.action && data.success) {
-      addMessage("KIRA", `C'est fait : ${data.action}`);
-      speak(`C'est fait. ${data.action.replace(/_/g, " ")}`);
+      addSpokenMessage(`C'est fait. ${data.action.replace(/_/g, " ")}`);
     } else if (data.action) {
       addMessage("KIRA", `Exécuté : ${data.action}`);
     } else {

@@ -149,9 +149,30 @@ test("browser boundaries re-anchor shapes and pause/resume preserves their place
   assert.equal(motion.sample().mouth.viseme, "MBP");
 });
 
+test("spoken text advances on the exact measured word boundaries", () => {
+  const motion = new SpeechMotion(() => 0);
+  const media = { currentTime: 0, duration: 2 };
+  const progress = [];
+  motion.startAudio(null, media, "Hello there.", [
+    { text: "Hello", start: 0.25, duration: 0.4 },
+    { text: "there", start: 0.9, duration: 0.5 },
+  ]);
+  motion.onProgress = value => progress.push(value);
+  motion.sample();
+  assert.equal(motion.frame.charIndex, 0, "leading silence keeps the caption waiting");
+  media.currentTime = 0.3;
+  motion.sample();
+  assert.equal(motion.frame.charIndex, 5);
+  media.currentTime = 1;
+  motion.sample();
+  assert.equal(motion.frame.charIndex, 12);
+  assert.deepEqual(progress, [0, 5, 12]);
+});
+
 test("the real player forwards timing metadata and buffering does not rebuild it", async () => {
   const rig = playerRig({ fetchAudio: async () => ({ audio: "YWJj", word_timings: [{ text: "Hello", start: 0.3, duration: 1 }] }) });
-  await rig.player.speak("Hello");
+  const captionProgress = [];
+  await rig.player.speak("Hello", { onProgress: value => captionProgress.push(value) });
   const timeline = rig.player.motion.articulation;
   assert.equal(timeline.measured, true);
   rig.audios[0].onwaiting();
@@ -160,6 +181,7 @@ test("the real player forwards timing metadata and buffering does not rebuild it
   assert.equal(rig.player.motion.articulation, timeline, "buffering must not reset the lip clock");
   rig.advance();
   assert.equal(rig.player.motion.frame.mouth.viseme, "EE");
+  assert.ok(captionProgress.includes(5), "caption callback follows the TTS word timestamp");
   rig.player.setEnabled(false);
   assert.equal(rig.player.motion.articulation, null);
   assert.equal(rig.player.motion.frame.mouth.open, 0);
