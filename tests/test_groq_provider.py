@@ -157,5 +157,59 @@ class PreferredCloudTests(unittest.TestCase):
                 self.assertEqual(ns["chat_provider"](), expected, raw)
 
 
+class CloudFailoverTests(unittest.TestCase):
+    """Groq until its free tokens run out, then Gemini — within one call.
+    A failed reply (quota, outage) must never silence a ready second cloud."""
+
+    def helper(self, fake_ai):
+        ns = load_names({"_cloud_chat_answer", "CLOUD_CHAT_PROMPTS",
+                         "_preferred_cloud", "chat_provider"}, extra={"os": os})
+        def run(command="hello", language="en"):
+            with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": ""}), \
+                    patch.dict(sys.modules, kira_ai=fake_ai):
+                return ns["_cloud_chat_answer"](command, language)
+        return run
+
+    @staticmethod
+    def reply(ok, text="", error_code=""):
+        return types.SimpleNamespace(ok=ok, text=text, error_code=error_code,
+                                     provider="", model="", error="")
+
+    def fake(self, chat):
+        return types.SimpleNamespace(ensure_env_loaded=lambda path=None: None,
+                                     provider_ready=lambda name: name in {"groq", "gemini"},
+                                     cloud_ready=lambda: True, chat=chat)
+
+    def test_groq_quota_exhausted_fails_over_to_gemini(self):
+        chat = Mock(side_effect=[self.reply(False, error_code="provider_error"),
+                                 self.reply(True, "gemini answer")])
+        fake = self.fake(chat)
+        self.assertEqual(self.helper(fake)(), "gemini answer")
+        self.assertEqual(chat.call_count, 2)
+        self.assertEqual(chat.call_args_list[0].kwargs["provider"], "groq")
+        self.assertEqual(chat.call_args_list[1].kwargs["provider"], "gemini")
+        # Privacy holds on the retry too: system + current question only.
+        self.assertEqual(len(chat.call_args_list[1].args[0]), 2)
+
+    def test_groq_success_never_touches_gemini(self):
+        chat = Mock(return_value=self.reply(True, "fast answer"))
+        self.assertEqual(self.helper(self.fake(chat))(), "fast answer")
+        self.assertEqual(chat.call_count, 1)
+        self.assertEqual(chat.call_args.kwargs["provider"], "groq")
+
+    def test_both_clouds_failing_returns_none_for_local_fallback(self):
+        chat = Mock(return_value=self.reply(False, error_code="provider_error"))
+        self.assertIsNone(self.helper(self.fake(chat))())
+        self.assertEqual(chat.call_count, 2)
+
+    def test_no_second_provider_means_single_attempt(self):
+        chat = Mock(return_value=self.reply(False, error_code="provider_error"))
+        fake = types.SimpleNamespace(ensure_env_loaded=lambda path=None: None,
+                                     provider_ready=lambda name: name == "groq",
+                                     cloud_ready=lambda: False, chat=chat)
+        self.assertIsNone(self.helper(fake)())
+        self.assertEqual(chat.call_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

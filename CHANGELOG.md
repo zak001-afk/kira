@@ -1,5 +1,20 @@
 # KIRA Changelog
 
+## Unreleased — Bascule de quota : Groq jusqu'à épuisement, puis Gemini
+
+- **`_cloud_chat_answer` réessaie l'autre cloud dans le même appel** : si le
+  fournisseur préféré échoue (quota gratuit épuisé, panne, erreur), l'autre
+  fournisseur prêt répond immédiatement — Groq jusqu'à la fin de ses tokens
+  du jour, puis Gemini, sans que l'utilisateur remarque quoi que ce soit.
+  Avant, un échec Groq retombait sur le pipeline local alors qu'une clé
+  Gemini valide attendait à côté.
+- La confidentialité tient aussi au second essai : système + question
+  courante uniquement, jamais nom/mémoire/historique.
+- **Tests** : 4 tests de bascule dans `test_groq_provider` (quota épuisé →
+  Gemini ; succès Groq → Gemini jamais appelé ; double échec → repli local ;
+  un seul fournisseur prêt → un seul essai). Suite complète : 409 tests
+  Python + 64 tests JS au vert. Aucun fichier `ui/` modifié.
+
 ## Unreleased — Vitesse : fournisseur Groq + Wikipédia et traduction sans clé
 
 - **Nouveau fournisseur cloud `groq` dans `kira_ai`** : inférence LPU à plus

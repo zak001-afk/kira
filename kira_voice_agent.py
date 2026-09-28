@@ -2536,10 +2536,19 @@ def _cloud_chat_answer(command, language):
         if not provider:
             return None
         system = CLOUD_CHAT_PROMPTS.get(language) or CLOUD_CHAT_PROMPTS["en"]
-        reply = kira_ai.chat([{"role": "system", "content": system},
-                              {"role": "user", "content": str(command)}],
-                             provider=provider, timeout=8)
-        return reply.text if reply.ok and reply.text.strip() else None
+        messages = [{"role": "system", "content": system},
+                    {"role": "user", "content": str(command)}]
+        reply = kira_ai.chat(messages, provider=provider, timeout=8)
+        if reply.ok and reply.text.strip():
+            return reply.text
+        # Quota exhausted or outage on the first choice (e.g. Groq's free
+        # tokens ran out): the OTHER ready cloud answers instead of dying.
+        other = "gemini" if provider == "groq" else "groq"
+        if getattr(kira_ai, "provider_ready", lambda name: False)(other):
+            reply = kira_ai.chat(messages, provider=other, timeout=8)
+            if reply.ok and reply.text.strip():
+                return reply.text
+        return None
     except Exception:
         return None
 
