@@ -590,6 +590,13 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
 
 def start_server(host=DEFAULT_HOST, port=DEFAULT_PORT, daemon=True):
     """Start the API server in a background thread."""
+    # Plugins load here, independently of the voice/model init chain: the
+    # UI must see its extensions even when the model is offline at boot.
+    try:
+        import kira_plugins
+        kira_plugins.load_all_plugins()
+    except Exception:
+        pass
     server = HTTPServer((host, port), KiraAPIHandler)
     server.timeout = 1
 
