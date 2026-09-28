@@ -676,8 +676,14 @@ async function sendCommand(text) {
     });
 
     if (!response.ok) {
-      if (response.status === 503) {
-        throw new Error("Le moteur KIRA n'est pas démarré. Ferme complètement KIRA (ancienne fenêtre comprise) et relance main_window.py.");
+      // 503 : le serveur d'interface répond mais le moteur KIRA (API locale) est
+      // éteint ou occupé — message clair avec la marche à suivre réelle.
+      if (response.status === 503 || response.status === 502) {
+        throw new Error(
+          "MOTEUR OFF — Le moteur KIRA ne répond pas. Ferme complètement KIRA "
+          + "(Gestionnaire des tâches → tous les processus « python » / KIRA, "
+          + "ancienne fenêtre comprise) puis relance main_window.py."
+        );
       }
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
@@ -704,14 +710,37 @@ async function sendCommand(text) {
     console.error("Commande échouée :", error);
 
     if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError") || error.message.includes("fetch")) {
-      addMessage("Système", "Impossible de joindre le serveur KIRA (" + API_BASE + "). Vérifiez que le backend est lancé.");
+      addMessage("Système",
+        "MOTEUR OFF — Impossible de joindre le serveur KIRA. Ferme complètement KIRA "
+        + "(ancienne fenêtre et processus « python » compris) puis relance main_window.py.");
     } else {
       addMessage("Système", `Erreur : ${error.message}`);
     }
 
     setActivity("ERROR");
     setTimeout(() => setActivity("READY"), 3000);
+    watchEngineRecovery(); // préviens l'utilisateur dès que le moteur revient
   }
+}
+
+// Quand le moteur tombe, sonde /api/status toutes les 5 s et préviens
+// l'utilisateur dès qu'il revient — plus besoin de deviner à l'aveugle.
+let engineWatchdog = null;
+function watchEngineRecovery() {
+  if (engineWatchdog) return; // déjà en surveillance
+  engineWatchdog = setInterval(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/status`, { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json().catch(() => ({}));
+      if (data && data.online) {
+        clearInterval(engineWatchdog);
+        engineWatchdog = null;
+        showToast("Moteur KIRA reconnecté — tu peux renvoyer ton message.");
+        loadParamInfo && loadParamInfo();
+      }
+    } catch { /* moteur toujours éteint, on continue de sonder */ }
+  }, 5000);
 }
 
 // Entrée clavier
