@@ -160,13 +160,13 @@ export class HoloMouth {
     const interiorContext = this.interior.getContext("2d");
     // Intérieur SOMBRE et mat : aucune luminosité, juste une ombre verte.
     const gradient = interiorContext.createLinearGradient(0, 0, 0, 62);
-    gradient.addColorStop(0, "#143d20");
-    gradient.addColorStop(0.5, "#071508");
-    gradient.addColorStop(1, "#0c2413");
+    gradient.addColorStop(0, "#3d2c10");
+    gradient.addColorStop(0.5, "#150e05");
+    gradient.addColorStop(1, "#241a0c");
     interiorContext.fillStyle = gradient;
     interiorContext.fillRect(0, 0, 180, 62);
     // Lignes de balayage sombres cohérentes avec la projection.
-    interiorContext.fillStyle = "rgba(2, 8, 3, 0.35)";
+    interiorContext.fillStyle = "rgba(10, 7, 2, 0.35)";
     for (let ly = 3; ly < 62; ly += 6) interiorContext.fillRect(0, ly, 180, 2);
     this.interiorReady = true;
 
