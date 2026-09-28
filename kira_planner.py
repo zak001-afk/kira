@@ -50,6 +50,20 @@ def planner_provider():
     return "ollama"
 
 
+def planner_route():
+    """(provider, model) for planning. The KIRA_MODEL_PLANNER role wins
+    (e.g. 'groq:llama-3.1-8b-instant' — tool picking needs speed, not
+    genius); otherwise the legacy KIRA_PLANNER_PROVIDER choice."""
+    try:
+        import kira_ai
+        provider, model = kira_ai.role_route("planner")
+        if provider:
+            return provider, model
+    except Exception:
+        pass
+    return planner_provider(), ""
+
+
 def build_planner_prompt(catalog, command):
     lines = []
     for spec in catalog:
@@ -102,7 +116,8 @@ def plan_command(command, ask=None, timeout=6):
     try:
         if ask is None:
             import kira_ai
-            reply = kira_ai.chat(prompt, provider=planner_provider(), timeout=timeout)
+            provider, model = planner_route()
+            reply = kira_ai.chat(prompt, provider=provider, model=model, timeout=timeout)
             text = reply.text if reply.ok else ""
         else:
             text = ask(prompt) or ""

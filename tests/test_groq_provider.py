@@ -163,7 +163,7 @@ class CloudFailoverTests(unittest.TestCase):
 
     def helper(self, fake_ai):
         ns = load_names({"_cloud_chat_answer", "CLOUD_CHAT_PROMPTS",
-                         "_preferred_cloud", "chat_provider"}, extra={"os": os})
+                         "_preferred_cloud", "chat_provider", "_role_cloud"}, extra={"os": os})
         def run(command="hello", language="en"):
             with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": ""}), \
                     patch.dict(sys.modules, kira_ai=fake_ai):

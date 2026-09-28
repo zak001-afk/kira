@@ -89,7 +89,7 @@ class ChatBudgetTests(unittest.TestCase):
 
 class CloudChatPrivacyTests(unittest.TestCase):
     def helper(self, fake_ai):
-        ns = load_names({"_cloud_chat_answer", "CLOUD_CHAT_PROMPTS", "_preferred_cloud", "chat_provider"})
+        ns = load_names({"_cloud_chat_answer", "CLOUD_CHAT_PROMPTS", "_preferred_cloud", "chat_provider", "_role_cloud"})
         # The helper imports kira_ai lazily; inject the fake.
         with patch.dict(sys.modules, kira_ai=fake_ai):
             return ns["_cloud_chat_answer"]
@@ -146,7 +146,7 @@ class ChatProviderTests(unittest.TestCase):
         }
         ns = load_names({"ask_chat", "chat_budget", "chat_provider", "_local_chat_answer",
                          "chat_answer_with_web", "_run_bounded", "CHAT_ANSWER_BUDGET",
-                         "_cloud_chat_answer", "CLOUD_CHAT_PROMPTS", "_preferred_cloud",
+                         "_cloud_chat_answer", "CLOUD_CHAT_PROMPTS", "_preferred_cloud", "_role_cloud",
                          "direct_answer", "_is_personal", "_safe_math",
                          "_FR_DAYS", "_FR_MONTHS", "_EN_DAYS", "_EN_MONTHS",
                          "_AR_DAYS", "_AR_MONTHS", "_TIME_QUESTIONS",

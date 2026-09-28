@@ -1,5 +1,31 @@
 # KIRA Changelog
 
+## Unreleased — Rôles de modèles spécialistes + fournisseur OpenRouter
+
+- **Chaque type de travail peut avoir son propre cerveau** (variables
+  optionnelles, format `fournisseur` ou `fournisseur:modèle`) :
+  `KIRA_MODEL_CHAT` (conversation, vitesse), `KIRA_MODEL_ARABIC` (questions
+  en arabe — ex. Gemini, meilleur en arabe que Llama), `KIRA_MODEL_PLANNER`
+  (choix d'outil JSON — un petit modèle rapide suffit, ex.
+  `groq:llama-3.1-8b-instant`), `KIRA_MODEL_CODE` (réservé au futur agent
+  de codage supervisé). Les questions en arabe partent automatiquement vers
+  le spécialiste arabe, le reste vers le cerveau rapide — par question.
+- **Nouveau fournisseur `openrouter`** : UNE clé gratuite (openrouter.ai)
+  devant 100+ modèles — DeepSeek, Qwen, Mistral, Llama… dont beaucoup en
+  variante `:free`. Transport OpenAI partagé avec Groq (refactorisé),
+  mêmes gates : opt-in KIRA_CLOUD_AI, clé en en-tête, purgée des erreurs,
+  auto-découverte d'un modèle `:free` si le nom configuré est retiré.
+- **Chaîne d'essais bornée** : rôle spécialiste → cloud préféré → autre
+  cloud prêt (2 tentatives max par question). Un rôle en panne ou à quota
+  épuisé ne fait jamais taire un second cloud disponible. Les énoncés
+  personnels ne partent vers AUCUN cloud, quels que soient les rôles.
+- `cloud status` affiche la clé OpenRouter ; `availability()` expose les
+  rôles configurés (jamais les clés). `KIRA_CHAT_PROVIDER=openrouter`
+  accepté.
+- **Tests** : `tests/test_model_roles.py` (15 tests) ; correctif d'un
+  ensemble de noms AST mal étendu. Suite complète : 424 tests Python +
+  64 tests JS au vert. Aucun fichier `ui/` modifié.
+
 ## Unreleased — Bascule de quota : Groq jusqu'à épuisement, puis Gemini
 
 - **`_cloud_chat_answer` réessaie l'autre cloud dans le même appel** : si le

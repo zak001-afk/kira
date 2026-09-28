@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 LOCAL_PROVIDER = "ollama"
 CLOUD_PROVIDER = "gemini"
 FAST_PROVIDER = "groq"  # Cloud too: LPU inference, ~10x Gemini's speed.
-PROVIDERS = (LOCAL_PROVIDER, CLOUD_PROVIDER, FAST_PROVIDER)
+ROUTER_PROVIDER = "openrouter"  # One key, 100+ models (many :free).
+PROVIDERS = (LOCAL_PROVIDER, CLOUD_PROVIDER, FAST_PROVIDER, ROUTER_PROVIDER)
 
 DEFAULT_TIMEOUT = 30
 _TRUE_VALUES = {"1", "true", "on", "yes"}
@@ -99,7 +100,33 @@ def provider_ready(provider: str) -> bool:
         return cloud_ready()
     if provider == FAST_PROVIDER:
         return cloud_enabled() and bool(_groq_key())
+    if provider == ROUTER_PROVIDER:
+        return cloud_enabled() and bool(_openrouter_key())
     return False
+
+
+# ── Model roles: one specialist brain per kind of work ──────────────────────
+# Value format: 'provider' or 'provider:model' (e.g. 'groq:llama-3.1-8b-instant').
+ROLE_ENV = {
+    "chat": "KIRA_MODEL_CHAT",        # everyday conversation (speed)
+    "arabic": "KIRA_MODEL_ARABIC",    # Arabic questions (quality)
+    "planner": "KIRA_MODEL_PLANNER",  # JSON tool picking (tiny + fast)
+    "code": "KIRA_MODEL_CODE",        # future supervised coding agent
+}
+
+
+def role_route(role):
+    """(provider, model) configured for a role, or (None, '') when the role
+    is unset, unknown, or its provider is not ready right now."""
+    ensure_env_loaded()
+    raw = os.environ.get(ROLE_ENV.get(str(role or "").strip().lower(), ""), "").strip()
+    if not raw:
+        return None, ""
+    provider, _, model = raw.partition(":")
+    provider = provider.strip().lower()
+    if provider not in PROVIDERS or not provider_ready(provider):
+        return None, ""
+    return provider, model.strip()
 
 
 def _gemini_key() -> str:
@@ -110,6 +137,45 @@ def _gemini_key() -> str:
 def _groq_key() -> str:
     ensure_env_loaded()
     return os.environ.get("GROQ_API_KEY", "").strip()
+
+
+def _openrouter_key() -> str:
+    ensure_env_loaded()
+    return os.environ.get("OPENROUTER_API_KEY", "").strip()
+
+
+def openrouter_model() -> str:
+    return os.environ.get("KIRA_OPENROUTER_MODEL", "").strip() or "deepseek/deepseek-chat-v3.1:free"
+
+
+_OPENROUTER_RESOLVED = {"model": ""}
+
+
+def active_openrouter_model() -> str:
+    return _OPENROUTER_RESOLVED["model"] or openrouter_model()
+
+
+def _discover_openrouter_model(key: str, timeout: int = 10) -> str:
+    """Prefer a :free model (deepseek > llama-3.3 > qwen) when the
+    configured name rots. Same self-healing recipe as Gemini and Groq."""
+    try:
+        response = requests.get("https://openrouter.ai/api/v1/models",
+                                headers={"Authorization": f"Bearer {key}"},
+                                timeout=timeout)
+        if response.status_code != 200:
+            return ""
+        entries = (response.json() or {}).get("data") or []
+    except Exception:
+        return ""
+    ids = [str(entry.get("id", "")) for entry in entries if entry.get("id")]
+    free = [i for i in ids if i.endswith(":free")]
+    for keyword in ("deepseek", "llama-3.3", "qwen"):
+        for candidate in free:
+            if keyword in candidate.lower():
+                return candidate
+    if free:
+        return free[0]
+    return ids[0] if ids else ""
 
 
 def groq_model() -> str:
@@ -242,12 +308,19 @@ def availability() -> dict:
             "key_present": bool(_groq_key()),
             "model": active_groq_model(),
         },
+        "openrouter": {
+            "cloud_enabled": cloud_enabled(),
+            "key_present": bool(_openrouter_key()),
+            "model": active_openrouter_model(),
+        },
+        "roles": {role: (os.environ.get(env, "").strip() or None)
+                  for role, env in ROLE_ENV.items()},
     }
 
 
 def _scrub(text: str) -> str:
     """Keep API keys out of error strings and logs, whatever happens."""
-    for key in (_gemini_key(), _groq_key()):
+    for key in (_gemini_key(), _groq_key(), _openrouter_key()):
         if key:
             text = text.replace(key, "***")
     return text
@@ -301,6 +374,16 @@ def chat(prompt_or_messages, provider: str = "", model: str = "",
                 return fail("missing_api_key",
                             "GROQ_API_KEY is not set in the backend environment (.env).")
             return _chat_groq(messages, model or active_groq_model(), key, timeout, started)
+        if provider == ROUTER_PROVIDER:
+            if not cloud_enabled():
+                return fail("cloud_disabled",
+                            "Cloud AI is disabled. Set KIRA_CLOUD_AI=1 in the backend "
+                            "environment to allow OpenRouter; local Ollama remains the default.")
+            key = _openrouter_key()
+            if not key:
+                return fail("missing_api_key",
+                            "OPENROUTER_API_KEY is not set in the backend environment (.env).")
+            return _chat_openrouter(messages, model or active_openrouter_model(), key, timeout, started)
         return _chat_ollama(messages, model or ollama_model(), timeout, started, options or {})
     except requests.Timeout:
         return fail("timeout", f"The {provider} request exceeded {timeout} seconds.")
@@ -328,30 +411,33 @@ def _chat_ollama(messages, model, timeout, started, options) -> AIReply:
     return AIReply(ok=True, text=text, provider=LOCAL_PROVIDER, model=model, elapsed_ms=elapsed)
 
 
-def _chat_groq(messages, model, key, timeout, started, allow_discovery=True) -> AIReply:
-    """OpenAI-compatible chat against Groq's LPU endpoint (300+ tokens/s)."""
-    response = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json={"model": model, "messages": messages},
-        timeout=timeout,
-    )
+def _chat_openai_style(provider, url, key, model, messages, timeout, started,
+                       discover=None, resolved=None, extra_headers=None) -> AIReply:
+    """One OpenAI-compatible chat call (Groq, OpenRouter, …): Bearer header
+    (never the URL), key-scrubbed errors, one discovery retry when the
+    configured model name has rotted."""
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    headers.update(extra_headers or {})
+    response = requests.post(url, headers=headers,
+                             json={"model": model, "messages": messages},
+                             timeout=timeout)
     elapsed = int((time.perf_counter() - started) * 1000)
-    if response.status_code in (400, 404) and allow_discovery:
-        # Groq decommissions model names; ask what this key CAN use,
-        # retry once, remember the answer (same recipe as Gemini).
+    if response.status_code in (400, 404) and discover is not None:
         detail = str(response.text)[:400].lower()
         if "model" in detail:
-            fallback = _discover_groq_model(key, timeout)
+            fallback = discover(key, timeout)
             if fallback and fallback != model:
-                _GROQ_RESOLVED["model"] = fallback
-                logger.warning("Groq model '%s' unavailable (HTTP %s); switching to '%s'.",
-                               model, response.status_code, fallback)
-                return _chat_groq(messages, fallback, key, timeout, started, allow_discovery=False)
+                if resolved is not None:
+                    resolved["model"] = fallback
+                logger.warning("%s model '%s' unavailable (HTTP %s); switching to '%s'.",
+                               provider, model, response.status_code, fallback)
+                return _chat_openai_style(provider, url, key, fallback, messages,
+                                          timeout, started, discover=None,
+                                          resolved=resolved, extra_headers=extra_headers)
     if response.status_code != 200:
         detail = _scrub(str(response.text)[:300])
-        return AIReply(ok=False, provider=FAST_PROVIDER, model=model, elapsed_ms=elapsed,
-                       error=f"Groq returned HTTP {response.status_code}: {detail}",
+        return AIReply(ok=False, provider=provider, model=model, elapsed_ms=elapsed,
+                       error=f"{provider} returned HTTP {response.status_code}: {detail}",
                        error_code="provider_error")
     payload = response.json()
     try:
@@ -359,9 +445,24 @@ def _chat_groq(messages, model, key, timeout, started, allow_discovery=True) -> 
     except (KeyError, IndexError, TypeError):
         text = ""
     if not text:
-        return AIReply(ok=False, provider=FAST_PROVIDER, model=model, elapsed_ms=elapsed,
-                       error="Groq returned no usable text.", error_code="empty_reply")
-    return AIReply(ok=True, text=text, provider=FAST_PROVIDER, model=model, elapsed_ms=elapsed)
+        return AIReply(ok=False, provider=provider, model=model, elapsed_ms=elapsed,
+                       error=f"{provider} returned no usable text.", error_code="empty_reply")
+    return AIReply(ok=True, text=text, provider=provider, model=model, elapsed_ms=elapsed)
+
+
+def _chat_groq(messages, model, key, timeout, started) -> AIReply:
+    """OpenAI-compatible chat against Groq's LPU endpoint (300+ tokens/s)."""
+    return _chat_openai_style(FAST_PROVIDER, "https://api.groq.com/openai/v1/chat/completions",
+                              key, model, messages, timeout, started,
+                              discover=_discover_groq_model, resolved=_GROQ_RESOLVED)
+
+
+def _chat_openrouter(messages, model, key, timeout, started) -> AIReply:
+    """OpenRouter: one key in front of 100+ models (DeepSeek, Qwen, …)."""
+    return _chat_openai_style(ROUTER_PROVIDER, "https://openrouter.ai/api/v1/chat/completions",
+                              key, model, messages, timeout, started,
+                              discover=_discover_openrouter_model, resolved=_OPENROUTER_RESOLVED,
+                              extra_headers={"X-Title": "KIRA"})
 
 
 def _chat_gemini(messages, model, key, timeout, started, allow_discovery=True) -> AIReply:

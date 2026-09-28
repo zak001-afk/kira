@@ -2309,7 +2309,7 @@ def _diagnostic_answer(command, language):
     if not re.fullmatch(r"(?:cloud\s+status|status\s+cloud|statut\s+(?:du\s+)?cloud"
                         r"|[ée]tat\s+du\s+cloud|حالة\s+السحابة)", text):
         return None
-    enabled = key_present = groq_key = False
+    enabled = key_present = groq_key = router_key = False
     model = groq_model = "?"
     try:
         import kira_ai
@@ -2320,6 +2320,7 @@ def _diagnostic_answer(command, language):
                  else kira_ai.gemini_model())
         groq_key = bool(getattr(kira_ai, "_groq_key", lambda: "")())
         groq_model = (kira_ai.active_groq_model() if hasattr(kira_ai, "active_groq_model") else "?")
+        router_key = bool(getattr(kira_ai, "_openrouter_key", lambda: "")())
     except Exception:
         pass
     provider = chat_provider()
@@ -2331,9 +2332,11 @@ def _diagnostic_answer(command, language):
         lines = [f"Mode de chat : {provider} · budget {budget} s.",
                  f"Cloud activé (KIRA_CLOUD_AI) : {yes if enabled else no}. "
                  f"Clé Gemini présente : {yes if key_present else no}. Modèle : {model}. "
-                 f"Clé Groq présente : {yes if groq_key else no}. Modèle : {groq_model}."]
-        if ready or groq_ready:
-            names = [name for name, ok in (("Groq", groq_ready), ("Gemini", ready)) if ok]
+                 f"Clé Groq présente : {yes if groq_key else no}. Modèle : {groq_model}. "
+                 f"Clé OpenRouter présente : {yes if router_key else no}."]
+        if ready or groq_ready or (enabled and router_key):
+            names = [name for name, ok in (("Groq", groq_ready), ("Gemini", ready),
+                                           ("OpenRouter", enabled and router_key)) if ok]
             lines.append(f"{' et '.join(names)} prêt(s) à répondre.")
         elif not enabled:
             lines.append("Il manque KIRA_CLOUD_AI=1 dans le fichier .env (puis redémarrez KIRA).")
@@ -2344,9 +2347,11 @@ def _diagnostic_answer(command, language):
     lines = [f"Chat mode: {provider} · budget {budget} s.",
              f"Cloud enabled (KIRA_CLOUD_AI): {yes if enabled else no}. "
              f"Gemini key present: {yes if key_present else no}. Model: {model}. "
-             f"Groq key present: {yes if groq_key else no}. Model: {groq_model}."]
-    if ready or groq_ready:
-        names = [name for name, ok in (("Groq", groq_ready), ("Gemini", ready)) if ok]
+             f"Groq key present: {yes if groq_key else no}. Model: {groq_model}. "
+             f"OpenRouter key present: {yes if router_key else no}."]
+    if ready or groq_ready or (enabled and router_key):
+        names = [name for name, ok in (("Groq", groq_ready), ("Gemini", ready),
+                                       ("OpenRouter", enabled and router_key)) if ok]
         lines.append(f"{' and '.join(names)} ready to answer.")
     elif not enabled:
         lines.append("KIRA_CLOUD_AI=1 is missing from the .env file (then restart KIRA).")
@@ -2414,9 +2419,34 @@ def chat_provider():
         return "groq"
     if value in {"gemini", "cloud"}:
         return "gemini"
+    if value == "openrouter":
+        return "openrouter"
     if value in {"ollama", "local"}:
         return "ollama"
     return "auto"
+
+
+def _role_cloud(language):
+    """(provider, model) chosen by the KIRA_MODEL_* role variables, or None.
+    Arabic questions try the 'arabic' role first (e.g. Gemini for quality),
+    everything else the 'chat' role. Local-only roles are not cloud
+    candidates — KIRA_CHAT_PROVIDER=ollama already keeps chat local."""
+    try:
+        import kira_ai
+    except Exception:
+        return None
+    route = getattr(kira_ai, "role_route", None)
+    if route is None:
+        return None
+    roles = ("arabic", "chat") if language == "ar" else ("chat",)
+    for role in roles:
+        try:
+            provider, model = route(role)
+        except Exception:
+            continue
+        if provider and provider != "ollama":
+            return provider, model
+    return None
 
 
 def _preferred_cloud():
@@ -2433,7 +2463,13 @@ def _preferred_cloud():
             return "gemini" if kira_ai.cloud_ready() else None
         except Exception:
             return None
-    order = ("gemini", "groq") if chat_provider() == "gemini" else ("groq", "gemini")
+    pinned = chat_provider()
+    if pinned == "gemini":
+        order = ("gemini", "groq", "openrouter")
+    elif pinned == "openrouter":
+        order = ("openrouter", "groq", "gemini")
+    else:
+        order = ("groq", "gemini", "openrouter")
     for name in order:
         try:
             if ready(name):
@@ -2484,7 +2520,7 @@ def ask_chat(command: str, language=None):
     budget = chat_budget()
     provider = chat_provider()
     personal = _is_personal(command)
-    if provider in {"gemini", "groq"} and not personal:
+    if provider in {"gemini", "groq", "openrouter"} and not personal:
         direct = _run_bounded(lambda: _cloud_chat_answer(command, language),
                               max(2.0, budget - 1.0))
         if direct:
@@ -2532,20 +2568,40 @@ def _cloud_chat_answer(command, language):
     """
     try:
         import kira_ai
-        provider = _preferred_cloud()
-        if not provider:
+        # Candidates in priority order: the specialist role for this
+        # language, then the preferred cloud, then any other ready cloud.
+        candidates = []
+        role = _role_cloud(language)
+        if role:
+            candidates.append(role)
+        preferred = _preferred_cloud()
+        if preferred:
+            candidates.append((preferred, ""))
+        ready = getattr(kira_ai, "provider_ready", None)
+        if ready is not None:
+            for name in ("groq", "gemini", "openrouter"):
+                try:
+                    if ready(name):
+                        candidates.append((name, ""))
+                except Exception:
+                    continue
+        seen, order = set(), []
+        for provider, model in candidates:
+            if provider and provider not in seen:
+                seen.add(provider)
+                order.append((provider, model))
+        if not order:
             return None
         system = CLOUD_CHAT_PROMPTS.get(language) or CLOUD_CHAT_PROMPTS["en"]
         messages = [{"role": "system", "content": system},
                     {"role": "user", "content": str(command)}]
-        reply = kira_ai.chat(messages, provider=provider, timeout=8)
-        if reply.ok and reply.text.strip():
-            return reply.text
-        # Quota exhausted or outage on the first choice (e.g. Groq's free
-        # tokens ran out): the OTHER ready cloud answers instead of dying.
-        other = "gemini" if provider == "groq" else "groq"
-        if getattr(kira_ai, "provider_ready", lambda name: False)(other):
-            reply = kira_ai.chat(messages, provider=other, timeout=8)
+        # Two attempts max keeps latency bounded: quota exhausted or outage
+        # on the first choice never silences a ready second cloud.
+        for provider, model in order[:2]:
+            try:
+                reply = kira_ai.chat(messages, provider=provider, model=model, timeout=8)
+            except Exception:
+                continue
             if reply.ok and reply.text.strip():
                 return reply.text
         return None
