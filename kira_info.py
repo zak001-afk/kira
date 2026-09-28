@@ -186,3 +186,85 @@ def fun_fact() -> str:
     """One random true-but-useless fact (uselessfacts.jsph.pl, keyless, EN)."""
     data = _get_json("https://uselessfacts.jsph.pl/api/v2/facts/random", {"language": "en"})
     return str(data.get("text", "")).strip()
+
+
+_WIKI_LANGUAGES = {"en", "fr", "ar", "es", "de", "it", "pt"}
+
+# Spoken language names (EN/FR) -> ISO codes, for translation targets.
+LANGUAGE_CODES = {
+    "english": "en", "anglais": "en", "french": "fr", "francais": "fr",
+    "français": "fr", "arabic": "ar", "arabe": "ar", "spanish": "es",
+    "espagnol": "es", "german": "de", "allemand": "de", "italian": "it",
+    "italien": "it", "portuguese": "pt", "portugais": "pt", "turkish": "tr",
+    "turc": "tr", "russian": "ru", "russe": "ru", "chinese": "zh",
+    "chinois": "zh", "japanese": "ja", "japonais": "ja",
+}
+
+
+def wiki_summary(topic: str, language: str = "en") -> dict:
+    """Lead summary of the best-matching Wikipedia article (keyless, ~150 ms).
+
+    Tries the requested language edition first (en/fr/ar/es/de/it/pt),
+    then the English one. Raises when nothing matches."""
+    from urllib.parse import quote
+    topic = str(topic or "").strip()
+    if not topic:
+        raise ValueError("No topic given.")
+    lang = str(language or "en").strip().lower()[:2]
+    if lang not in _WIKI_LANGUAGES:
+        lang = "en"
+    editions = (lang, "en") if lang != "en" else ("en",)
+    for code in editions:
+        try:
+            found = _get_json(f"https://{code}.wikipedia.org/w/rest.php/v1/search/title",
+                              {"q": topic, "limit": 1})
+            pages = found.get("pages") or []
+            if not pages:
+                continue
+            title = pages[0].get("key") or pages[0].get("title")
+            data = _get_json(f"https://{code}.wikipedia.org/api/rest_v1/page/summary/{quote(str(title))}")
+            extract = str(data.get("extract", "")).strip()
+            if extract:
+                return {"title": data.get("title") or title,
+                        "summary": extract,
+                        "url": ((data.get("content_urls") or {}).get("desktop") or {}).get("page", ""),
+                        "language": code}
+        except Exception:
+            continue  # try the next edition before giving up
+    raise ValueError(f"Nothing found on Wikipedia for: {topic}")
+
+
+def translate_text(text: str, target_language: str, source_language: str = "") -> dict:
+    """Translate a short text (MyMemory, keyless). Language names or codes.
+
+    The source language is detected locally (kira_language) when not given —
+    only the text itself ever leaves the machine."""
+    text = str(text or "").strip().strip('"\u201c\u201d\u00ab\u00bb').strip("'").strip()
+    if not text:
+        raise ValueError("No text to translate.")
+    dst = LANGUAGE_CODES.get(str(target_language).strip().lower(), str(target_language).strip().lower())
+    if not re.fullmatch(r"[a-z]{2}", dst):
+        raise ValueError(f"Unknown target language: {target_language}")
+    src = LANGUAGE_CODES.get(str(source_language).strip().lower(), str(source_language).strip().lower())
+    if not re.fullmatch(r"[a-z]{2}", src or ""):
+        try:
+            import kira_language
+            src = kira_language.detect_language(text).language or "en"
+        except Exception:
+            src = "en"
+    if src == dst:
+        return {"translated": text, "source": src, "target": dst, "match": 1.0}
+    try:
+        data = _get_json("https://api.mymemory.translated.net/get",
+                         {"q": text, "langpair": f"{src}|{dst}"})
+    except requests.HTTPError as error:
+        if getattr(error.response, "status_code", 0) == 429:
+            raise RuntimeError("The free translation quota for today is used up "
+                               "(MyMemory). Ask the chat model to translate instead.")
+        raise
+    body = data.get("responseData") or {}
+    translated = str(body.get("translatedText", "")).strip()
+    if int(data.get("responseStatus", 0) or 0) != 200 or not translated:
+        raise RuntimeError(str(data.get("responseDetails") or "Translation service error."))
+    return {"translated": translated, "source": src, "target": dst,
+            "match": body.get("match")}

@@ -2309,8 +2309,8 @@ def _diagnostic_answer(command, language):
     if not re.fullmatch(r"(?:cloud\s+status|status\s+cloud|statut\s+(?:du\s+)?cloud"
                         r"|[ée]tat\s+du\s+cloud|حالة\s+السحابة)", text):
         return None
-    enabled = key_present = False
-    model = "?"
+    enabled = key_present = groq_key = False
+    model = groq_model = "?"
     try:
         import kira_ai
         kira_ai.ensure_env_loaded()
@@ -2318,33 +2318,40 @@ def _diagnostic_answer(command, language):
         key_present = bool(kira_ai._gemini_key())
         model = (kira_ai.active_gemini_model() if hasattr(kira_ai, "active_gemini_model")
                  else kira_ai.gemini_model())
+        groq_key = bool(getattr(kira_ai, "_groq_key", lambda: "")())
+        groq_model = (kira_ai.active_groq_model() if hasattr(kira_ai, "active_groq_model") else "?")
     except Exception:
         pass
     provider = chat_provider()
     budget = int(chat_budget())
     ready = enabled and key_present
+    groq_ready = enabled and groq_key
     if language == "fr":
         yes, no = "oui", "non"
         lines = [f"Mode de chat : {provider} · budget {budget} s.",
                  f"Cloud activé (KIRA_CLOUD_AI) : {yes if enabled else no}. "
-                 f"Clé Gemini présente : {yes if key_present else no}. Modèle : {model}."]
-        if ready:
-            lines.append("Gemini est prêt à répondre.")
+                 f"Clé Gemini présente : {yes if key_present else no}. Modèle : {model}. "
+                 f"Clé Groq présente : {yes if groq_key else no}. Modèle : {groq_model}."]
+        if ready or groq_ready:
+            names = [name for name, ok in (("Groq", groq_ready), ("Gemini", ready)) if ok]
+            lines.append(f"{' et '.join(names)} prêt(s) à répondre.")
         elif not enabled:
             lines.append("Il manque KIRA_CLOUD_AI=1 dans le fichier .env (puis redémarrez KIRA).")
         else:
-            lines.append("Il manque GEMINI_API_KEY dans le fichier .env (puis redémarrez KIRA).")
+            lines.append("Il manque GEMINI_API_KEY ou GROQ_API_KEY dans le fichier .env (puis redémarrez KIRA).")
         return " ".join(lines)
     yes, no = "yes", "no"
     lines = [f"Chat mode: {provider} · budget {budget} s.",
              f"Cloud enabled (KIRA_CLOUD_AI): {yes if enabled else no}. "
-             f"Gemini key present: {yes if key_present else no}. Model: {model}."]
-    if ready:
-        lines.append("Gemini is ready to answer.")
+             f"Gemini key present: {yes if key_present else no}. Model: {model}. "
+             f"Groq key present: {yes if groq_key else no}. Model: {groq_model}."]
+    if ready or groq_ready:
+        names = [name for name, ok in (("Groq", groq_ready), ("Gemini", ready)) if ok]
+        lines.append(f"{' and '.join(names)} ready to answer.")
     elif not enabled:
         lines.append("KIRA_CLOUD_AI=1 is missing from the .env file (then restart KIRA).")
     else:
-        lines.append("GEMINI_API_KEY is missing from the .env file (then restart KIRA).")
+        lines.append("GEMINI_API_KEY or GROQ_API_KEY is missing from the .env file (then restart KIRA).")
     return " ".join(lines)
 
 
@@ -2363,33 +2370,38 @@ def _cloud_test_answer(command, language):
     try:
         import kira_ai
         kira_ai.ensure_env_loaded()
-        if not kira_ai.cloud_ready():
+        cloud = _preferred_cloud()
+        if not cloud:
             return _diagnostic_answer("cloud status", language)
         reply = kira_ai.chat([{"role": "user", "content": "Reply with exactly one word: pong"}],
-                             provider=kira_ai.CLOUD_PROVIDER, timeout=15)
+                             provider=cloud, timeout=15)
     except Exception as exc:
         detail = str(exc)[:200]
     if reply is not None and getattr(reply, "ok", False):
         model = getattr(reply, "model", "") or "gemini"
         ms = getattr(reply, "elapsed_ms", 0)
+        name = "Groq" if getattr(reply, "provider", "") == "groq" else "Gemini"
         if language == "fr":
-            return f"Gemini répond correctement ({model}, {ms} ms). Le chat cloud est opérationnel."
-        return f"Gemini answered correctly ({model}, {ms} ms). Cloud chat is operational."
+            return f"{name} répond correctement ({model}, {ms} ms). Le chat cloud est opérationnel."
+        return f"{name} answered correctly ({model}, {ms} ms). Cloud chat is operational."
     if reply is not None:
         code = getattr(reply, "error_code", "") or "error"
         detail = (getattr(reply, "error", "") or "")[:200]
+        name = "Groq" if getattr(reply, "provider", "") == "groq" else "Gemini"
     else:
         code = "exception"
+        name = "Gemini"
     if language == "fr":
-        return (f"L'appel Gemini a ÉCHOUÉ [{code}] : {detail} — vérifiez la clé, le quota "
-                "(aistudio.google.com), la connexion réseau, puis réessayez « cloud test ».")
-    return (f"The Gemini call FAILED [{code}]: {detail} — check the key, the quota "
-            "(aistudio.google.com) and the network, then try 'cloud test' again.")
+        return (f"L'appel {name} a ÉCHOUÉ [{code}] : {detail} — vérifiez la clé, le quota "
+                "(aistudio.google.com ou console.groq.com), la connexion réseau, puis réessayez « cloud test ».")
+    return (f"The {name} call FAILED [{code}]: {detail} — check the key, the quota "
+            "(aistudio.google.com or console.groq.com) and the network, then try 'cloud test' again.")
 
 
 def chat_provider():
     """KIRA_CHAT_PROVIDER: 'auto' (local first, cloud rescue — default),
-    'gemini'/'cloud' (cloud first, local pipeline as fallback),
+    'groq'/'fast' (fastest cloud first, ~10x Gemini's speed),
+    'gemini'/'cloud' (Gemini first, local pipeline as fallback),
     'ollama'/'local' (never use the cloud for chat)."""
     import os
     try:
@@ -2398,11 +2410,37 @@ def chat_provider():
     except Exception:
         pass
     value = os.environ.get("KIRA_CHAT_PROVIDER", "").strip().lower()
+    if value in {"groq", "fast"}:
+        return "groq"
     if value in {"gemini", "cloud"}:
         return "gemini"
     if value in {"ollama", "local"}:
         return "ollama"
     return "auto"
+
+
+def _preferred_cloud():
+    """Which cloud provider should answer, or None. Groq wins when ready
+    (LPU speed is the point) unless the user pinned Gemini; each falls
+    back to the other so one missing key never silences the cloud."""
+    try:
+        import kira_ai
+    except Exception:
+        return None
+    ready = getattr(kira_ai, "provider_ready", None)
+    if ready is None:  # older kira_ai: Gemini was the only cloud provider
+        try:
+            return "gemini" if kira_ai.cloud_ready() else None
+        except Exception:
+            return None
+    order = ("gemini", "groq") if chat_provider() == "gemini" else ("groq", "gemini")
+    for name in order:
+        try:
+            if ready(name):
+                return name
+        except Exception:
+            continue
+    return None
 
 
 def _local_chat_answer(command, language):
@@ -2446,7 +2484,7 @@ def ask_chat(command: str, language=None):
     budget = chat_budget()
     provider = chat_provider()
     personal = _is_personal(command)
-    if provider == "gemini" and not personal:
+    if provider in {"gemini", "groq"} and not personal:
         direct = _run_bounded(lambda: _cloud_chat_answer(command, language),
                               max(2.0, budget - 1.0))
         if direct:
@@ -2494,12 +2532,13 @@ def _cloud_chat_answer(command, language):
     """
     try:
         import kira_ai
-        if not kira_ai.cloud_ready():
+        provider = _preferred_cloud()
+        if not provider:
             return None
         system = CLOUD_CHAT_PROMPTS.get(language) or CLOUD_CHAT_PROMPTS["en"]
         reply = kira_ai.chat([{"role": "system", "content": system},
                               {"role": "user", "content": str(command)}],
-                             provider=kira_ai.CLOUD_PROVIDER, timeout=8)
+                             provider=provider, timeout=8)
         return reply.text if reply.ok and reply.text.strip() else None
     except Exception:
         return None

@@ -230,7 +230,7 @@ class CloudTestCommandTests(unittest.TestCase):
     def namespace(self):
         extra = {"logging": __import__("logging")}
         return load_names(DIRECT_NAMES | {"_cloud_test_answer", "_diagnostic_answer",
-                                          "chat_provider", "chat_budget",
+                                          "chat_provider", "chat_budget", "_preferred_cloud",
                                           "CHAT_ANSWER_BUDGET"}, extra=extra)
 
     def test_successful_round_trip_reports_latency(self):
@@ -307,7 +307,7 @@ class AskChatWiringTests(unittest.TestCase):
         return load_names(DIRECT_NAMES | {"ask_chat", "chat_budget", "chat_provider",
                                           "_local_chat_answer", "chat_answer_with_web",
                                           "_run_bounded", "CHAT_ANSWER_BUDGET",
-                                          "_cloud_chat_answer", "CLOUD_CHAT_PROMPTS"},
+                                          "_cloud_chat_answer", "CLOUD_CHAT_PROMPTS", "_preferred_cloud"},
                           extra=extra)
 
     def test_time_question_never_reaches_model_or_cloud(self):

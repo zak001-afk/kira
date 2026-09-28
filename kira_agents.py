@@ -260,6 +260,16 @@ def _fun_fact():
     return kira_info.fun_fact()
 
 
+def _wiki_summary(topic, language="en"):
+    import kira_info
+    return kira_info.wiki_summary(topic, language)
+
+
+def _translate_text(text, target_language, source_language=""):
+    import kira_info
+    return kira_info.translate_text(text, target_language, source_language)
+
+
 def _share_project_knowledge(topic, content):
     import kira_web
     return kira_web.share_project_knowledge(topic, content)
@@ -339,6 +349,17 @@ def ensure_builtins():
     register_tool("fun_fact", "research",
                   "One random true fun fact (English) from a keyless service.",
                   {}, _fun_fact)
+    register_tool("wiki_summary", "research",
+                  "Lead summary of the best-matching Wikipedia article (keyless, EN/FR/AR editions).",
+                  {"topic": {"type": str, "required": True},
+                   "language": {"type": str, "required": False}},
+                  _wiki_summary)
+    register_tool("translate_text", "research",
+                  "Translate a short text between languages (keyless MyMemory).",
+                  {"text": {"type": str, "required": True},
+                   "target_language": {"type": str, "required": True},
+                   "source_language": {"type": str, "required": False}},
+                  _translate_text)
     register_tool("add_reminder", "windows",
                   "Add a reminder task, optionally with a due time.",
                   {"title": {"type": str, "required": True},

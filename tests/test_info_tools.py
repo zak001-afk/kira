@@ -141,6 +141,85 @@ class JokeAndFactTests(unittest.TestCase):
         self.assertEqual(result.response, "Bees sleep.")
 
 
+WIKI_SEARCH = {"pages": [{"id": 1, "key": "Tunis", "title": "Tunis"}]}
+WIKI_PAGE = {"title": "Tunis", "extract": "Tunis est la capitale de la Tunisie.",
+             "content_urls": {"desktop": {"page": "https://fr.wikipedia.org/wiki/Tunis"}}}
+
+
+class WikiTests(unittest.TestCase):
+    def test_summary_in_requested_language(self):
+        with patch.object(kira_info, "_get_json", side_effect=[WIKI_SEARCH, WIKI_PAGE]) as get:
+            data = kira_info.wiki_summary("tunis", "fr")
+        self.assertEqual(data["title"], "Tunis")
+        self.assertIn("capitale", data["summary"])
+        self.assertEqual(data["language"], "fr")
+        self.assertIn("fr.wikipedia.org", get.call_args_list[0][0][0])
+
+    def test_falls_back_to_english_edition(self):
+        english = {"title": "Foo", "extract": "Foo is a thing.", "content_urls": {}}
+        with patch.object(kira_info, "_get_json",
+                          side_effect=[{"pages": []}, WIKI_SEARCH, english]):
+            data = kira_info.wiki_summary("foo", "fr")
+        self.assertEqual(data["language"], "en")
+
+    def test_nothing_found_raises(self):
+        with patch.object(kira_info, "_get_json", return_value={"pages": []}):
+            with self.assertRaises(ValueError):
+                kira_info.wiki_summary("xyzzy", "fr")
+
+    def test_route_answers_with_the_summary(self):
+        with patch.object(kira_info, "_get_json", side_effect=[WIKI_SEARCH, WIKI_PAGE]):
+            result = kira_commands.process_command(backend(), "qui est Tunis", reply_language="fr")
+        self.assertEqual(result["action"], "wiki_summary")
+        self.assertEqual(result["response"], "Tunis est la capitale de la Tunisie.")
+
+    def test_route_not_found_is_a_localized_sentence(self):
+        with patch.object(kira_info, "_get_json", return_value={"pages": []}):
+            result = kira_commands.process_command(backend(), "wikipedia xyzzy", reply_language="fr")
+        self.assertEqual(result["error_code"], "wiki_not_found")
+        self.assertIn("xyzzy", result["response"])
+
+    def test_personal_who_is_never_hits_wikipedia(self):
+        self.assertIsNone(kira_commands.parse_tool_command("who is my best friend"))
+        self.assertIsNone(kira_commands.parse_tool_command("qui est mon patron"))
+
+
+class TranslateTests(unittest.TestCase):
+    REPLY = {"responseStatus": 200,
+             "responseData": {"translatedText": "Bonjour tout le monde", "match": 0.98}}
+
+    def test_translate_with_language_names(self):
+        with patch.object(kira_info, "_get_json", return_value=self.REPLY) as get:
+            data = kira_info.translate_text("hello everyone", "french", "english")
+        self.assertEqual(data["translated"], "Bonjour tout le monde")
+        self.assertEqual(get.call_args[0][1]["langpair"], "en|fr")
+
+    def test_source_detected_locally_when_missing(self):
+        with patch.object(kira_info, "_get_json", return_value=self.REPLY):
+            data = kira_info.translate_text("hello everyone my dear friends", "fr")
+        self.assertEqual(data["target"], "fr")
+        self.assertIn(data["source"], {"en", "fr"})  # detector decides, never the network
+
+    def test_same_language_short_circuits_without_network(self):
+        with patch.object(kira_info, "_get_json", side_effect=AssertionError("no call")) as get:
+            data = kira_info.translate_text("bonjour", "fr", "fr")
+        self.assertEqual(data["translated"], "bonjour")
+        get.assert_not_called()
+
+    def test_route_returns_translation_as_response(self):
+        with patch.object(kira_info, "_get_json", return_value=self.REPLY):
+            result = kira_commands.process_command(backend(), "translate hello everyone to french",
+                                                   reply_language="en")
+        self.assertEqual(result["action"], "translate_text")
+        self.assertEqual(result["response"], "Bonjour tout le monde")
+
+    def test_grammar_en_fr(self):
+        parsed = kira_commands.parse_tool_command("traduis bonjour les amis en anglais")
+        self.assertEqual(parsed, {"action": "translate_text", "text": "bonjour les amis",
+                                  "target_language": "anglais"})
+        self.assertIsNone(kira_commands.parse_tool_command("translate"))
+
+
 class GrammarTests(unittest.TestCase):
     def parse(self, text):
         return kira_commands.parse_tool_command(text)

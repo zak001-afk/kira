@@ -1,5 +1,35 @@
 # KIRA Changelog
 
+## Unreleased — Vitesse : fournisseur Groq + Wikipédia et traduction sans clé
+
+- **Nouveau fournisseur cloud `groq` dans `kira_ai`** : inférence LPU à plus
+  de 300 tokens/s — des réponses en moins d'une seconde là où Gemini prend
+  ~4 s. Clé gratuite sur console.groq.com (sans carte bancaire),
+  `GROQ_API_KEY` dans `.env`. Mêmes garde-fous que Gemini : opt-in
+  `KIRA_CLOUD_AI=1`, clé en en-tête jamais dans l'URL, purgée des messages
+  d'erreur, seul le message courant part au cloud (jamais nom/mémoire/
+  historique). Auto-réparation des noms de modèles retirés (découverte via
+  l'endpoint de liste, comme Gemini).
+- **Politique de choix du cloud** (`_preferred_cloud`) : `KIRA_CHAT_PROVIDER=
+  groq` (ou `fast`) met Groq en premier ; en mode `auto`, le secours cloud
+  préfère Groq quand sa clé est présente (la vitesse est le but) ; une clé
+  manquante ne réduit jamais le cloud au silence — bascule sur l'autre.
+  `cloud status` affiche désormais les deux clés ; `cloud test` teste le
+  fournisseur préféré et nomme celui qui a répondu.
+- **`wiki_summary`** (sans clé, ~150-430 ms mesurés) : « qui est Einstein »,
+  « wikipedia X », « من هو ابن خلدون » → le résumé d'introduction de
+  Wikipédia dans la langue de la question (éditions fr/ar/en, repli anglais).
+  Les questions personnelles (« qui est mon patron ») ne matchent jamais.
+- **`translate_text`** (sans clé, MyMemory) : « traduis bonjour les amis en
+  anglais », « translate X to french ». Langue source détectée LOCALEMENT
+  (kira_language) — seul le texte à traduire part sur le réseau ; quota
+  gratuit épuisé → phrase claire, jamais de traceback.
+- **Tests** : `tests/test_groq_provider.py` (13 tests) + 11 tests wiki/
+  traduction dans `test_info_tools` ; garde d'exhaustivité des routes
+  étendu ; ensembles de noms AST mis à jour. Suite complète : 405 tests
+  Python + 64 tests JS au vert. Vérifié en direct : Wikipédia fr 428 ms,
+  ar 352 ms. Aucun fichier `ui/` modifié.
+
 ## Unreleased — Outils d'information sans clé : météo, fériés, devises, blagues, faits
 
 - **Nouveau module `kira_info.py`** : cinq outils d'information publics,

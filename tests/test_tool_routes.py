@@ -156,6 +156,9 @@ class RouteBoundaryTests(unittest.TestCase):
             "get_holidays": {"action": "get_holidays", "country": "TN", "year": ""},
             "convert_currency": {"action": "convert_currency", "amount": "1",
                                  "from_currency": "eur", "to_currency": "usd"},
+            "wiki_summary": {"action": "wiki_summary", "topic": "Tunis"},
+            "translate_text": {"action": "translate_text", "text": "hello",
+                               "target_language": "fr"},
         }
         self.assertEqual(set(samples), set(commands.DIRECT_TOOL_ACTIONS))
         web = types.SimpleNamespace(search_shared_knowledge=Mock(return_value="found"),
@@ -169,6 +172,10 @@ class RouteBoundaryTests(unittest.TestCase):
             get_holidays=Mock(return_value={"country": "TN", "year": 2026, "holidays": [], "upcoming": []}),
             convert_currency=Mock(return_value={"amount": 1.0, "from": "EUR", "to": "USD",
                                                 "rate": 1.1, "result": 1.1, "date": "2026-01-01"}),
+            wiki_summary=Mock(return_value={"title": "Tunis", "summary": "Capital of Tunisia.",
+                                            "url": "https://en.wikipedia.org/wiki/Tunis", "language": "en"}),
+            translate_text=Mock(return_value={"translated": "bonjour", "source": "en",
+                                              "target": "fr", "match": 0.99}),
         )
         for action, parsed in samples.items():
             backend = make_backend(parsed)

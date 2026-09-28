@@ -1,4 +1,5 @@
-"""Provider-independent AI layer: local Ollama by default, Gemini opt-in.
+"""Provider-independent AI layer: local Ollama by default; Gemini and Groq
+(fast LPU inference) opt-in.
 
 Privacy rules (enforced here, not left to callers' goodwill):
 
@@ -30,7 +31,8 @@ logger = logging.getLogger(__name__)
 
 LOCAL_PROVIDER = "ollama"
 CLOUD_PROVIDER = "gemini"
-PROVIDERS = (LOCAL_PROVIDER, CLOUD_PROVIDER)
+FAST_PROVIDER = "groq"  # Cloud too: LPU inference, ~10x Gemini's speed.
+PROVIDERS = (LOCAL_PROVIDER, CLOUD_PROVIDER, FAST_PROVIDER)
 
 DEFAULT_TIMEOUT = 30
 _TRUE_VALUES = {"1", "true", "on", "yes"}
@@ -83,13 +85,72 @@ def cloud_enabled() -> bool:
 
 
 def cloud_ready() -> bool:
-    """True only when the user opted in AND a key is configured."""
+    """True only when the user opted in AND a Gemini key is configured."""
     return cloud_enabled() and bool(_gemini_key())
+
+
+def provider_ready(provider: str) -> bool:
+    """Can this provider answer right now? Local is always ready; cloud
+    providers need the KIRA_CLOUD_AI opt-in AND their own key."""
+    provider = str(provider or "").strip().lower()
+    if provider == LOCAL_PROVIDER:
+        return True
+    if provider == CLOUD_PROVIDER:
+        return cloud_ready()
+    if provider == FAST_PROVIDER:
+        return cloud_enabled() and bool(_groq_key())
+    return False
 
 
 def _gemini_key() -> str:
     ensure_env_loaded()
     return (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
+
+
+def _groq_key() -> str:
+    ensure_env_loaded()
+    return os.environ.get("GROQ_API_KEY", "").strip()
+
+
+def groq_model() -> str:
+    return os.environ.get("KIRA_GROQ_MODEL", "").strip() or "llama-3.3-70b-versatile"
+
+
+# Filled when the configured Groq model is rejected and a working one is found.
+_GROQ_RESOLVED = {"model": ""}
+
+
+def active_groq_model() -> str:
+    return _GROQ_RESOLVED["model"] or groq_model()
+
+
+def _discover_groq_model(key: str, timeout: int = 10) -> str:
+    """Ask Groq which models this key can use; prefer big llama 'versatile',
+    then fast 'instant'. Same self-healing idea as Gemini: names rot, the
+    model-list endpoint does not."""
+    try:
+        response = requests.get(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {key}"},  # Header, never the URL.
+            timeout=timeout,
+        )
+        if response.status_code != 200:
+            return ""
+        entries = (response.json() or {}).get("data") or []
+    except Exception:
+        return ""
+    names = [str(entry.get("id", "")) for entry in entries if entry.get("id")]
+    if not names:
+        return ""
+    for preference in ("llama-3.3-70b-versatile",):
+        if preference in names:
+            return preference
+    for keyword in ("versatile", "instant"):
+        candidates = sorted((n for n in names if keyword in n and "whisper" not in n), reverse=True)
+        if candidates:
+            return candidates[0]
+    chat_like = [n for n in names if "whisper" not in n and "tts" not in n and "guard" not in n]
+    return chat_like[0] if chat_like else names[0]
 
 
 def gemini_model() -> str:
@@ -176,13 +237,20 @@ def availability() -> dict:
             "key_present": bool(_gemini_key()),
             "model": active_gemini_model(),
         },
+        "groq": {
+            "cloud_enabled": cloud_enabled(),
+            "key_present": bool(_groq_key()),
+            "model": active_groq_model(),
+        },
     }
 
 
 def _scrub(text: str) -> str:
-    """Keep the API key out of error strings and logs, whatever happens."""
-    key = _gemini_key()
-    return text.replace(key, "***") if key else text
+    """Keep API keys out of error strings and logs, whatever happens."""
+    for key in (_gemini_key(), _groq_key()):
+        if key:
+            text = text.replace(key, "***")
+    return text
 
 
 def _as_messages(prompt_or_messages) -> list:
@@ -223,6 +291,16 @@ def chat(prompt_or_messages, provider: str = "", model: str = "",
                 return fail("missing_api_key",
                             "GEMINI_API_KEY is not set in the backend environment (.env).")
             return _chat_gemini(messages, model or active_gemini_model(), key, timeout, started)
+        if provider == FAST_PROVIDER:
+            if not cloud_enabled():
+                return fail("cloud_disabled",
+                            "Cloud AI is disabled. Set KIRA_CLOUD_AI=1 in the backend "
+                            "environment to allow Groq; local Ollama remains the default.")
+            key = _groq_key()
+            if not key:
+                return fail("missing_api_key",
+                            "GROQ_API_KEY is not set in the backend environment (.env).")
+            return _chat_groq(messages, model or active_groq_model(), key, timeout, started)
         return _chat_ollama(messages, model or ollama_model(), timeout, started, options or {})
     except requests.Timeout:
         return fail("timeout", f"The {provider} request exceeded {timeout} seconds.")
@@ -248,6 +326,42 @@ def _chat_ollama(messages, model, timeout, started, options) -> AIReply:
         return AIReply(ok=False, provider=LOCAL_PROVIDER, model=model, elapsed_ms=elapsed,
                        error="Ollama returned an empty reply.", error_code="empty_reply")
     return AIReply(ok=True, text=text, provider=LOCAL_PROVIDER, model=model, elapsed_ms=elapsed)
+
+
+def _chat_groq(messages, model, key, timeout, started, allow_discovery=True) -> AIReply:
+    """OpenAI-compatible chat against Groq's LPU endpoint (300+ tokens/s)."""
+    response = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json={"model": model, "messages": messages},
+        timeout=timeout,
+    )
+    elapsed = int((time.perf_counter() - started) * 1000)
+    if response.status_code in (400, 404) and allow_discovery:
+        # Groq decommissions model names; ask what this key CAN use,
+        # retry once, remember the answer (same recipe as Gemini).
+        detail = str(response.text)[:400].lower()
+        if "model" in detail:
+            fallback = _discover_groq_model(key, timeout)
+            if fallback and fallback != model:
+                _GROQ_RESOLVED["model"] = fallback
+                logger.warning("Groq model '%s' unavailable (HTTP %s); switching to '%s'.",
+                               model, response.status_code, fallback)
+                return _chat_groq(messages, fallback, key, timeout, started, allow_discovery=False)
+    if response.status_code != 200:
+        detail = _scrub(str(response.text)[:300])
+        return AIReply(ok=False, provider=FAST_PROVIDER, model=model, elapsed_ms=elapsed,
+                       error=f"Groq returned HTTP {response.status_code}: {detail}",
+                       error_code="provider_error")
+    payload = response.json()
+    try:
+        text = str(payload["choices"][0]["message"]["content"] or "").strip()
+    except (KeyError, IndexError, TypeError):
+        text = ""
+    if not text:
+        return AIReply(ok=False, provider=FAST_PROVIDER, model=model, elapsed_ms=elapsed,
+                       error="Groq returned no usable text.", error_code="empty_reply")
+    return AIReply(ok=True, text=text, provider=FAST_PROVIDER, model=model, elapsed_ms=elapsed)
 
 
 def _chat_gemini(messages, model, key, timeout, started, allow_discovery=True) -> AIReply:

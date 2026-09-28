@@ -99,6 +99,9 @@ _MESSAGES = {
     "currency_result": {"en": "{amount} {src} = {result} {dst} (rate {rate}, reference of {date}).",
                         "fr": "{amount} {src} = {result} {dst} (taux {rate}, référence du {date}).",
                         "ar": "{amount} {src} = {result} {dst} (السعر {rate}، مرجع {date})."},
+    "wiki_not_found": {"en": "I found nothing on Wikipedia about “{topic}”.",
+                       "fr": "Je n’ai rien trouvé sur Wikipédia à propos de « {topic} ».",
+                       "ar": "لم أجد شيئاً في ويكيبيديا عن «{topic}»."},
     "wrong_language": {"en": "The model could not answer in the requested language. Try a multilingual model or another language.", "fr": "Le modèle n’a pas réussi à répondre dans la langue demandée. Essayez un modèle multilingue ou une autre langue.", "ar": "لم يتمكن النموذج من الإجابة باللغة المطلوبة. جرّب نموذجاً متعدد اللغات أو لغة أخرى."},
 }
 
@@ -482,6 +485,16 @@ _HOLIDAYS_PATTERNS = (
     re.compile(r"^(?:what\s+are\s+the\s+|show\s+(?:me\s+)?|list\s+)?(?:next\s+|upcoming\s+)?(?:public\s+)?holidays(?:\s+in\s+([a-zà-ÿ'\- ]+?))?(?:\s+(?:in\s+|for\s+)?(\d{4}))?$", re.IGNORECASE),
     re.compile(r"^(?:quels?\s+sont\s+les\s+|liste\s+(?:les\s+)?|affiche\s+(?:les\s+)?)?(?:prochains?\s+)?jours?\s+f[ée]ri[ée]s(?:\s+(?:en|au|aux|[àa])\s+([a-zà-ÿ'\- ]+?))?(?:\s+(?:en\s+|pour\s+)?(\d{4}))?\s*$", re.IGNORECASE),
 )
+_WIKI_PATTERNS = (
+    re.compile(r"^wiki(?:p[ée]dia)?\s*[:\-]?\s+(.+)$", re.IGNORECASE),
+    re.compile(r"^who\s+(?:is|was)\s+(?!my\b|your\b|our\b)(.+)$", re.IGNORECASE),
+    re.compile(r"^qui\s+(?:est|[ée]tait)\s+(?!mon\b|ma\b|mes\b|ton\b|ta\b|tes\b|notre\b|votre\b)(.+)$", re.IGNORECASE),
+    re.compile(r"^من\s+(?:هو|هي)\s+(.+)$"),
+)
+_TRANSLATE_PATTERNS = (
+    re.compile(r"^translate\s+(.+?)\s+(?:to|into)\s+([a-zA-Zà-ÿ]+)$", re.IGNORECASE),
+    re.compile(r"^traduis(?:ez)?(?:[- ]moi)?\s+(.+?)\s+en\s+([a-zà-ÿ]+)$", re.IGNORECASE),
+)
 _CURRENCY_UNIT = r"[a-z]{3}|euros?|dollars?|dinars?|pounds?|livres?|dirhams?|yens?"
 _CURRENCY_PATTERN = re.compile(
     r"^(?:convert\s+|convertis?\s+|change\s+|combien\s+font\s+)?"
@@ -543,6 +556,15 @@ def parse_tool_command(text):
     if match:
         return {"action": "convert_currency", "amount": match.group(1).replace(",", "."),
                 "from_currency": match.group(2), "to_currency": match.group(3)}
+    for pattern in _TRANSLATE_PATTERNS:
+        match = pattern.match(value)
+        if match and match.group(1).strip():
+            return {"action": "translate_text", "text": match.group(1).strip(),
+                    "target_language": match.group(2).strip()}
+    for pattern in _WIKI_PATTERNS:
+        match = pattern.match(value)
+        if match and match.group(1).strip():
+            return {"action": "wiki_summary", "topic": match.group(1).strip()}
     return None
 
 
@@ -551,6 +573,7 @@ DIRECT_TOOL_ACTIONS = frozenset({
     "search_shared_knowledge", "share_project_knowledge",
     "add_reminder", "add_todo", "list_tasks", "clear_completed_tasks",
     "get_weather", "get_holidays", "convert_currency",
+    "wiki_summary", "translate_text",
 })
 
 
@@ -686,6 +709,26 @@ def _direct_tool_route(action, parsed, metadata, language):
                                   src=data.get("from"), dst=data.get("to"),
                                   result=data.get("result"), rate=data.get("rate"),
                                   date=data.get("date") or "?")
+        return result.to_payload(**metadata)
+
+    if action == "wiki_summary":
+        topic = str(parsed.get("topic", "")).strip()
+        result = kira_agents.run(action, {"topic": topic,
+                                          "language": languages.normalize_language(language) or "en"})
+        if result.ok:
+            result.response = str((result.data or {}).get("summary", "")).strip()
+        elif result.error_code == "tool_failed":
+            text = msg("wiki_not_found", topic=topic)
+            return {"action": action, "success": False, "response": text, "error": text,
+                    "error_code": "wiki_not_found", **metadata}
+        return result.to_payload(**metadata)
+
+    if action == "translate_text":
+        result = kira_agents.run(action, {"text": str(parsed.get("text", "")).strip(),
+                                          "target_language": str(parsed.get("target_language", "")).strip(),
+                                          "source_language": str(parsed.get("source_language", "")).strip()})
+        if result.ok:
+            result.response = str((result.data or {}).get("translated", "")).strip()
         return result.to_payload(**metadata)
 
     raise ValueError(f"Unrouted tool action: {action}")  # Defensive; DIRECT_TOOL_ACTIONS drives this.
