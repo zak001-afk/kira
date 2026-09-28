@@ -198,7 +198,8 @@ try {
 function applyAvatarBrightness() {
   if (holoUniforms) holoUniforms.brightness.value = avatarBrightness;
   const mat = holoMouth && holoMouth.overlay && holoMouth.overlay.material;
-  if (mat && mat.color) mat.color.setScalar(avatarBrightness);
+  if (mat && mat.uniforms && mat.uniforms.brightness) mat.uniforms.brightness.value = avatarBrightness;
+  else if (mat && mat.color) mat.color.setScalar(avatarBrightness);
 }
 const avatarGroup = new THREE.Group();
 scene.add(avatarGroup);
@@ -295,7 +296,11 @@ if (THREE.TextureLoader && THREE.PlaneGeometry) {
         vec3 vivid = mix(vec3(level), color, 1.0 + VIVID_GAIN * 1.9);
         float skin = clamp((color.r - color.b) * 3.0, 0.0, 1.0) * smoothstep(0.06, 0.26, level);
         color = mix(gentle, vivid, skin);
-        vec3 dim = clamp(color, 0.0, 1.0) * brightness;
+        // Monochrome #5FBF17 : aucune teinte dorée ne subsiste sur l'avatar.
+        vec3 KIRA_GREEN = vec3(0.3725, 0.7490, 0.0902);
+        float tone = clamp(luma(color), 0.0, 1.0);
+        vec3 greenTone = KIRA_GREEN * tone * 1.7;
+        vec3 dim = clamp(greenTone, 0.0, 1.0) * brightness;
         dim *= 1.0 - SCANLINE_AMP + SCANLINE_AMP * sin(vUv.y * SCANLINE_FREQ); // scanlines douces
         float lum = luma(src);
         float alpha = smoothstep(0.002, 0.03, lum);
@@ -980,13 +985,13 @@ function drawSpark(canvas, values) {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = "rgba(245, 183, 44, 0.85)";
+  ctx.strokeStyle = "rgba(95, 191, 23, 0.85)";
   ctx.lineWidth = 1.4;
   ctx.stroke();
   ctx.lineTo(w, h);
   ctx.lineTo(0, h);
   ctx.closePath();
-  ctx.fillStyle = "rgba(245, 183, 44, 0.14)";
+  ctx.fillStyle = "rgba(95, 191, 23, 0.14)";
   ctx.fill();
 }
 
