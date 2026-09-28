@@ -983,6 +983,8 @@ const ICONS = {
 
 let pluginCount = 0;
 let pluginNames = [];
+let pluginData = [];       // full plugin payloads (id, tools, actions, version...)
+let availablePlugins = []; // discovered on disk but not loaded
 
 const CORE_MODULES = [
   { id: "voix", name: "Voix & Commande", desc: "Commandes vocales et réponses parlées", icon: "mic", view: "parametres" },
@@ -1025,6 +1027,8 @@ async function updatePlugins() {
     const response = await fetch(`${API_BASE}/api/plugins`);
     const data = await response.json();
     const plugins = Array.isArray(data.plugins) ? data.plugins : [];
+    pluginData = plugins;
+    availablePlugins = Array.isArray(data.available) ? data.available : [];
     pluginCount = plugins.length;
     pluginNames = plugins.map((p) =>
       typeof p === "string" ? p : (p.name || p.id || "plugin")
@@ -1036,6 +1040,29 @@ async function updatePlugins() {
     // Backend indisponible
   }
 }
+
+function pluginActionButton(pluginId, action, label) {
+  return `<button class="mini-btn" onclick="pluginManage('${escapeHtml(String(pluginId))}', '${action}')">${label}</button>`;
+}
+
+async function pluginManage(id, action) {
+  try {
+    const response = await fetch(`${API_BASE}/api/plugins/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      alert(`Plugin ${action} (${id || "tous"}) : ${data.error || "échec"}`);
+    }
+  } catch (error) {
+    alert(`Plugin ${action} (${id || "tous"}) : backend indisponible`);
+  }
+  await updatePlugins();
+  if (activeView === "agents") loadAgentsFull();
+}
+window.pluginManage = pluginManage;
 
 // ─────────────────────────────────────────────
 // Vues (overlay central)
@@ -1134,18 +1161,49 @@ window.loadTasksFull = loadTasksFull;
 
 async function loadAgentsFull() {
   const list = document.getElementById("agents-full");
+  try {
+    await updatePlugins();
+  } catch (error) {
+    // L'affichage continue avec les données déjà en mémoire.
+  }
   const rows = CORE_MODULES.map((mod) =>
     listRow(mod.name, mod.desc, backendOnline ? "En ligne" : "Hors ligne")
   );
   let pluginRows = "";
-  if (pluginNames.length > 0) {
-    pluginRows = pluginNames.map((name) =>
-      listRow(String(name), "Plugin utilisateur", "Chargé")
-    ).join("");
+  if (pluginData.length > 0) {
+    pluginRows = pluginData.map((p) => {
+      const tools = (p.tools && p.tools.length > 0)
+        ? "Outils gérés : " + p.tools.map((t) => escapeHtml(String(t))).join(", ")
+        : "Aucun outil déclaré";
+      const version = p.version ? " v" + p.version : "";
+      const sub = `Plugin utilisateur${version} · ${escapeHtml(tools)}`;
+      return `
+        <div class="list-row">
+          <div class="row-main">
+            <span class="row-title">${escapeHtml(String(p.name || p.id))}</span>
+            <span class="row-sub">${sub}</span>
+          </div>
+          <span class="row-side">
+            ${pluginActionButton(p.id, "unload", "Décharger")}
+            ${pluginActionButton(p.id, "reload", "Recharger")}
+          </span>
+        </div>`;
+    }).join("");
   } else {
     pluginRows = '<div class="task-empty">Aucun plugin utilisateur dans plugins/</div>';
   }
-  list.innerHTML = rows.join("") + pluginRows;
+  const availableRows = availablePlugins.map((id) => `
+    <div class="list-row">
+      <div class="row-main">
+        <span class="row-title">${escapeHtml(String(id))}</span>
+        <span class="row-sub">Plugin détecté, non chargé</span>
+      </div>
+      <span class="row-side">${pluginActionButton(id, "load", "Charger")}</span>
+    </div>`).join("");
+  const reloadAll = `<div class="view-actions" style="justify-content:flex-start">
+    <button class="mini-btn" onclick="pluginManage('', 'reload')">↻ Recharger tous les plugins</button>
+  </div>`;
+  list.innerHTML = rows.join("") + pluginRows + availableRows + reloadAll;
 }
 window.loadAgentsFull = loadAgentsFull;
 

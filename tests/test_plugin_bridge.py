@@ -259,5 +259,23 @@ def report(action_data):
         self.assertEqual(kira_plugins.unload_plugin("broken"), False)
 
 
+class ApiPluginsTests(unittest.TestCase):
+    """GET /api/plugins must be passive: an unload done through the UI
+    cannot be silently undone by a side-effect load on the next read."""
+
+    def test_plugins_get_does_not_load_anything(self):
+        import kira_api
+        handler = object.__new__(kira_api.KiraAPIHandler)
+        sent = {}
+        handler._send_json = lambda data, status=200: sent.update(payload=data,
+                                                                  status=status)
+        with patch.object(kira_plugins, "load_all_plugins") as auto_load:
+            handler._handle_plugins()
+        auto_load.assert_not_called()
+        self.assertEqual(sent["status"], 200)
+        self.assertIn("plugins", sent["payload"])
+        self.assertIn("available", sent["payload"])
+
+
 if __name__ == "__main__":
     unittest.main()

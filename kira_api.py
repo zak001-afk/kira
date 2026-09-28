@@ -309,10 +309,11 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
 
     def _handle_plugins(self):
         """Return loaded plugins (with their contributed tools) and the
-        plugins available on disk that are not loaded."""
+        plugins available on disk that are not loaded. Passive: loading
+        happens at startup or through the load/reload routes, never as a
+        side effect of a read (otherwise an unload could not stick)."""
         try:
             import kira_plugins
-            kira_plugins.load_all_plugins()  # idempotent; picks up new files
             plugins = kira_plugins.list_plugins()
         except Exception:
             plugins = []
