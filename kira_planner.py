@@ -106,7 +106,13 @@ def parse_plan(text, catalog):
 
 
 def plan_command(command, ask=None, timeout=6):
-    """A (tool, args) plan for the request, or None for 'just chat'."""
+    """A (tool, args) plan for the request, or None for 'just chat'.
+
+    The model call is tuned for one-word JSON decisions: reasoning phase
+    off (``think=False`` — the registry, not the model, is the contract),
+    tiny token cap, short timeout. Any failure means "no plan": the message
+    falls through to normal chat, never an error to the user.
+    """
     command = str(command or "").strip()
     if not command or not planner_enabled():
         return None
@@ -119,7 +125,10 @@ def plan_command(command, ask=None, timeout=6):
         if ask is None:
             import kira_ai
             provider, model = planner_route()
-            reply = kira_ai.chat(prompt, provider=provider, model=model, timeout=timeout)
+            reply = kira_ai.chat(prompt, provider=provider, model=model,
+                                 timeout=timeout, options={"temperature": 0,
+                                                           "num_predict": 96},
+                                 think=False)
             text = reply.text if reply.ok else ""
         else:
             text = ask(prompt) or ""
