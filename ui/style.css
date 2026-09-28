@@ -96,6 +96,8 @@ body { position: relative; }
   );
   z-index: 4;
   mix-blend-mode: overlay;
+  /* Les scanlines restent sur le HUD, pas sur le visage photographique. */
+  mask-image: radial-gradient(ellipse 30vh 40vh at 50% 40%, transparent 65%, #000 100%);
 }
 
 /* =========================================================

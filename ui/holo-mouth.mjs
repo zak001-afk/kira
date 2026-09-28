@@ -1,23 +1,22 @@
-// KIRA - Bouche holographique naturelle et réaliste
-// Rendu humain: pas une photo qui s'étire, mais une vraie articulation labiale
-// Mesures avatar 1024x1024: bouche centrée (510, 567), coins 444->576, lèvres 548->595
-// Nouvelle approche: maillage anatomique + intérieur procédural réaliste
-import * as THREE from "three";
+// KIRA — articulation du portrait naturel (avatar-natural.webp).
+// Les pixels des lèvres/peau viennent du portrait, sans recoloration verte.
 import { LipMotion, REST_MOUTH } from "./lips.mjs";
+import { AVATAR_PORTRAIT, createPortraitMaterial } from "./avatar.mjs?v=natural-face-1";
 
-const PORTRAIT_W = 1024;
-const PORTRAIT_H = 1024;
-// Fenêtre autour de la bouche - légèrement agrandie pour inclure menton et joues
-const REGION = { x: 400, y: 515, width: 220, height: 110 };
-// Centre de la fente labiale dans la fenêtre
-const CX = 110; // 510 - 400
-const CY = 52;  // 567 - 515
+const PORTRAIT_W = AVATAR_PORTRAIT.width;
+const PORTRAIT_H = AVATAR_PORTRAIT.height;
+// Mesures du nouveau portrait 1024×1024 : fente (512, 610), coins 436→588,
+// lèvre supérieure ≈588, inférieure ≈645. Inclut la peau sous la mâchoire.
+export const MOUTH_REGION = Object.freeze({ x: 376, y: 552, width: 272, height: 192 });
+const REGION = MOUTH_REGION;
+const CX = 512 - REGION.x;
+const CY = 610 - REGION.y;
 const COUNT = 48; // Plus de points = contour plus lisse
 const RINGS = 5;  // 0: bord interne lèvres, 1: bord externe lèvres, 2: péri-oral, 3: mâchoire, 4: lointain fixe
 const bounded = n => Math.min(1, Math.max(0, Number.isFinite(n) ? n : 0));
 
 // Courbe de lèvre supérieure (cupid's bow subtil) et inférieure plus charnue
-function createMesh() {
+export function createMouthMesh() {
   const vertices = new Float32Array(COUNT * RINGS * 2);
   const triangles = [];
   for (let ring = 0; ring < RINGS; ring++) {
@@ -29,24 +28,22 @@ function createMesh() {
       // Forme de bouche au repos: plus large que haute, avec légère courbe
       if (ring === 0) {
         // Bord interne - fente labiale fermée
-        const cupid = Math.cos(2 * angle) * 0.8; // léger arc de Cupidon en haut
-        const upperBias = s < 0 ? 1 : 0;
-        x = CX + 36 * c;
-        y = CY + cupid * 0.6 + (s < 0 ? 1.2 * s : 1.8 * s) + upperBias * Math.exp(-(c*c)/0.08) * 0.5;
+        x = CX + 76 * c;
+        y = CY + 0.8 * c * c + 1.2 * s;
       } else if (ring === 1) {
         // Bord externe lèvres - épaisseur des lèvres
-        const lipThicknessUpper = 9 + 3 * Math.exp(-(c*c)/0.15); // plus épais au centre
-        const lipThicknessLower = 13;
-        x = CX + 50 * c;
-        y = CY + (s < 0 ? lipThicknessUpper * s + 3 * Math.exp(-((c/0.22)**2)) : lipThicknessLower * s);
+        const lipThicknessUpper = 22 + 3 * Math.exp(-(((Math.abs(c) - 0.32) / 0.2) ** 2));
+        const lipThicknessLower = 35;
+        x = CX + 81 * c;
+        y = CY + 0.8 * c * c + (s < 0 ? lipThicknessUpper * s + 7 * Math.exp(-((c/0.18)**2)) : lipThicknessLower * s);
       } else if (ring === 2) {
         // Zone péri-orale - peau autour des lèvres
-        x = CX + 72 * c;
-        y = CY + (s < 0 ? 28 * s : 42 * s) + (s < 0 ? 4 * Math.exp(-((c/0.28)**2)) : 0);
+        x = CX + 103 * c;
+        y = CY + (s < 0 ? 43 * s : 64 * s);
       } else if (ring === 3) {
         // Mâchoire et joues - suit le mouvement de la mâchoire
-        x = CX + 96 * c;
-        y = CY + (s < 0 ? 38 * s : 62 * s);
+        x = CX + 123 * c;
+        y = CY + (s < 0 ? 52 * s : 103 * s);
       } else {
         // Lointain - ancrage fixe sur les bords de la fenêtre
         const dx = Math.abs(c) < 1e-6 ? Infinity : (c > 0 ? REGION.width - CX : -CX) / c;
@@ -69,7 +66,7 @@ function createMesh() {
   }
   return { vertices, triangles };
 }
-const MESH = createMesh();
+const MESH = createMouthMesh();
 
 // Déformation anatomiquement correcte
 // - Lèvre supérieure: bouge peu verticalement, surtout avec press/bite
@@ -98,7 +95,6 @@ export function deformMouth(pose, output = new Float32Array(MESH.vertices.length
       const c = Math.cos(angle);
       const isUpper = s < 0;
       const isLower = s >= 0;
-      const isCorner = Math.abs(c) > 0.7;
       const cornerFactor = Math.abs(c); // 0 centre, 1 coins
 
       // Influence selon l'anneau: centre bouge beaucoup, bords peu
@@ -115,7 +111,7 @@ export function deformMouth(pose, output = new Float32Array(MESH.vertices.length
         // Press resserre légèrement
         xDeform -= press * cornerFactor * 3 * influence;
       }
-      output[idx] = CX + (x0 - CX) * (1 + xDeform * 0.01) + xDeform * 0.15;
+      output[idx] = CX + (x0 - CX) * (1 + xDeform * 0.01);
 
       // === Déformation verticale (ouverture) ===
       let yDeform = 0;
@@ -123,29 +119,27 @@ export function deformMouth(pose, output = new Float32Array(MESH.vertices.length
         // Bord interne: séparation des lèvres
         if (isUpper) {
           // Lèvre supérieure: monte légèrement, surtout avec open fort
-          yDeform = -jawDrop * (2.5 + 3.5 * (1 - cornerFactor)) - press * 2.2;
+          yDeform = -jawDrop * (2.5 + 3.5 * (1 - cornerFactor)) + press * 0.9;
           yDeform += round * -1.2;
-          // Bite: lèvre supérieure légèrement abaissée par dents
-          if (isLower) yDeform -= bite * 2;
         } else {
           // Lèvre inférieure: descend beaucoup avec mâchoire
           yDeform = jawDrop * (14 + 18 * s * (1 - cornerFactor * 0.3));
           yDeform += round * s * 1.5;
-          yDeform -= press * s * 1.8;
+          yDeform -= press * s * 0.9;
           yDeform -= bite * s * 3.5; // dents tirent lèvre inférieure vers haut
         }
         // Coins restent plus stables verticalement
-        yDeform *= (0.4 + 0.6 * (1 - cornerFactor * 0.7));
+        yDeform *= (0.4 + 0.6 * (1 - cornerFactor * 0.7)) * Math.abs(s);
       } else if (ring === 1) {
         // Bord externe lèvres
         if (isUpper) {
-          yDeform = -jawDrop * (1.2 + 1.8 * (1 - cornerFactor)) - press * 1.5;
+          yDeform = -jawDrop * (1.2 + 1.8 * (1 - cornerFactor)) + press * 1.5;
         } else {
           yDeform = jawDrop * (9 + 12 * s) * 0.75;
           yDeform -= press * s * 1.2;
           yDeform -= bite * s * 1.8;
         }
-        yDeform *= (0.5 + 0.5 * (1 - cornerFactor * 0.5));
+        yDeform *= (0.5 + 0.5 * (1 - cornerFactor * 0.5)) * Math.abs(s);
       } else if (ring === 2) {
         // Péri-oral: joues et peau autour
         if (isLower) {
@@ -208,7 +202,7 @@ export class HoloMouth {
     this.ready = false;
     this.lastKey = "";
     this.pose = { ...REST_MOUTH };
-    if (!image || !image.naturalWidth || image.naturalWidth !== PORTRAIT_W) return;
+    if (!image || image.naturalWidth !== PORTRAIT_W || image.naturalHeight !== PORTRAIT_H) return;
 
     const W = REGION.width, H = REGION.height;
     // Patch peau - zone autour de la bouche
@@ -293,36 +287,13 @@ export class HoloMouth {
     ictx.roundRect(52, 11, 96, 12, [0, 0, 3, 3]);
     ictx.fill();
 
-    // Dents inférieures - moins visibles, seulement quand bouche très ouverte
-    ictx.fillStyle = "#d0c4b4";
-    ictx.fillRect(62, 72, 76, 2);
-
     // Ombres internes pour profondeur
     ictx.fillStyle = "rgba(0,0,0,0.35)";
     ictx.beginPath();
     ictx.ellipse(100, 45, 62, 28, 0, 0, Math.PI * 2);
     ictx.fill();
 
-    // Lueur verte subtile (thème #5FBF17) - très discrète
-    ictx.fillStyle = "rgba(95, 191, 23, 0.04)";
-    ictx.beginPath();
-    ictx.ellipse(100, 45, 70, 32, 0, 0, Math.PI * 2);
-    ictx.fill();
-
     this.interiorReady = true;
-
-    // Sources pour intérieur
-    this.innerSource = new Float32Array((COUNT + 1) * 2);
-    this.innerDestination = new Float32Array(this.innerSource.length);
-    for (let i = 0; i < COUNT; i++) {
-      const angle = (i / COUNT) * Math.PI * 2;
-      const s = Math.sin(angle);
-      // Forme intérieure ovale naturelle
-      this.innerSource[i * 2] = 100 + 58 * Math.cos(angle) * (0.9 + 0.1 * Math.cos(angle * 2));
-      this.innerSource[i * 2 + 1] = 42 + (s < 0 ? 16 : 22) * s;
-    }
-    this.innerSource[COUNT * 2] = 100;
-    this.innerSource[COUNT * 2 + 1] = 42;
 
     // Plan Three.js
     const planeW = (plane.geometry && plane.geometry.parameters && plane.geometry.parameters.width) || 6.4;
@@ -331,35 +302,18 @@ export class HoloMouth {
     this.texture = new three.CanvasTexture(this.canvas);
     this.texture.minFilter = three.LinearFilter;
     this.texture.magFilter = three.LinearFilter;
-    // Même rendu que le visage : monochrome #5FBF17 + même luminosité,
-    // ainsi la bouche se fond dans l'avatar sans différence de couleur.
-    const material = new three.ShaderMaterial({
-      uniforms: { map: { value: this.texture }, brightness: { value: 0.45 } },
-      transparent: true,
-      depthWrite: false,
-      depthTest: false,
-      toneMapped: false,
-      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `
-        uniform sampler2D map; uniform float brightness; varying vec2 vUv;
-        void main(){
-          vec4 t = texture2D(map, vUv);
-          float tone = clamp(dot(t.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
-          vec3 g = clamp(vec3(0.3725, 0.7490, 0.0902) * tone * 1.7, 0.0, 1.0) * brightness;
-          gl_FragColor = vec4(g, t.a * 0.92);
-        }`,
-    });
+    // Shader partagé avec le visage et uniform de luminosité IDENTIQUE.
+    const material = createPortraitMaterial(three, this.texture);
+    material.uniforms.brightness = plane.material.uniforms.brightness;
     this.overlay = new three.Mesh(geometry, material);
     this.overlay.renderOrder = (plane.renderOrder || 0) + 1;
-    const centerX = (REGION.x + CX) / PORTRAIT_W - 0.5;
-    const centerY = 0.5 - (REGION.y + CY) / PORTRAIT_H;
-    this.overlay.position.set(
-      plane.position.x + centerX * planeW,
-      plane.position.y + centerY * planeH,
-      plane.position.z + 0.015
-    );
-    // Attaché au même parent que le visage : aucun décalage possible.
-    this.parent = plane.parent || scene;
+    // Le plan est centré sur le RECTANGLE du patch, pas sur la fente des lèvres.
+    const centerX = (REGION.x + W / 2) / PORTRAIT_W - 0.5;
+    const centerY = 0.5 - (REGION.y + H / 2) / PORTRAIT_H;
+    this.overlay.position.set(centerX * planeW, centerY * planeH, 0);
+    // Enfant coplanaire : mêmes translation/échelle/projection, sans décalage.
+    // L'ordre de rendu et depthTest:false évitent tout z-fighting.
+    this.parent = plane;
     this.parent.add(this.overlay);
     this.ready = true;
   }
@@ -391,12 +345,15 @@ export class HoloMouth {
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     deformMouth(this.pose, this.destination);
 
-    // Calcul centre bouche pour intérieur
-    this.innerDestination.set(this.destination.subarray(0, COUNT * 2));
-    let cx = 0, cy = 0;
-    for (let i = 0; i < COUNT; i++) { cx += this.destination[i * 2]; cy += this.destination[i * 2 + 1]; }
-    this.innerDestination[COUNT * 2] = cx / COUNT;
-    this.innerDestination[COUNT * 2 + 1] = cy / COUNT;
+    // Limites de l'ouverture réelle. L'intérieur reste dans son contour,
+    // sans éventail de triangles qui amincit les dents et crée des stries.
+    let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+    for (let i = 0; i < COUNT; i++) {
+      left = Math.min(left, this.destination[i * 2]);
+      right = Math.max(right, this.destination[i * 2]);
+      top = Math.min(top, this.destination[i * 2 + 1]);
+      bottom = Math.max(bottom, this.destination[i * 2 + 1]);
+    }
 
     // 1. Intérieur bouche (cavité, langue, dents) - seulement si ouvert
     if (this.pose.open > 0.03) {
@@ -410,20 +367,13 @@ export class HoloMouth {
       ctx.closePath();
       ctx.clip();
 
-      // Fond cavité
-      for (let i = 0; i < COUNT; i++) {
-        triangle(ctx, this.interior, this.innerSource, this.innerDestination, [COUNT, i, (i + 1) % COUNT]);
-      }
-
-      // Dents supérieures visibles selon ouverture
-      if (this.pose.open > 0.08) {
-        const teethAlpha = Math.min(1, (this.pose.open - 0.08) / 0.18);
-        ctx.globalAlpha = teethAlpha;
-        // Dents déjà dans interior, mais on ajoute reflet
-        ctx.fillStyle = `rgba(245, 240, 230, ${0.15 * teethAlpha})`;
-        ctx.fillRect(this.innerDestination[COUNT * 2] - 38, this.innerDestination[COUNT * 2 + 1] - 18, 76, 2);
-        ctx.globalAlpha = 1;
-      }
+      // Fond opaque dans le contour : l'antialias des triangles ne doit pas
+      // laisser réapparaître les lèvres fermées entre les facettes internes.
+      ctx.fillStyle = "#090404";
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      // Les dents occupent le haut de l'ouverture, la cavité et la langue
+      // le fond. Pas de trait lumineux ni de dents inférieures artificielles.
+      ctx.drawImage(this.interior, 36, 8, 128, 72, left, top, right - left, bottom - top);
 
       ctx.restore();
     }
@@ -440,7 +390,7 @@ export class HoloMouth {
       ctx.fillStyle = `rgba(0, 0, 0, ${0.08 + this.pose.open * 0.12})`;
       ctx.beginPath();
       // Ombre sous lèvre inférieure
-      const lipBottomY = cy / COUNT + this.pose.open * 18;
+      const lipBottomY = (top + bottom) / 2 + this.pose.open * 18;
       ctx.ellipse(CX, lipBottomY + 6, 32 + this.pose.wide * 8, 4 + this.pose.open * 3, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
@@ -450,17 +400,6 @@ export class HoloMouth {
     ctx.globalCompositeOperation = "destination-in";
     ctx.drawImage(this.mask, 0, 0);
     ctx.globalCompositeOperation = "source-over";
-
-    // 5. Légère lueur verte thème (très subtile)
-    if (this.pose.open > 0.05) {
-      ctx.save();
-      ctx.globalCompositeOperation = "screen";
-      ctx.fillStyle = `rgba(95, 191, 23, ${0.02 + this.pose.open * 0.03})`;
-      ctx.beginPath();
-      ctx.ellipse(CX, CY, 45 + this.pose.wide * 5, 18 + this.pose.open * 8, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
 
     this.texture.needsUpdate = true;
   }

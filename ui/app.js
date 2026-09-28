@@ -3,7 +3,8 @@ import { SpeechPlayer, cleanForSpeech } from "./speech.mjs?v=speech-sync-3";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { HoloMouth } from "./holo-mouth.mjs?v=command-center-45";
+import { HoloMouth } from "./holo-mouth.mjs?v=natural-face-1";
+import { AVATAR_PORTRAIT, AVATAR_BRIGHTNESS_DEFAULT, createPortraitMaterial } from "./avatar.mjs?v=natural-face-1";
 import { lipDemoPose } from "./lips.mjs?v=command-center-45";
 
 /* =========================================================
@@ -183,131 +184,43 @@ energySphere.position.z = -3.2;
 // reactor.add(energySphere); // retiré : centre vide
 
 /* =========================================================
-   AVATAR — visage doré de KIRA
+   AVATAR — visage humain, couleurs naturelles
    ========================================================= */
 
 let holoMouth = null;
 let holoUniforms = null;
 // Luminosité du visage (0.1 à 1.0), réglable dans Paramètres et mémorisée.
-const AVATAR_BRIGHTNESS_DEFAULT = 0.45;
 let avatarBrightness = AVATAR_BRIGHTNESS_DEFAULT;
 try {
   const savedB = parseFloat(localStorage.getItem("kira.avatarBrightness"));
   if (savedB >= 0.1 && savedB <= 1) avatarBrightness = savedB;
 } catch { /* stockage optionnel */ }
 function applyAvatarBrightness() {
+  // La bouche partage ce même uniform : aucune différence de teint en parlant.
   if (holoUniforms) holoUniforms.brightness.value = avatarBrightness;
-  const mat = holoMouth && holoMouth.overlay && holoMouth.overlay.material;
-  if (mat && mat.uniforms && mat.uniforms.brightness) mat.uniforms.brightness.value = avatarBrightness;
-  else if (mat && mat.color) mat.color.setScalar(avatarBrightness);
 }
+// Scène séparée, composée après le bloom : le décor reste vert et lumineux,
+// mais ni son éclairage ni sa lueur ne recolorent/brûlent la peau et les yeux.
+const avatarScene = new THREE.Scene();
 const avatarGroup = new THREE.Group();
-scene.add(avatarGroup);
+avatarScene.add(avatarGroup);
 
 // ── HOLOGRAMME DE KIRA (image + lèvres animées) ──
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
-  const avatarTexture = avatarLoader.load("assets/avatar_core.png?v=command-center-45", (texture) => {
-    // Valeurs sRGB brutes : le shader holographique gère lui-même le rendu.
+  const avatarTexture = avatarLoader.load(AVATAR_PORTRAIT.url, (texture) => {
+    // Valeurs sRGB brutes : le portrait et les lèvres gardent les couleurs photo.
     if (texture) texture.needsUpdate = true;
     // Lèvres animées : maillage visème sur les mesures réelles de la bouche,
     // synchronisé sur l'horloge audio réelle (aucun décalage).
     if (texture && texture.image && typeof HoloMouth === "function") {
-      try { holoMouth = new HoloMouth(texture.image, THREE, scene, avatarPlane); }
+      try { holoMouth = new HoloMouth(texture.image, THREE, avatarScene, avatarPlane); }
       catch (error) { console.error("HoloMouth :", error); holoMouth = null; }
     }
     applyAvatarBrightness();
   });
-  // Holographique : fusion normale (aucune accumulation, le bloom ne peut plus
-  // brûler le visage), fond noir rendu transparent. Le visage est retravaillé
-  // dans le shader (voir les constantes GLSL) : netteté, relief, teinte de peau
-  // plus vive, scanlines et glitch discrets.
-  holoUniforms = { map: { value: avatarTexture }, time: { value: 0 }, brightness: { value: avatarBrightness } };
-  const avatarMaterial = new THREE.ShaderMaterial({
-    uniforms: holoUniforms,
-    transparent: true,
-    depthWrite: false,
-    depthTest: false,
-    blending: THREE.NormalBlending,
-    vertexShader: `
-      varying vec2 vUv;
-      uniform float time;
-      void main() {
-        vUv = uv;
-        vec3 p = position;
-        // Glitch discret : quelques bandes rares, décalage minime.
-        float band = floor(uv.y * 26.0 - time * 2.2);
-        float rnd = fract(sin(band * 78.233) * 43758.5453);
-        p.x += (rnd - 0.5) * 0.004 * step(0.985, rnd);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-      }`,
-    fragmentShader: `
-      uniform sampler2D map;
-      uniform float time;
-      uniform float brightness;
-      varying vec2 vUv;
-
-      // Rendu du visage — la texture reste la référence, le shader la révèle :
-      //   DETAIL   netteté : structure fine (1-2 px) du visage
-      //   MODEL    relief : modelé (≈5 px), joues, arête du nez, lèvres
-      //   RELIEF   lumière rasante venue du haut-gauche, calculée sur la carte douce
-      //   VIVID    teinte de peau un peu plus vive (mid-tones chauds seulement)
-      //   SCANLINE / GLITCH : discrets (l'hologramme ne mange plus le visage)
-      const float DETAIL_GAIN = 0.28;
-      const float MODEL_GAIN = 0.45;
-      const float RELIEF_GAIN = 0.22;
-      const float VIVID_GAIN = 0.16;
-      const float SCANLINE_AMP = 0.035;
-      const float SCANLINE_FREQ = 460.0;
-      const float GLITCH_UV = 0.006;
-      // Les cartes floues sont lues dans les mipmaps de la texture (0 = net,
-      // 2.0 ≈ 4 px, 4.0 ≈ 16 px) : aucun flou supplémentaire, coût constant.
-      const float SOFT_LOD = 2.0;
-      const float MODEL_LOD = 4.0;
-      const float RELIEF_STEP = 0.0039; // rayon du gradient (≈4 px)
-
-      float luma(vec3 color) { return dot(color, vec3(0.299, 0.587, 0.114)); }
-
-      void main() {
-        vec2 uv = vUv;
-        // Glitch discret : une bande rare, décalage minime.
-        float slot = floor(time * 6.0);
-        float glitch = step(0.985, fract(sin(slot * 91.3458) * 47453.5453));
-        uv.x += glitch * (fract(sin(slot * 12.9898) * 78.233) - 0.5) * GLITCH_UV
-              * step(0.4, fract(uv.y * 2.0 - time * 3.0));
-        vec3 src = texture2D(map, uv).rgb;
-        vec3 soft = texture2D(map, uv, SOFT_LOD).rgb;
-        vec3 wide = texture2D(map, uv, MODEL_LOD).rgb;
-        // Détail et relief réservés au visage : le fond garde son grain d'origine.
-        vec2 faceShape = (vUv - vec2(0.5, 0.42)) / vec2(0.32, 0.36);
-        float face = 1.0 - smoothstep(0.55, 1.05, length(faceShape));
-        float weight = face * smoothstep(0.02, 0.12, luma(src));
-        // Net (basses et hautes fréquences ajoutées séparément au visage).
-        vec3 color = src + ((src - soft) * DETAIL_GAIN + (soft - wide) * MODEL_GAIN) * weight;
-        // Relief : la carte douce éclaire le visage en rasant le haut-gauche.
-        float lightX = luma(texture2D(map, uv + vec2(RELIEF_STEP, 0.0), SOFT_LOD).rgb)
-                     - luma(texture2D(map, uv - vec2(RELIEF_STEP, 0.0), SOFT_LOD).rgb);
-        float lightY = luma(texture2D(map, uv + vec2(0.0, RELIEF_STEP), SOFT_LOD).rgb)
-                     - luma(texture2D(map, uv - vec2(0.0, RELIEF_STEP), SOFT_LOD).rgb);
-        color *= 1.0 + RELIEF_GAIN * (-lightX * 0.55 - lightY * 0.75) * weight;
-        // Teinte de peau plus vive : seuls les tons chauds et éclairés bougent.
-        float level = luma(color);
-        vec3 gentle = mix(vec3(level), color, 1.0 + VIVID_GAIN * 0.5);
-        vec3 vivid = mix(vec3(level), color, 1.0 + VIVID_GAIN * 1.9);
-        float skin = clamp((color.r - color.b) * 3.0, 0.0, 1.0) * smoothstep(0.06, 0.26, level);
-        color = mix(gentle, vivid, skin);
-        // Monochrome #5FBF17 : aucune teinte dorée ne subsiste sur l'avatar.
-        vec3 KIRA_GREEN = vec3(0.3725, 0.7490, 0.0902);
-        float tone = clamp(luma(color), 0.0, 1.0);
-        vec3 greenTone = KIRA_GREEN * tone * 1.7;
-        vec3 dim = clamp(greenTone, 0.0, 1.0) * brightness;
-        dim *= 1.0 - SCANLINE_AMP + SCANLINE_AMP * sin(vUv.y * SCANLINE_FREQ); // scanlines douces
-        float lum = luma(src);
-        float alpha = smoothstep(0.002, 0.03, lum);
-        float fade = smoothstep(0.02, 0.1, vUv.y) * smoothstep(1.0, 0.94, vUv.y);
-        gl_FragColor = vec4(dim * fade, alpha * fade * 0.92);
-      }`,
-  });
+  const avatarMaterial = createPortraitMaterial(THREE, avatarTexture, avatarBrightness);
+  holoUniforms = avatarMaterial.uniforms;
   const avatarPlane = new THREE.Mesh(
     new THREE.PlaneGeometry(6.4, 6.4),
     avatarMaterial
@@ -1610,8 +1523,6 @@ function animate() {
   const light = level * (disabled ? 0.12 : 1);
   const motionTime = disabled ? 0 : time;
   const step = disabled ? 0 : dt;
-  // Projection holographique : horloge d'animation (scanlines, scintillement).
-  if (holoUniforms) holoUniforms.time.value = now * 0.001;
   // Lèvres de l'hologramme : même horloge audio que le son (zéro décalage).
   if (holoMouth) {
     holoMouth.update(
@@ -1677,8 +1588,8 @@ function animate() {
   whiteGlow.scale.setScalar(1 + breath + high * 0.22 + energy * 0.1);
   whiteGlowMaterial.opacity = 0.22 + light * 0.07;
   reactorLight.intensity = 9 + light * 3;
-  // Le halo (bloom) suit la luminosité de l'avatar pour ne pas re-brûler le visage.
-  bloomPass.strength = (1.1 + light * 0.16) * (0.4 + 0.6 * avatarBrightness);
+  // Bloom réservé au décor : le visage et sa luminosité restent indépendants.
+  bloomPass.strength = 1.1 + light * 0.16;
 
   reactorParticles.rotation.y = motionTime * 0.025;
   reactorParticles.rotation.x = Math.sin(motionTime * 0.15) * 0.15;
@@ -1686,6 +1597,12 @@ function animate() {
   particleMat.size = 0.028 + high * 0.012;
 
   composer.render();
+  // Couche photo nette au-dessus du décor traité, sans effacer ce dernier.
+  const autoClear = renderer.autoClear;
+  renderer.autoClear = false;
+  renderer.clearDepth();
+  renderer.render(avatarScene, camera);
+  renderer.autoClear = autoClear;
 }
 
 /* =========================================================
