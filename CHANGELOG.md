@@ -12,6 +12,14 @@
 - **Avatar holographique** (`ui/assets/avatar_gold.png`, généré par IA) :
   rendu additif Three.js, anneaux orbitaux dorés, particules et bloom.
   L'avatar respire avec la voix (same speech-sync pipeline, tests inchangés).
+- **Visage de l'avatar plus réaliste** (`ui/app.js`) : luminosité par défaut à
+  **45 %** (réglable dans Paramètres, préférence mémorisée) ; le shader du
+  portrait ajoute netteté (structure fine du visage), modelé (joues, arête du
+  nez, lèvres), un relief éclairé depuis le haut-gauche et une **teinte de peau
+  plus vive** — les bruits flous viennent des mipmaps de la texture, donc aucun
+  flou supplémentaire ni surcoût par pixel. **Scanlines (7 % → 3,5 %) et glitch
+  (×2,3 plus rares, décalage ÷2,3) plus discrets** : l'hologramme ne mange plus
+  le visage. Tests : `tests/avatar.test.mjs` fige le budget de rendu.
 - **Jauges temps réel réelles** : `kira_api._handle_system` ajoute
   `cpu_cores`, `uptime_h` et les **débits réseau live** (`net_sent_kbps`,
   `net_recv_kbps`, calculés par delta des compteurs `psutil`). L'UI trace des
