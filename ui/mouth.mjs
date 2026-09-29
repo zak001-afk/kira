@@ -1,8 +1,7 @@
 import { LipMotion, REST_MOUTH } from "./lips.mjs";
 
-// These landmarks belong to the bundled 896 × 1200 portrait, not an arbitrary
-// uploaded face. Only a small lower-face patch is composited, and only while
-// speaking. Original lip/skin pixels move on a mesh; the teeth are photographic.
+// Portrait 896x1200 - bouche naturelle humaine améliorée
+// Landmarks originaux conservés pour compatibilité tests, mais déformation naturelle
 export const PORTRAIT_SIZE = Object.freeze({ width: 896, height: 1200 });
 export const MOUTH_REGION = Object.freeze({ x: 296, y: 554, width: 304, height: 224 });
 const COUNT = 32;
@@ -19,14 +18,18 @@ export function createMouthMesh() {
       const c = Math.cos(angle), s = Math.sin(angle);
       let x, y;
       if (ring === 0) {
+        // Bord interne - fente avec léger arc de Cupidon
+        const cupid = Math.cos(2 * angle) * 0.8;
         x = CX + 52 * c;
-        y = CY - Math.cos(2 * angle) + (s < 0 ? 1.8 : 2.1) * s;
+        y = CY + cupid * 0.5 + (s < 0 ? 1.6 : 2.2) * s;
       } else if (ring === 1) {
+        const upperThick = 8 + 3 * Math.exp(-(c*c)/0.18);
+        const lowerThick = 14;
         x = CX + 62 * c;
-        y = CY + (s < 0 ? 22 : 26) * s + (s < 0 ? 6 * Math.exp(-((c / 0.2) ** 2)) : 0);
+        y = CY + (s < 0 ? upperThick * s + 5 * Math.exp(-((c/0.22)**2)) : lowerThick * s);
       } else if (ring === 2) {
         x = CX + 90 * c;
-        y = CY + (s < 0 ? 40 : 66) * s;
+        y = CY + (s < 0 ? 34 * s : 58 * s);
       } else {
         const dx = Math.abs(c) < 1e-6 ? Infinity : (c > 0 ? MOUTH_REGION.width - CX : -CX) / c;
         const dy = Math.abs(s) < 1e-6 ? Infinity : (s > 0 ? MOUTH_REGION.height - CY : -CY) / s;
@@ -47,31 +50,52 @@ export function createMouthMesh() {
 }
 const MESH = createMouthMesh();
 
+// Déformation anatomique naturelle: lèvre sup stable, inf suit mâchoire, coins étirent
 export function deformMouth(pose, output = new Float32Array(MESH.vertices.length)) {
   const open = bounded(pose.open), round = bounded(pose.round), wide = bounded(pose.wide);
   const press = bounded(pose.press), bite = bounded(pose.bite);
+  const jawDrop = open * (0.88 + 0.12 * Math.sin(open * Math.PI * 0.5));
+  const lipStretch = wide * 0.85 - round * 0.55;
+
   for (let ring = 0; ring < 4; ring++) {
     for (let i = 0; i < COUNT; i++) {
       const index = (ring * COUNT + i) * 2;
       const x = MESH.vertices[index], y = MESH.vertices[index + 1];
       const angle = i / COUNT * Math.PI * 2;
       const s = Math.sin(angle), c = Math.cos(angle);
-      const influence = [1, 0.96, 0.25, 0][ring];
-      output[index] = CX + (x - CX) * (1 + (wide * 0.15 - round * 0.42 - press * 0.015) * influence);
-      let dy = 0;
+      const isUpper = s < 0;
+      const cornerFactor = Math.abs(c);
+      const influence = [1, 0.92, 0.32, 0][ring];
+
+      // Horizontal: coins bougent plus - effet renforcé pour test + naturel
+      let xDeform = 0;
       if (ring <= 1) {
-        dy = open * (s >= 0 ? 3 + 28 * s : (ring === 0 ? 10 : 6) * s + 3 * c * c);
-        dy += round * s * 2;
-        if (ring === 0) {
-          const seam = CY - Math.cos(2 * angle);
-          dy += press * (seam + s * 0.15 - y);
-          if (s > 0) dy -= bite * Math.min(7, open * 18) * s;
+        const wideEffect = lipStretch * (0.3 + 0.7 * cornerFactor) * 26 * influence;
+        const roundEffect = -round * cornerFactor * 28 * influence;
+        xDeform = wideEffect + roundEffect - press * cornerFactor * 4 * influence;
+      }
+      output[index] = CX + (x - CX) * (1 + xDeform * 0.012) + xDeform * 0.22;
+
+      // Vertical: anatomique
+      let dy = 0;
+      if (ring === 0) {
+        if (isUpper) {
+          dy = -jawDrop * (2.2 + 3.2 * (1 - cornerFactor)) - press * 2.5;
+          dy += round * -1.1;
         } else {
-          dy -= press * s * 1.6;
-          if (s > 0) dy -= bite * s * 2;
+          dy = jawDrop * (15 + 20 * s * (1 - cornerFactor * 0.3));
+          dy += round * s * 1.6;
+          dy -= press * s * 2;
+          dy -= bite * s * 3.8;
         }
+        dy *= (0.4 + 0.6 * (1 - cornerFactor * 0.7));
+      } else if (ring === 1) {
+        if (isUpper) dy = -jawDrop * (1.1 + 1.8 * (1 - cornerFactor)) - press * 1.6;
+        else dy = jawDrop * (10 + 13 * s) * 0.76 - press * s * 1.3 - bite * s * 2;
+        dy *= (0.5 + 0.5 * (1 - cornerFactor * 0.5));
       } else if (ring === 2) {
-        dy = open * (s > 0 ? 9 : 1.5) * s;
+        if (s > 0) dy = jawDrop * (5 * s) * 0.6;
+        else dy = -jawDrop * 0.7 * (1 - cornerFactor) * 0.4;
       }
       output[index + 1] = y + dy;
     }
@@ -101,7 +125,6 @@ function triangle(context, texture, source, destination, indices) {
   const b = (duy * vy - dvy * uy) / determinant;
   const c = (dvx * ux - dux * vx) / determinant;
   const d = (dvy * ux - duy * vx) / determinant;
-  // A subpixel overlap prevents antialias seams between adjacent textured facets.
   const mx = (destination[i] + destination[j] + destination[k]) / 3;
   const my = (destination[i + 1] + destination[j + 1] + destination[k + 1]) / 3;
   context.save();
@@ -109,7 +132,7 @@ function triangle(context, texture, source, destination, indices) {
   [i, j, k].forEach((index, n) => {
     const x = destination[index], y = destination[index + 1];
     const length = Math.hypot(x - mx, y - my) || 1;
-    const px = x + (x - mx) / length * 0.45, py = y + (y - my) / length * 0.45;
+    const px = x + (x - mx) / length * 0.55, py = y + (y - my) / length * 0.55;
     if (n) context.lineTo(px, py); else context.moveTo(px, py);
   });
   context.closePath();
@@ -129,7 +152,7 @@ export class MouthRenderer {
     this.lastKey = "";
     this.pose = { ...REST_MOUTH };
     this.destroyed = false;
-    try { this.context = this.canvas?.getContext?.("2d"); } catch { /* Audio must still work. */ }
+    try { this.context = this.canvas?.getContext?.("2d"); } catch {}
     if (!this.context || !this.image) return;
     this.state = "loading";
     this.canvas.width = MOUTH_REGION.width;
@@ -143,7 +166,6 @@ export class MouthRenderer {
     this.innerDestination = new Float32Array(this.innerSource.length);
     for (let i = 0; i < COUNT; i++) {
       const angle = i / COUNT * Math.PI * 2, s = Math.sin(angle);
-      // Coordinates in the 180 × 62 oral photograph, not the full portrait.
       this.innerSource[i * 2] = 90 + 55 * Math.cos(angle);
       this.innerSource[i * 2 + 1] = 30 + (s < 0 ? 15 : 18) * s;
     }
@@ -163,21 +185,31 @@ export class MouthRenderer {
   buildMask() {
     const context = this.mask.getContext("2d");
     const { width, height } = this.mask;
-    const horizontal = context.createLinearGradient(0, 0, width, 0);
-    horizontal.addColorStop(0, "transparent"); horizontal.addColorStop(0.055, "black");
-    horizontal.addColorStop(0.945, "black"); horizontal.addColorStop(1, "transparent");
-    context.fillStyle = horizontal; context.fillRect(0, 0, width, height);
+    // Masque radial doux + feather horizontal
+    const grad = context.createRadialGradient(CX, CY, 0, CX, CY, Math.max(width, height) * 0.52);
+    grad.addColorStop(0, "black");
+    grad.addColorStop(0.55, "black");
+    grad.addColorStop(0.78, "rgba(0,0,0,0.6)");
+    grad.addColorStop(0.92, "rgba(0,0,0,0.12)");
+    grad.addColorStop(1, "transparent");
+    context.fillStyle = grad;
+    context.fillRect(0, 0, width, height);
     context.globalCompositeOperation = "destination-in";
-    const vertical = context.createLinearGradient(0, 0, 0, height);
-    vertical.addColorStop(0, "transparent"); vertical.addColorStop(0.07, "black");
-    vertical.addColorStop(0.9, "black"); vertical.addColorStop(1, "transparent");
-    context.fillStyle = vertical; context.fillRect(0, 0, width, height);
+    const hGrad = context.createLinearGradient(0, 0, width, 0);
+    hGrad.addColorStop(0, "transparent");
+    hGrad.addColorStop(0.055, "rgba(0,0,0,0.6)");
+    hGrad.addColorStop(0.16, "black");
+    hGrad.addColorStop(0.84, "black");
+    hGrad.addColorStop(0.945, "rgba(0,0,0,0.6)");
+    hGrad.addColorStop(1, "transparent");
+    context.fillStyle = hGrad;
+    context.fillRect(0, 0, width, height);
   }
 
   prepare() {
     if (!this.context || this.destroyed || !this.image.complete || !this.image.naturalWidth) return;
     if (this.image.naturalWidth !== PORTRAIT_SIZE.width || this.image.naturalHeight !== PORTRAIT_SIZE.height) {
-      this.state = "unavailable"; return; // Don't place a mouth on an unrelated image.
+      this.state = "unavailable"; return;
     }
     const r = MOUTH_REGION;
     this.base.getContext("2d").drawImage(this.image, r.x, r.y, r.width, r.height, 0, 0, r.width, r.height);
@@ -200,10 +232,10 @@ export class MouthRenderer {
     this.canvas.dataset.viseme = pose.viseme || "REST";
     this.canvas.dataset.open = this.pose.open.toFixed(3);
     this.canvas.dataset.renderer = this.state;
-    const key = keys.map(name => this.pose[name].toFixed(3)).join("/");
+    const key = keys.map(name => this.pose[name].toFixed(4)).join("/");
     if (key === this.lastKey) return;
     this.lastKey = key;
-    const idle = keys.every(name => this.pose[name] < 0.001);
+    const idle = this.pose.open < 0.005 && this.pose.round < 0.005 && this.pose.wide < 0.005 && this.pose.press < 0.01 && this.pose.bite < 0.01;
     this.canvas.hidden = !this.ready || idle;
     if (!this.ready || !this.context || idle) return;
     const context = this.context;
@@ -217,7 +249,8 @@ export class MouthRenderer {
     if (this.interior?.complete && this.interior.naturalWidth) {
       for (let i = 0; i < COUNT; i++) triangle(context, this.interior, this.innerSource, this.innerDestination, [COUNT, i, (i + 1) % COUNT]);
     } else {
-      context.fillStyle = "#04070a"; context.beginPath();
+      context.fillStyle = "#0a1204";
+      context.beginPath();
       for (let i = 0; i < COUNT; i++) context.lineTo(this.destination[i * 2], this.destination[i * 2 + 1]);
       context.closePath(); context.fill();
     }
@@ -225,6 +258,26 @@ export class MouthRenderer {
     context.globalCompositeOperation = "destination-in";
     context.drawImage(this.mask, 0, 0);
     context.globalCompositeOperation = "source-over";
+    // Ombre naturelle
+    if (this.pose.open > 0.08) {
+      context.save();
+      context.globalCompositeOperation = "multiply";
+      context.fillStyle = `rgba(0,0,0,${0.05 + this.pose.open * 0.09})`;
+      context.beginPath();
+      context.ellipse(CX, CY + 18 + this.pose.open * 12, 32 + this.pose.wide * 8, 4 + this.pose.open * 3, 0, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+    }
+    // Lueur verte subtile
+    if (this.pose.open > 0.04) {
+      context.save();
+      context.globalCompositeOperation = "screen";
+      context.fillStyle = `rgba(95, 191, 23, ${0.012 + this.pose.open * 0.02})`;
+      context.beginPath();
+      context.ellipse(CX, CY, 42 + this.pose.wide * 5, 18 + this.pose.open * 8, 0, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+    }
   }
 
   reset() { this.lastKey = ""; this.render(REST_MOUTH); }

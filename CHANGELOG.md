@@ -1,126 +1,5 @@
 # KIRA Changelog
 
-## Unreleased — Planificateur proactif, documents, diagnostic, réglages et thème « Neon Obsidian »
-
-- **Rappels proactifs (`kira_scheduler.py`)** : un poller (20 s) scanne les
-  tâches dûes et déclenche chaque rappel UNE seule fois (un HH:MM déjà
-  passé du jour part quand même, pas de doublon au redémarrage).
-  Long-poll `GET /api/events` (+ `?recent=1`) : l'UI affiche un toast,
-  ajoute la mention dans la conversation et parle le rappel.
-- **Briefing du matin** : « briefing » / « point du matin » → météo +
-  tâches en attente + prochains jours fériés (FR/US selon la langue,
-  dédoublonnés). Nouveau nœud grammatical `parse_special_command`, comme
-  la météo — le mini-planificateur déformait ces phrases.
-- **Documents locaux RAG-lite (`kira_docs.py`)** : `add_note`,
-  `search_docs` (découpage ~900 caractères, score TF, extraits),
-  `list_documents` ; dossier `kira_docs/` ou `KIRA_DOCS_DIR`. Refuse
-  `..`. UI : vue DOCUMENTS.
-- **Boucle de construction agentique (`kira_build.py`)** : « build a todo
-  app » → plan JSON via le cerveau code, génération de ≤ 8 fichiers
-  (écriture via `code_write_file` : garde syntaxe + jail), un cycle
-  d'auto-réparation par fichier, vérification en exécutant le fichier
-  d'entrée, rapport en français. Cerveau indisponible → `brain_unavailable`
-  propre. `code_build` est conséquent (carte d'approbation),
-  `code_preview_build` reste en lecture seule.
-- **Diagnostic de santé (`kira_health.py`)** : sonde chaque agent
-  (recherche/météo, mémoire, tâches, plugins, programmation par
-  écriture+suppression temporaire, documents, cerveau IA) → « Diagnostic :
-  X/Y systèmes OK ». `GET /api/health` + vue SANTÉ (pastilles vertes et
-  délais, bouton Relancer).
-- **Réglages moteur** : `GET/POST /api/settings` — clés `KIRA_*`
-  autorisées (modèles chat/arabe/planificateur/code, ville,
-  KIRA_REQUIRE_APPROVAL, KIRA_PLANNER, KIRA_PERSONA…) écrites dans `.env`
-  en conservant les autres lignes, + mise à jour de l'environnement
-  courant. Nouvelle vue RÉGLAGES (7 champs, enregistrement en direct).
-- **Sauvegardes & plugins (`kira_ops.py`)** : `backup_memory` (checkpoint
-  WAL, rotation dans `kira_backups/`), `list_backups`, `backup_memory` et
-  `generate_plugin` (modèle complet, nom validé, compilation vérifiée,
-  chargement à chaud) — tous conséquents et approuvés via l'UI.
-  `GET /api/backups` + `POST /api/backup`.
-- **Multi-étapes planifiées** : « fais X puis Y » → `plan_steps` (mots de
-  séquence uniquement, outils connus, 2–4 étapes, budget séparé) ; si la
-  1ʳᵉ étape est conséquente, TOUT le plan restant est parqué dans la carte
-  d'approbation et se rejoue d'un coup après confirmation ; « annuler »
-  le retire.
-- **Garde d'accès distant** : hors localhost, `POST` exige
-  `Authorization: Bearer KIRA_REMOTE_TOKEN` quand la variable est définie
-  (localhost reste libre). Correctifs `kira_code` : `list_dir("")` liste
-  la racine du workspace ; supprimer `.` → `workspace_root_protected`.
-- **Thème « Neon Obsidian »** : nouveau calque `ui/theme.css` chargé
-  après `style.css` — base obsidienne `#05070d`, accent cyan `#22d3ee`,
-  panneaux en verre dépoli, gradients aurore ; aucune couleur de la scène
-  3D changée (calque CSS uniquement). Nouvelles vues SANTÉ / DOCUMENTS /
-  RÉGLAGES raccordées à la navigation.
-- **Tests** : 30 nouveaux tests (`tests/test_new_capabilities.py` :
-  scheduler, docs, health, ops, plan multi-étapes, routes spéciales,
-  réglages + garde distante). Suites au vert : 513 Python, 64 Node.
-
-## Unreleased — Durcissement de l'agent de programmation + moteur mono-instance
-
-- **Un seul moteur KIRA par port** : le serveur API était mono-thread — une
-  requête bloquante (outil coincé, retry cloud) gelait toutes les autres, et
-  sous Windows un DEUXIÈME lancement de KIRA pouvait alors se lier au MÊME
-  port 8765. Résultat : cerveau divisé (approbations exécutées dans un
-  processus, `/api/agents` répondait depuis l'autre — flux d'activité vide,
-  confirmations expirées). Désormais `ThreadingHTTPServer` + refus de
-  démarrage (`OSError` clair) quand le port est déjà servi. Régression
-  couverte par `tests/test_api_single_instance.py`.
-- **`code_run_command` durci** : plus aucun shell (`shell=False`, parsing
-  `shlex`) — les chaînages `;` `|` `&&` `||` `&` `` ` `` `$()` sont refusés,
-  tout comme les échappatoires d'interpréteur `-c`/`-m`/`-e`/`--eval` : seul
-  du code ISSU du workspace peut s'exécuter. La frontière de confiance est
-  documentée dans le code (le jail contraint les chemins, pas ce que fait un
-  code approuvé).
-- **Vérification syntaxique automatique** : `code_write_file` refuse
-  d'enregistrer un fichier Python qui ne compile pas ou un JSON invalide
-  (`syntax_error`, rien n'est écrit) ; les fichiers JS sont vérifiés après
-  écriture par `node --check` (avertissement non bloquant, node absent = ok).
-- **Diff dans la carte d'approbation** : un `code_apply_edit` en attente
-  embarque désormais un diff unifié lisible (lignes vertes/rouges dans la
-  carte) — l'utilisateur voit CE QUI va changer avant de confirmer.
-  Nouveau `code_preview_edit` (lecture seule) pour obtenir le diff sans rien
-  modifier ; `apply_edit` renvoie aussi son diff après exécution.
-- **Outils supplémentaires** : `code_list_projects` (projets du workspace :
-  nom, fichiers, dernière modification) ; `code_write_file` gagne un mode
-  `append` ; paramètre `content` mort de `scaffold_project` supprimé.
-- **UI** : styles `.approval-diff` (diff coloré) et les questions de KIRA
-  (`invalid_name`, ex. nom de projet manquant) s'affichent comme des
-  messages normaux au lieu d'une carte d'erreur.
-- **Tests** : 14 nouveaux tests (syntaxe, append, diff/preview, durcissement
-  run_command, list_projects, mono-instance). Suites au vert.
-
-## Unreleased — Agent de programmation (création de projets + édition de code)
-
-- **Nouvel agent spécialiste `programming`** dans le registre
-  (`kira_agents.py`), aux côtés de research/memory/windows/plugins. Huit
-  outils implémentés dans `kira_code.py` : `scaffold_project` (gabarits
-  python / web / node / empty), `code_write_file`, `code_read_file`,
-  `code_list_dir`, `code_search` (regex, ignore node_modules/.git/venv),
-  `code_apply_edit` (remplacement exact d'UN bloc), `code_run_command`
-  (liste blanche : python, node, npm, pip, pytest) et `code_delete_path`.
-- **Sandbox à racine unique** : tous les chemins sont confinés dans
-  `KIRA_CODE_DIR` (variable optionnelle) ou `kira_workspace/` par défaut —
-  chemins absolus, lecteurs Windows, `~` et `..` sont refusés avec une erreur
-  structurée (`path_outside_workspace`), la racine elle-même n'est pas
-  supprimable. Les résultats sont des données, jamais de tracebacks.
-- **Sécurité par le contrat existant** : écritures, suppressions et commandes
-  sont `consequential=True` — la porte d'approbation (carte UI, « confirmer »
-  / « annuler ») s'applique automatiquement ; lectures/listes/recherches
-  restent ouvertes.
-- **Routage** : « create a python project X » / « crée un projet web X » /
-  « create a project X using node template » passent par un analyseur
-  déterministe (`parse_scaffold_request`) en repli du planner — le petit
-  modèle ne doit jamais inventer les arguments multi-fichiers. Les autres
-  outils (`code_write_file` avec le code, `code_apply_edit`…) sont visibles
-  du planner via le catalogue et demandent la confirmation habituelle.
-- **UI** : carte « Agent de programmation » dans la vue Agents (icône
-  `</>`), flux d'activité existant affiche chaque outil exécuté.
-- `kira_workspace/` ajouté au `.gitignore` (comme `kira_files/`).
-- **Tests** : `tests/test_code_agent.py` (23 tests : jail, gabarits,
-  édition exacte + refus d'ambiguïté, recherche, liste blanche des
-  commandes, wiring registre, approbation) ; ensembles d'agents mis à jour
-  dans `test_agents.py`. Suite complète au vert.
-
 ## Unreleased — Rôles de modèles spécialistes + fournisseur OpenRouter
 
 - **Chaque type de travail peut avoir son propre cerveau** (variables
@@ -530,6 +409,45 @@
 - **Tests** : `tests/test_shared_search_route.py` (13 tests) — la route rapide
   échoue sur l'ancien code et passe sur le nouveau ; suite complète 220 tests
   Python + 64 tests JS au vert. Aucun fichier `ui/` modifié.
+## Unreleased — Synchronisation labiale douce (med-lipsync-fix-01)
+
+- **Fini le « glitch » quand l'avatar parle** (`ui/holo-mouth.mjs`) : la bande
+  de dents statique, étirée mécaniquement sur toute l'ouverture, est supprimée.
+  Cavité buccale, langue et arc dentaire sont désormais dessinés sur la
+  géométrie réelle de chaque frame : les dents suivent la courbe déformée des
+  lèvres, s'amincissent vers les coins et disparaissent quand l'ouverture est
+  petite — plus aucun trait rectiligne figé sur le visage.
+- **Les lèvres se rejoignent aux coins de la bouche** : la fente ne s'étire
+  plus d'un coin à l'autre ; l'ouverture se referme naturellement aux coins
+  (exposant 0,85 sur |sin|, coins verrouillés), comme une vraie bouche. Le
+  reste du visage ne bouge toujours pas d'un pixel.
+- La synchronisation avec la voix est inchangée : horloge audio réelle,
+  chronométrage par mot d'edge-tts, visèmes articulés (MBP fermé, FV, AH, EE,
+  OH, OO) — c'est le rendu qui suit enfin la parole, sans saccades ni
+  clignotement d'artefacts.
+- **Disposition des pastilles d'agents** (`ui/style.css`) : les 6 chips
+  (Data Analyst, Web Developer, etc.) sont alignées sur les bords du module
+  central, en 3 paires gauche/droite — le visage de KIRA n'est plus recouvert.
+- **Placeholder « Tapez votre commande ici… » en vert #5FBF17** (il restait
+  doré hérité de l'ancien thème or).
+- Bundle UI `med-lipsync-fix-01` (étiquettes de cache des modules
+  actualisées). Vérifié sous Chromium headless (SwiftShader) : poses AH, OH,
+  OO, EE, MBP, FV rendues sans artefact, coins refermés, dents courbes ; les
+  79 tests Node et les tests de service UI passent inchangés.
+
+## Unreleased — Visage naturel de KIRA
+
+- Nouveau portrait fictif photoréaliste (`avatar-natural.webp`, généré par IA) :
+  teint humain, yeux non lumineux et lèvres naturelles. Le décor reste vert.
+- Couleurs photo conservées sur le visage **et** la bouche ; suppression du
+  monochrome vert, des glitches et des scanlines sur le portrait. Composition
+  après le bloom du décor pour préserver les détails et éviter la surexposition.
+- Lèvres recalibrées sur le nouveau portrait, patch coplanaire attaché au visage
+  et luminosité partagée pour éviter le décalage et les changements de teinte.
+- Luminosité initiale **90 %** ; les préférences déjà enregistrées restent
+  respectées. Le réglage n'affecte plus le bloom du décor.
+- Bundle natif/navigateur `med-natural-avatar-01` validant les nouveaux fichiers.
+  Tests de rendu, maillage labial, serveur statique et pixels WebGL dans Chromium.
 
 ## Unreleased — AI Command Center (thème or)
 
@@ -543,6 +461,14 @@
 - **Avatar holographique** (`ui/assets/avatar_gold.png`, généré par IA) :
   rendu additif Three.js, anneaux orbitaux dorés, particules et bloom.
   L'avatar respire avec la voix (same speech-sync pipeline, tests inchangés).
+- **Visage de l'avatar plus réaliste** (`ui/app.js`) : luminosité par défaut à
+  **45 %** (réglable dans Paramètres, préférence mémorisée) ; le shader du
+  portrait ajoute netteté (structure fine du visage), modelé (joues, arête du
+  nez, lèvres), un relief éclairé depuis le haut-gauche et une **teinte de peau
+  plus vive** — les bruits flous viennent des mipmaps de la texture, donc aucun
+  flou supplémentaire ni surcoût par pixel. **Scanlines (7 % → 3,5 %) et glitch
+  (×2,3 plus rares, décalage ÷2,3) plus discrets** : l'hologramme ne mange plus
+  le visage. Tests : `tests/avatar.test.mjs` fige le budget de rendu.
 - **Jauges temps réel réelles** : `kira_api._handle_system` ajoute
   `cpu_cores`, `uptime_h` et les **débits réseau live** (`net_sent_kbps`,
   `net_recv_kbps`, calculés par delta des compteurs `psutil`). L'UI trace des

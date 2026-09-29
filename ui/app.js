@@ -1,18 +1,21 @@
 import * as THREE from "three";
-import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
+import { SpeechPlayer, cleanForSpeech } from "./speech.mjs?v=speech-sync-3";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { HoloMouth } from "./holo-mouth.mjs?v=lipsync-fix-1";
+import { AVATAR_PORTRAIT, AVATAR_BRIGHTNESS_DEFAULT, createPortraitMaterial } from "./avatar.mjs?v=lipsync-fix-1";
+import { lipDemoPose } from "./lips.mjs?v=command-center-45";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
    ========================================================= */
 
-const GOLD = 0xC2A66B;
-const GOLD_BRIGHT = 0xE3D3A6;
-const GOLD_SOFT = 0xD5BE8A;
-const GOLD_DARK = 0x5C4A28;
-const GOLD_DEEP = 0x241C0F;
+const GOLD = 0x5FBF17;
+const GOLD_BRIGHT = 0x8EFF4D;
+const GOLD_SOFT = 0x7AD63A;
+const GOLD_DARK = 0x2E6B0A;
+const GOLD_DEEP = 0x0A1804;
 
 /* =========================================================
    SCÈNE
@@ -20,7 +23,7 @@ const GOLD_DEEP = 0x241C0F;
 
 const container = document.getElementById("scene-container");
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x030200);
+scene.background = new THREE.Color(0x020101);
 
 /* =========================================================
    CAMÉRA
@@ -52,7 +55,7 @@ container.appendChild(renderer.domElement);
    LUMIÈRES
    ========================================================= */
 
-const ambient = new THREE.AmbientLight(0x1a1206, 2);
+const ambient = new THREE.AmbientLight(0x0A1204, 2);
 scene.add(ambient);
 
 const goldLight = new THREE.PointLight(GOLD, 16, 14);
@@ -85,10 +88,10 @@ reactor.scale.setScalar(1.05);
 // --- COQUILLE EXTERNE ---
 const shellGeometry = new THREE.SphereGeometry(2.25, 64, 64);
 const shellMaterial = new THREE.MeshStandardMaterial({
-  color: 0x0a0703,
+  color: 0x030201,
   metalness: 0.95,
   roughness: 0.25,
-  emissive: 0x241C0F,
+  emissive: 0x0A1804,
   emissiveIntensity: 0.18,
   transparent: true,
   opacity: 0.16,
@@ -100,7 +103,7 @@ const shell = new THREE.Mesh(shellGeometry, shellMaterial);
 // --- COQUILLE FILAIRE ---
 const wireGeometry = new THREE.SphereGeometry(2.3, 32, 32);
 const wireMaterial = new THREE.MeshBasicMaterial({
-  color: 0xA08652,
+  color: 0x4A8A2E,
   wireframe: true,
   transparent: true,
   opacity: 0.03,
@@ -113,10 +116,10 @@ const armorGroup = new THREE.Group();
 // reactor.add(armorGroup); // retiré : centre vide
 
 const armorMaterial = new THREE.MeshStandardMaterial({
-  color: 0x120c04,
+  color: 0x0A1408,
   metalness: 1.0,
   roughness: 0.18,
-  emissive: 0x6E5A33,
+  emissive: 0x2E6B0A,
   emissiveIntensity: 0.4,
 });
 
@@ -145,7 +148,7 @@ for (let i = 0; i < 8; i++) {
 // --- AURA D'ÉNERGIE (derrière l'avatar, se déforme avec la voix) ---
 const energyGeometry = new THREE.SphereGeometry(2.6, 64, 64);
 const energyMaterial = new THREE.MeshBasicMaterial({
-  color: 0xC2A66B,
+  color: 0x5FBF17,
   transparent: true,
   opacity: 0.1,
   blending: THREE.AdditiveBlending,
@@ -181,104 +184,51 @@ energySphere.position.z = -3.2;
 // reactor.add(energySphere); // retiré : centre vide
 
 /* =========================================================
-   AVATAR — visage HUD stylisé de KIRA (dessiné en primitives)
-   Trait néon cyan sur verre : aucun photoréalisme, une
-   présence humanoïde qui parle avec la voix.
+   AVATAR — visage humain, couleurs naturelles
    ========================================================= */
 
+let holoMouth = null;
+let holoUniforms = null;
+// Luminosité du visage (0.1 à 1.0), réglable dans Paramètres et mémorisée.
+let avatarBrightness = AVATAR_BRIGHTNESS_DEFAULT;
+try {
+  const savedB = parseFloat(localStorage.getItem("kira.avatarBrightness"));
+  if (savedB >= 0.1 && savedB <= 1) avatarBrightness = savedB;
+} catch { /* stockage optionnel */ }
+function applyAvatarBrightness() {
+  // La bouche partage ce même uniform : aucune différence de teint en parlant.
+  if (holoUniforms) holoUniforms.brightness.value = avatarBrightness;
+}
+// Scène séparée, composée après le bloom : le décor reste vert et lumineux,
+// mais ni son éclairage ni sa lueur ne recolorent/brûlent la peau et les yeux.
+const avatarScene = new THREE.Scene();
 const avatarGroup = new THREE.Group();
-// Face flottant devant la machinerie (z = 5.2, comme l'ancien avatar PNG :
-// caméra à z = 15 → le visage plane à mi-chemin, détaché des anneaux).
-avatarGroup.position.set(0, 0.55, 5.2);
-scene.add(avatarGroup);
+avatarScene.add(avatarGroup);
 
-// Couleurs HUD : cyan « Neon Obsidian » + blanc glacé pour les points chauds.
-const HUD_CYAN = 0x22d3ee;
-const HUD_ICE = 0xa5f3fc;
-const HUD_DEEP = 0x0e7490;
-
-function hudLineMaterial(color, opacity) {
-  return new THREE.MeshBasicMaterial({
-    color,
-    transparent: true,
-    opacity,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    depthTest: false,
-    toneMapped: false,
+// ── HOLOGRAMME DE KIRA (image + lèvres animées) ──
+if (THREE.TextureLoader && THREE.PlaneGeometry) {
+  const avatarLoader = new THREE.TextureLoader();
+  const avatarTexture = avatarLoader.load(AVATAR_PORTRAIT.url, (texture) => {
+    // Valeurs sRGB brutes : le portrait et les lèvres gardent les couleurs photo.
+    if (texture) texture.needsUpdate = true;
+    // Lèvres animées : maillage visème sur les mesures réelles de la bouche,
+    // synchronisé sur l'horloge audio réelle (aucun décalage).
+    if (texture && texture.image && typeof HoloMouth === "function") {
+      try { holoMouth = new HoloMouth(texture.image, THREE, avatarScene, avatarPlane); }
+      catch (error) { console.error("HoloMouth :", error); holoMouth = null; }
+    }
+    applyAvatarBrightness();
   });
+  const avatarMaterial = createPortraitMaterial(THREE, avatarTexture, avatarBrightness);
+  holoUniforms = avatarMaterial.uniforms;
+  const avatarPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(6.4, 6.4),
+    avatarMaterial
+  );
+  avatarPlane.renderOrder = 50;
+  avatarPlane.position.set(0, 0.4, 5.2);
+  avatarGroup.add(avatarPlane);
 }
-
-// Tout le visage porte le renderOrder maximal de l'ancien PNG : dessiné en
-// dernier, au-dessus de toute la machinerie, depthTest désactivé.
-function hudPart(mesh) {
-  mesh.renderOrder = 50;
-  return mesh;
-}
-
-// Échelle globale du visage (réappliquée dans animate() qui écrase scale).
-const HUD_SCALE = 0.72;
-
-// --- Casque : arc sourcil (moitié haute) + arc mâchoire (moitié basse) ---
-const browArc = hudPart(new THREE.Mesh(
-  new THREE.TorusGeometry(1.35, 0.04, 12, 96, Math.PI),
-  hudLineMaterial(HUD_CYAN, 0.8)
-));
-browArc.position.set(0, 0.2, 0);
-avatarGroup.add(browArc);
-
-const jawArc = hudPart(new THREE.Mesh(
-  new THREE.TorusGeometry(1.05, 0.025, 12, 96, Math.PI),
-  hudLineMaterial(HUD_DEEP, 0.55)
-));
-jawArc.position.set(0, -0.15, 0);
-jawArc.rotation.z = Math.PI; // moitié basse = mâchoire / menton
-avatarGroup.add(jawArc);
-
-// --- Visière frontale : fine lame horizontale au-dessus des yeux ---
-const visorBar = hudPart(new THREE.Mesh(
-  new THREE.BoxGeometry(1.5, 0.04, 0.02),
-  hudLineMaterial(HUD_ICE, 0.7)
-));
-visorBar.position.set(0, 0.52, 0);
-avatarGroup.add(visorBar);
-
-// --- Yeux : deux traites lumineuses (clignent, pulsent avec les aigus) ---
-function hudEye(x) {
-  const eye = hudPart(new THREE.Mesh(
-    new THREE.BoxGeometry(0.4, 0.08, 0.02),
-    hudLineMaterial(HUD_ICE, 0.95)
-  ));
-  eye.position.set(x, 0.3, 0);
-  avatarGroup.add(eye);
-  return eye;
-}
-const eyeLeft = hudEye(-0.38);
-const eyeRight = hudEye(0.38);
-
-// --- Nez : discret trait vertical (suggestion, pas un dessin) ---
-const noseTick = hudPart(new THREE.Mesh(
-  new THREE.BoxGeometry(0.025, 0.2, 0.02),
-  hudLineMaterial(HUD_CYAN, 0.3)
-));
-noseTick.position.set(0, 0.02, 0);
-avatarGroup.add(noseTick);
-
-// --- Bouche : egaliseur vocal — scaleY suit l'énergie de la parole ---
-const mouthBar = hudPart(new THREE.Mesh(
-  new THREE.BoxGeometry(0.62, 0.075, 0.02),
-  hudLineMaterial(HUD_CYAN, 0.9)
-));
-mouthBar.position.set(0, -0.5, 0);
-avatarGroup.add(mouthBar);
-
-// --- Halo couronne : anneau fin derrière le casque, tourne lentement ---
-const crownRing = hudPart(new THREE.Mesh(
-  new THREE.RingGeometry(1.5, 1.53, 96),
-  hudLineMaterial(HUD_DEEP, 0.35)
-));
-crownRing.position.set(0, 0.2, -0.05);
-avatarGroup.add(crownRing);
 
 /* =========================================================
    CLUSTER DU CŒUR — nœud d'énergie (fixe, sur la poitrine)
@@ -292,7 +242,7 @@ if (false) scene.add(coreCluster);
 // --- CŒUR ---
 const coreGeometry = new THREE.SphereGeometry(0.42, 64, 64);
 const coreMaterial = new THREE.MeshBasicMaterial({
-  color: 0xfff6df,
+  color: 0xFFF6E2,
   toneMapped: false,
 });
 const core = new THREE.Mesh(coreGeometry, coreMaterial);
@@ -301,7 +251,7 @@ coreCluster.add(core);
 // --- HALO DU CŒUR ---
 const glowGeometry = new THREE.SphereGeometry(0.78, 64, 64);
 const glowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xC2A66B,
+  color: 0x5FBF17,
   transparent: true,
   opacity: 0.42,
   blending: THREE.AdditiveBlending,
@@ -314,7 +264,7 @@ coreCluster.add(coreGlow);
 // --- AURA BLANCHE CHAUDE ---
 const whiteGlowGeometry = new THREE.SphereGeometry(0.62, 64, 64);
 const whiteGlowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffefd0,
+  color: 0xFFF3D9,
   transparent: true,
   opacity: 0.28,
   blending: THREE.AdditiveBlending,
@@ -352,10 +302,10 @@ neuralCore.add(secondRing);
 
 const frameGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.16, 32);
 const frameMat = new THREE.MeshStandardMaterial({
-  color: 0x120c04,
+  color: 0x0A1408,
   metalness: 1,
   roughness: 0.2,
-  emissive: 0x6E5A33,
+  emissive: 0x2E6B0A,
   emissiveIntensity: 0.3,
 });
 const coreFrame = new THREE.Mesh(frameGeo, frameMat);
@@ -364,7 +314,7 @@ neuralCore.add(coreFrame);
 
 const discGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.18, 64);
 const discMat = new THREE.MeshBasicMaterial({
-  color: 0xC2A66B,
+  color: 0x5FBF17,
   transparent: true,
   opacity: 1.0,
   blending: THREE.AdditiveBlending,
@@ -431,7 +381,7 @@ halo.rotation.x = Math.PI / 2;
 // reactor.add(halo); // retiré : centre vide
 
 // --- LUMIÈRE DU RÉACTEUR ---
-const reactorLight = new THREE.PointLight(0xC2A66B, 3, 9);
+const reactorLight = new THREE.PointLight(0x5FBF17, 3, 9);
 reactorLight.position.set(0, -4.1, 1.0);
 scene.add(reactorLight);
 
@@ -439,7 +389,7 @@ scene.add(reactorLight);
 function createReactorRing(radius, tube, rotation, opacity) {
   const geo = new THREE.TorusGeometry(radius, tube, 12, 180);
   const mat = new THREE.MeshBasicMaterial({
-    color: 0xC2A66B,
+    color: 0x5FBF17,
     transparent: true,
     opacity: opacity,
   });
@@ -559,67 +509,49 @@ function addMessage(sender, text, isUser = false, extraClass = "") {
 
   conversation.appendChild(block);
   conversation.scrollTop = conversation.scrollHeight;
+  return block.querySelector?.(".message") || null;
 }
 
-// Carte d'approbation : un outil "consequentiel" (ex. delete_file,
-// share_project_knowledge) attend confirm/cancel avant de s'exécuter.
-function addApprovalCard(data) {
+function addSpokenMessage(text) {
+  const message = addMessage("KIRA", "", false, "spoken-message");
+  if (!message) { speak(text); return null; }
+  const spoken = cleanForSpeech(text);
+  const spokenWords = Array.from(spoken.matchAll(/\S+/gu));
+  const displayWords = Array.from(String(text).matchAll(/\S+/gu));
   const conversation = document.getElementById("conversation");
-  const time = new Date().toTimeString().slice(0, 5);
-  const approvalId = String(data.approval_id || "");
-  const tool = String(data.tool || data.action || "action");
+  const render = value => {
+    message.innerHTML = escapeHtml(value).replace(/\n/g, "<br />");
+    conversation.scrollTop = conversation.scrollHeight;
+  };
 
-  const block = document.createElement("div");
-  block.className = "message-block approval-block";
-  block.innerHTML = `
-    <div class="message-meta">KIRA &nbsp;//&nbsp; ${time}</div>
-    <div class="message approval-card">
-      <span class="approval-warning">⚠</span>
-      <span>${escapeHtml(data.response || `« ${tool} » demande votre confirmation.`)}</span>
-      ${data.diff ? `<pre class="approval-diff">${escapeHtml(String(data.diff)).replace(/^\+([^\n]*)/gm, '<span class="diff-add">+$1</span>').replace(/^-([^\n]*)/gm, '<span class="diff-del">-$1</span>')}</pre>` : ""}
-      <div class="approval-actions">
-        <button class="mini-btn approval-yes" data-approval="${escapeHtml(approvalId)}">Confirmer</button>
-        <button class="mini-btn approval-no" data-approval="${escapeHtml(approvalId)}">Annuler</button>
-      </div>
-    </div>
-  `;
-
-  block.querySelectorAll("[data-approval]").forEach((button) => {
-    button.addEventListener("click", () => {
-      resolveApproval(approvalId, button.classList.contains("approval-yes"), block, button);
-    });
-  });
-
-  conversation.appendChild(block);
-  conversation.scrollTop = conversation.scrollHeight;
-}
-
-window.addApprovalCard = addApprovalCard;
-
-async function resolveApproval(approvalId, approve, block, button) {
-  const buttons = block.querySelectorAll("[data-approval]");
-  buttons.forEach((b) => { b.disabled = true; });
-  button.classList.add("chosen");
-  try {
-    const response = await fetch(`${API_BASE}/api/approval`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ approval_id: approvalId, approve }),
-    });
-    const data = await response.json();
-    const verdict = approve ? "Confirmé — exécution…" : "Annulé — rien n'a été modifié.";
-    if (data.ok === false && data.error && approve) {
-      addMessage("KIRA", `Échec : ${data.error}`);
-    } else {
-      addMessage("KIRA", data.response || verdict);
-      speak(data.response || verdict);
-    }
-  } catch (error) {
-    addMessage("Système", `Erreur : ${error.message}`);
+  if (!speechEnabled || !spokenWords.length || !displayWords.length) {
+    render(text);
+    speak(text);
+    return message;
   }
-  updateTasks();
+
+  message.classList.add("typing");
+  let lastEnd = -1;
+  const reveal = charIndex => {
+    if (charIndex >= spoken.length) {
+      if (lastEnd !== String(text).length) {
+        render(text);
+        lastEnd = String(text).length;
+      }
+      message.classList.remove("typing");
+      return;
+    }
+    const wordCount = spokenWords.filter(word => word.index + word[0].length <= charIndex).length;
+    const displayCount = Math.min(displayWords.length,
+      Math.floor(wordCount * displayWords.length / spokenWords.length));
+    const end = displayCount ? displayWords[displayCount - 1].index + displayWords[displayCount - 1][0].length : 0;
+    if (end === lastEnd) return;
+    lastEnd = end;
+    render(String(text).slice(0, end));
+  };
+  speak(text, { onProgress: reveal });
+  return message;
 }
-window.resolveApproval = resolveApproval;
 
 function addHistoryDivider() {
   const conversation = document.getElementById("conversation");
@@ -691,18 +623,18 @@ const speech = new SpeechPlayer({
   },
 });
 
-function speak(text) {
+function speak(text, options = {}) {
   const voice = currentVoice();
   const language = ["denise", "eloise", "vivienne", "henri"].includes(voice)
     ? "fr-FR" : voice === "aria_uk" ? "en-GB" : "en-US";
-  return speech.speak(text, { language });
+  return speech.speak(text, { language, ...options });
 }
 
 function stopSpeaking() {
   speech.stop();
 }
 
-window.addEventListener("pagehide", () => { speech.destroy(); stopEventPolling(); });
+window.addEventListener("pagehide", () => { speech.destroy(); holoMouth?.destroy?.(); });
 
 // Bouton muet
 const muteButton = document.getElementById("mute");
@@ -761,6 +693,15 @@ async function sendCommand(text) {
     });
 
     if (!response.ok) {
+      // 503 : le serveur d'interface répond mais le moteur KIRA (API locale) est
+      // éteint ou occupé — message clair avec la marche à suivre réelle.
+      if (response.status === 503 || response.status === 502) {
+        throw new Error(
+          "MOTEUR OFF — Le moteur KIRA ne répond pas. Ferme complètement KIRA "
+          + "(Gestionnaire des tâches → tous les processus « python » / KIRA, "
+          + "ancienne fenêtre comprise) puis relance main_window.py."
+        );
+      }
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
@@ -768,19 +709,10 @@ async function sendCommand(text) {
 
     if (data.error) {
       addMessage("Système", `Erreur : ${data.error}`);
-    } else if (data.needs_approval) {
-      addApprovalCard(data);
-      speak(data.response || "Une action demande votre confirmation.");
-    } else if (data.error_code === "invalid_name" && data.response) {
-      // Pas une panne : une question de KIRA (ex. nom de projet manquant).
-      addMessage("KIRA", data.response);
-      speak(data.response);
     } else if (data.response) {
-      addMessage("KIRA", data.response);
-      speak(data.response);
+      addSpokenMessage(data.response);
     } else if (data.action && data.success) {
-      addMessage("KIRA", `C'est fait : ${data.action}`);
-      speak(`C'est fait. ${data.action.replace(/_/g, " ")}`);
+      addSpokenMessage(`C'est fait. ${data.action.replace(/_/g, " ")}`);
     } else if (data.action) {
       addMessage("KIRA", `Exécuté : ${data.action}`);
     } else {
@@ -789,19 +721,41 @@ async function sendCommand(text) {
 
     setActivity("READY");
     updateTasks();
-    updateAgentFeed();
   } catch (error) {
     console.error("Commande échouée :", error);
 
     if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError") || error.message.includes("fetch")) {
-      addMessage("Système", "Impossible de joindre le serveur KIRA (" + API_BASE + "). Vérifiez que le backend est lancé.");
+      addMessage("Système",
+        "MOTEUR OFF — Impossible de joindre le serveur KIRA. Ferme complètement KIRA "
+        + "(ancienne fenêtre et processus « python » compris) puis relance main_window.py.");
     } else {
       addMessage("Système", `Erreur : ${error.message}`);
     }
 
     setActivity("ERROR");
     setTimeout(() => setActivity("READY"), 3000);
+    watchEngineRecovery(); // préviens l'utilisateur dès que le moteur revient
   }
+}
+
+// Quand le moteur tombe, sonde /api/status toutes les 5 s et préviens
+// l'utilisateur dès qu'il revient — plus besoin de deviner à l'aveugle.
+let engineWatchdog = null;
+function watchEngineRecovery() {
+  if (engineWatchdog) return; // déjà en surveillance
+  engineWatchdog = setInterval(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/status`, { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json().catch(() => ({}));
+      if (data && data.online) {
+        clearInterval(engineWatchdog);
+        engineWatchdog = null;
+        showToast("Moteur KIRA reconnecté — tu peux renvoyer ton message.");
+        loadParamInfo && loadParamInfo();
+      }
+    } catch { /* moteur toujours éteint, on continue de sonder */ }
+  }, 5000);
 }
 
 // Entrée clavier
@@ -944,13 +898,13 @@ function drawSpark(canvas, values) {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = "rgba(230, 205, 140, 0.95)";
-  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = "rgba(95, 191, 23, 0.85)";
+  ctx.lineWidth = 1.4;
   ctx.stroke();
   ctx.lineTo(w, h);
   ctx.lineTo(0, h);
   ctx.closePath();
-  ctx.fillStyle = "rgba(230, 205, 140, 0.22)";
+  ctx.fillStyle = "rgba(95, 191, 23, 0.14)";
   ctx.fill();
 }
 
@@ -1113,13 +1067,10 @@ const ICONS = {
   plugin: '<svg viewBox="0 0 24 24"><path d="M12 2v4"></path><path d="M12 18v4"></path><path d="M2 12h4"></path><path d="M18 12h4"></path><circle cx="12" cy="12" r="4"></circle></svg>',
   eye: '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
   globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>',
-  code: '<svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>',
 };
 
 let pluginCount = 0;
 let pluginNames = [];
-let pluginData = [];       // full plugin payloads (id, tools, actions, version...)
-let availablePlugins = []; // discovered on disk but not loaded
 
 const CORE_MODULES = [
   { id: "voix", name: "Voix & Commande", desc: "Commandes vocales et réponses parlées", icon: "mic", view: "parametres" },
@@ -1128,7 +1079,6 @@ const CORE_MODULES = [
   { id: "plugins", name: "Plugins", desc: "0 extension chargée", icon: "plugin", view: "agents" },
   { id: "vision", name: "Vision écran", desc: "Analyse d'écran via le modèle local", icon: "eye", action: "analyze screen" },
   { id: "web", name: "Recherche web", desc: "Recherche et apprentissage en ligne", icon: "globe", action: "__web" },
-  { id: "programmation", name: "Agent de programmation", desc: "Crée des projets complets et modifie le code sur demande", icon: "code", view: "agents" },
 ];
 
 function agentRowHtml(mod, online) {
@@ -1158,45 +1108,11 @@ window.agentClick = function(id) {
   else if (mod.action) window.quickCmd(mod.action);
 };
 
-// Flux d'activité réel du registre d'agents (kira_agents.recent_activity).
-async function updateAgentFeed() {
-  const list = document.getElementById("agent-feed");
-  if (!list) return;
-  try {
-    const response = await fetch(`${API_BASE}/api/agents`);
-    const data = await response.json();
-    const activity = Array.isArray(data.activity) ? data.activity : [];
-    const count = document.getElementById("feed-count");
-    if (count) count.textContent = activity.length ? `${activity.length} évènements` : "";
-    if (activity.length === 0) {
-      list.innerHTML = '<div class="task-empty">Aucune activité — demandez une action à KIRA</div>';
-      return;
-    }
-    list.innerHTML = activity.slice(0, 6).map((entry) => {
-      const time = String(entry.time || "").slice(11, 16) || "--:--";
-      const status = entry.ok ? "OK" : (entry.error_code || "échec");
-      const statusClass = entry.ok ? "feed-ok" : "feed-ko";
-      return `
-        <div class="feed-row">
-          <span class="feed-time">${escapeHtml(time)}</span>
-          <span class="feed-agent">${escapeHtml(String(entry.agent || "—"))}</span>
-          <span class="feed-tool">${escapeHtml(String(entry.tool || "—"))}</span>
-          <span class="feed-status ${statusClass}">${escapeHtml(String(status))}</span>
-          <span class="feed-ms">${Number(entry.elapsed_ms || 0)} ms</span>
-        </div>`;
-    }).join("");
-  } catch (error) {
-    // Backend indisponible : garder l'affichage courant.
-  }
-}
-
 async function updatePlugins() {
   try {
     const response = await fetch(`${API_BASE}/api/plugins`);
     const data = await response.json();
     const plugins = Array.isArray(data.plugins) ? data.plugins : [];
-    pluginData = plugins;
-    availablePlugins = Array.isArray(data.available) ? data.available : [];
     pluginCount = plugins.length;
     pluginNames = plugins.map((p) =>
       typeof p === "string" ? p : (p.name || p.id || "plugin")
@@ -1208,29 +1124,6 @@ async function updatePlugins() {
     // Backend indisponible
   }
 }
-
-function pluginActionButton(pluginId, action, label) {
-  return `<button class="mini-btn" onclick="pluginManage('${escapeHtml(String(pluginId))}', '${action}')">${label}</button>`;
-}
-
-async function pluginManage(id, action) {
-  try {
-    const response = await fetch(`${API_BASE}/api/plugins/${action}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    const data = await response.json();
-    if (!response.ok || data.error) {
-      alert(`Plugin ${action} (${id || "tous"}) : ${data.error || "échec"}`);
-    }
-  } catch (error) {
-    alert(`Plugin ${action} (${id || "tous"}) : backend indisponible`);
-  }
-  await updatePlugins();
-  if (activeView === "agents") loadAgentsFull();
-}
-window.pluginManage = pluginManage;
 
 // ─────────────────────────────────────────────
 // Vues (overlay central)
@@ -1244,12 +1137,9 @@ const VIEW_TITLES = {
   parametres: "Paramètres",
   historique: "Historique",
   systeme: "Système",
-  sante: "Santé des agents",
-  documents: "Documents",
-  reglages: "Réglages moteur",
 };
 
-const VIEW_IDS = ["taches", "agents", "fichiers", "outils", "parametres", "historique", "systeme", "sante", "documents", "reglages"];
+const VIEW_IDS = ["taches", "agents", "fichiers", "outils", "parametres", "historique", "systeme"];
 const NAV_IDS = ["accueil", "conversation", "agents", "fichiers", "outils", "parametres", "historique", "systeme"];
 let activeView = null;
 
@@ -1280,11 +1170,27 @@ function openView(name) {
   if (name === "historique") loadHistoryFull();
   if (name === "systeme") loadSystemFull();
   if (name === "parametres") loadParamInfo();
-  if (name === "sante") loadHealth(true);
-  if (name === "documents") loadDocuments();
-  if (name === "reglages") loadSettings();
 }
 window.openView = openView;
+
+// Outils de la conversation : recherche visuelle et effacement de l'affichage.
+window.convSearch = function () {
+  const q = prompt("Rechercher dans la conversation :");
+  if (!q) return;
+  const nodes = [...document.querySelectorAll("#conversation > *")];
+  const found = nodes.find(n => n.textContent.toLowerCase().includes(q.toLowerCase()));
+  if (found) {
+    found.scrollIntoView({ behavior: "smooth", block: "center" });
+    found.classList.add("conv-flash");
+    setTimeout(() => found.classList.remove("conv-flash"), 1800);
+  } else {
+    alert("Aucun résultat pour « " + q + " ».");
+  }
+};
+window.convClear = function () {
+  if (!confirm("Effacer l'affichage de la conversation ?")) return;
+  document.getElementById("conversation").innerHTML = "";
+};
 
 function closeView() {
   activeView = null;
@@ -1335,49 +1241,18 @@ window.loadTasksFull = loadTasksFull;
 
 async function loadAgentsFull() {
   const list = document.getElementById("agents-full");
-  try {
-    await updatePlugins();
-  } catch (error) {
-    // L'affichage continue avec les données déjà en mémoire.
-  }
   const rows = CORE_MODULES.map((mod) =>
     listRow(mod.name, mod.desc, backendOnline ? "En ligne" : "Hors ligne")
   );
   let pluginRows = "";
-  if (pluginData.length > 0) {
-    pluginRows = pluginData.map((p) => {
-      const tools = (p.tools && p.tools.length > 0)
-        ? "Outils gérés : " + p.tools.map((t) => escapeHtml(String(t))).join(", ")
-        : "Aucun outil déclaré";
-      const version = p.version ? " v" + p.version : "";
-      const sub = `Plugin utilisateur${version} · ${escapeHtml(tools)}`;
-      return `
-        <div class="list-row">
-          <div class="row-main">
-            <span class="row-title">${escapeHtml(String(p.name || p.id))}</span>
-            <span class="row-sub">${sub}</span>
-          </div>
-          <span class="row-side">
-            ${pluginActionButton(p.id, "unload", "Décharger")}
-            ${pluginActionButton(p.id, "reload", "Recharger")}
-          </span>
-        </div>`;
-    }).join("");
+  if (pluginNames.length > 0) {
+    pluginRows = pluginNames.map((name) =>
+      listRow(String(name), "Plugin utilisateur", "Chargé")
+    ).join("");
   } else {
     pluginRows = '<div class="task-empty">Aucun plugin utilisateur dans plugins/</div>';
   }
-  const availableRows = availablePlugins.map((id) => `
-    <div class="list-row">
-      <div class="row-main">
-        <span class="row-title">${escapeHtml(String(id))}</span>
-        <span class="row-sub">Plugin détecté, non chargé</span>
-      </div>
-      <span class="row-side">${pluginActionButton(id, "load", "Charger")}</span>
-    </div>`).join("");
-  const reloadAll = `<div class="view-actions" style="justify-content:flex-start">
-    <button class="mini-btn" onclick="pluginManage('', 'reload')">↻ Recharger tous les plugins</button>
-  </div>`;
-  list.innerHTML = rows.join("") + pluginRows + availableRows + reloadAll;
+  list.innerHTML = rows.join("") + pluginRows;
 }
 window.loadAgentsFull = loadAgentsFull;
 
@@ -1565,6 +1440,20 @@ microSelect.addEventListener("change", () => {
    MOUVEMENT PILOTE PAR LA VOIX
    ========================================================= */
 
+// Réglage de luminosité de l'avatar (Paramètres).
+const brightnessSlider = document.getElementById("avatar-brightness");
+const brightnessValue = document.getElementById("avatar-brightness-value");
+if (brightnessSlider) {
+  brightnessSlider.value = String(Math.round(avatarBrightness * 100));
+  if (brightnessValue) brightnessValue.textContent = `${brightnessSlider.value} %`;
+  brightnessSlider.addEventListener("input", () => {
+    avatarBrightness = Number(brightnessSlider.value) / 100;
+    if (brightnessValue) brightnessValue.textContent = `${brightnessSlider.value} %`;
+    applyAvatarBrightness();
+    try { localStorage.setItem("kira.avatarBrightness", String(avatarBrightness)); } catch { /* optionnel */ }
+  });
+}
+
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let motionPreference = "auto";
 try {
@@ -1634,6 +1523,14 @@ function animate() {
   const light = level * (disabled ? 0.12 : 1);
   const motionTime = disabled ? 0 : time;
   const step = disabled ? 0 : dt;
+  // Lèvres de l'hologramme : même horloge audio que le son (zéro décalage).
+  if (holoMouth) {
+    holoMouth.update(
+      { mouth: voice.mouth, active: voice.active, level },
+      { now, disabled, demo: demo ? lipDemoPose(demoAge) : null }
+    );
+  }
+
   voiceRotation += energy * step;
   voiceUniforms.voiceTime.value = motionTime;
   voiceUniforms.voiceEnergy.value = energy;
@@ -1646,33 +1543,14 @@ function animate() {
     voiceValEl.textContent = Math.round(level * 100) + "%";
   }
 
-  // La machinerie tourne lentement ; le visage HUD reste face à vous mais
+  // La machinerie tourne lentement ; l'avatar reste face à vous mais
   // respire avec la voix comme le reste du réacteur.
   reactor.rotation.y = motionTime * 0.09;
   reactor.rotation.x = Math.sin(motionTime * 0.18) * 0.08;
   reactor.scale.set(1.05 + energy * 0.12, 1.05 + energy * 0.23, 1.05 + energy * 0.12);
   reactor.position.y = Math.sin(motionTime * 3.5) * energy * 0.14;
-  // Respiration légère du visage (héritée de l'ancien avatar PNG),
-  // multipliée par l'échelle HUD globale.
-  avatarGroup.scale.set(
-    HUD_SCALE * (1 + energy * 0.02),
-    HUD_SCALE * (1 + energy * 0.045),
-    HUD_SCALE
-  );
-  // Vie du visage HUD : balancement discret de tête, clignement des yeux,
-  // bouche-égaliseur pilotée par l'énergie vocale réelle.
-  avatarGroup.rotation.y = disabled ? 0 : Math.sin(motionTime * 0.3) * 0.06;
-  avatarGroup.rotation.x = disabled ? 0 : Math.cos(motionTime * 0.23) * 0.035;
-  const blinkCycle = motionTime % 4.6;
-  const blink = (disabled || blinkCycle >= 0.13) ? 1
-    : Math.max(0.12, 1 - Math.sin((blinkCycle / 0.13) * Math.PI) * 0.9);
-  eyeLeft.scale.y = blink;
-  eyeRight.scale.y = blink;
-  eyeLeft.material.opacity = 0.75 + high * 0.25;
-  eyeRight.material.opacity = eyeLeft.material.opacity;
-  mouthBar.scale.y = 0.25 + level * 2.4;
-  mouthBar.material.opacity = 0.45 + level * 0.5;
-  crownRing.rotation.z = motionTime * 0.15;
+  // L'avatar reste stable et humain ; seule une respiration légère l'anime.
+
   armorGroup.rotation.y = -motionTime * 0.08;
   verticalArmor.rotation.y = motionTime * 0.05;
   halo.rotation.z = motionTime * 1.8 + voiceRotation * 0.5;
@@ -1710,6 +1588,7 @@ function animate() {
   whiteGlow.scale.setScalar(1 + breath + high * 0.22 + energy * 0.1);
   whiteGlowMaterial.opacity = 0.22 + light * 0.07;
   reactorLight.intensity = 9 + light * 3;
+  // Bloom réservé au décor : le visage et sa luminosité restent indépendants.
   bloomPass.strength = 1.1 + light * 0.16;
 
   reactorParticles.rotation.y = motionTime * 0.025;
@@ -1718,6 +1597,12 @@ function animate() {
   particleMat.size = 0.028 + high * 0.012;
 
   composer.render();
+  // Couche photo nette au-dessus du décor traité, sans effacer ce dernier.
+  const autoClear = renderer.autoClear;
+  renderer.autoClear = false;
+  renderer.clearDepth();
+  renderer.render(avatarScene, camera);
+  renderer.autoClear = autoClear;
 }
 
 /* =========================================================
@@ -1762,153 +1647,8 @@ updatePlugins();
 renderAgents();
 loadBootHistory();
 
-// ─────────────────────────────────────────────
-// Santé des agents (diagnostic) — vue dédiée
-// ─────────────────────────────────────────────
-window.loadHealth = async function(probe = false) {
-  const rows = document.getElementById("health-rows");
-  if (!rows) return;
-  try {
-    const response = await fetch(`${API_BASE}/api/health`);
-    const data = await response.json();
-    const checks = Array.isArray(data.checks) ? data.checks : [];
-    if (!checks.length) {
-      rows.innerHTML = '<div class="task-empty">Diagnostic indisponible.</div>';
-      return;
-    }
-    rows.innerHTML = checks.map((check) => `
-      <div class="health-row">
-        <span class="health-dot ${check.ok ? "ok" : ""}"></span>
-        <span class="health-label">${escapeHtml(check.label || check.agent)}</span>
-        <span class="health-detail">${escapeHtml(String(check.detail || ""))}</span>
-        <span class="health-ms">${Number(check.ms || 0)} ms</span>
-      </div>`).join("");
-  } catch (error) {
-    rows.innerHTML = '<div class="task-empty">Backend indisponible.</div>';
-  }
-};
-
-// ─────────────────────────────────────────────
-// Documents (kira_docs/) — vue dédiée
-// ─────────────────────────────────────────────
-window.loadDocuments = async function() {
-  const rows = document.getElementById("docs-rows");
-  if (!rows) return;
-  try {
-    const response = await fetch(`${API_BASE}/api/documents`);
-    const data = await response.json();
-    const documents = Array.isArray(data.documents) ? data.documents : [];
-    if (!documents.length) {
-      rows.innerHTML = '<div class="task-empty">Aucun document — déposez des fichiers dans kira_docs/.</div>';
-      return;
-    }
-    rows.innerHTML = documents.map((doc) => `
-      <div class="doc-row">
-        <span class="doc-name">${escapeHtml(doc.name)}</span>
-        <span class="doc-size">${Number(doc.bytes || 0)} o</span>
-      </div>`).join("");
-  } catch (error) {
-    rows.innerHTML = '<div class="task-empty">Backend indisponible.</div>';
-  }
-};
-
-// ─────────────────────────────────────────────
-// Réglages moteur (.env) — vue dédiée
-// ─────────────────────────────────────────────
-const SETTING_FIELDS = [
-  ["set-chat", "KIRA_MODEL_CHAT"], ["set-arabic", "KIRA_MODEL_ARABIC"],
-  ["set-planner-model", "KIRA_MODEL_PLANNER"], ["set-code", "KIRA_MODEL_CODE"],
-  ["set-city", "KIRA_CITY"], ["set-approval", "KIRA_REQUIRE_APPROVAL"],
-  ["set-planner", "KIRA_PLANNER"],
-];
-
-window.loadSettings = async function() {
-  try {
-    const response = await fetch(`${API_BASE}/api/settings`);
-    const data = await response.json();
-    const values = data.settings || {};
-    for (const [fieldId, key] of SETTING_FIELDS) {
-      const field = document.getElementById(fieldId);
-      if (!field) continue;
-      if (field.tagName === "SELECT") field.value = values[key] === "0" ? "0" : "1";
-      else field.value = values[key] || "";
-    }
-    const saved = document.getElementById("settings-saved");
-    if (saved) saved.textContent = "";
-  } catch (error) { /* backend absent : garder le formulaire */ }
-};
-
-window.saveSettings = async function() {
-  const saved = document.getElementById("settings-saved");
-  const body = {};
-  for (const [fieldId, key] of SETTING_FIELDS) {
-    const field = document.getElementById(fieldId);
-    if (!field) continue;
-    body[key] = field.tagName === "SELECT" ? field.value : field.value.trim();
-  }
-  try {
-    const response = await fetch(`${API_BASE}/api/settings`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await response.json();
-    if (saved) saved.textContent = data.ok ? "✓ Enregistré — certains réglages prennent effet au redémarrage." : `Erreur : ${data.error || "?"}`;
-  } catch (error) {
-    if (saved) saved.textContent = `Erreur : ${error.message}`;
-  }
-};
-
-// ─────────────────────────────────────────────
-// KIRA proactive : long-poll des évènements (rappels à l'heure)
-// ─────────────────────────────────────────────
-let lastEventId = 0;
-let eventsActive = false;
-let eventsHalted = false;
-let eventTimer = null;
-
-function stopEventPolling() {
-  eventsHalted = true;
-  if (eventTimer) { clearTimeout(eventTimer); eventTimer = null; }
-}
-
-function showEventToast(event) {
-  const existing = document.querySelector(".event-toast");
-  if (existing) existing.remove();
-  const toast = document.createElement("div");
-  toast.className = "event-toast";
-  toast.innerHTML = `
-    <div class="event-title">⏰ Rappel</div>
-    <div class="event-text">${escapeHtml(String(event.title || ""))}</div>
-    <span class="event-close" title="Fermer">✕</span>`;
-  toast.querySelector(".event-close").addEventListener("click", () => toast.remove());
-  document.getElementById("hud").appendChild(toast);
-  setTimeout(() => toast.remove(), 30000);
-}
-
-async function pollEvents() {
-  if (eventsActive) return;
-  eventsActive = true;
-  try {
-    const response = await fetch(`${API_BASE}/api/events?after=${lastEventId}`);
-    const data = await response.json();
-    for (const event of (Array.isArray(data.events) ? data.events : [])) {
-      lastEventId = Math.max(lastEventId, Number(event.id || 0));
-      showEventToast(event);
-      if (event.speak && event.title) speak(`Rappel : ${event.title}`);
-      addMessage("KIRA", `⏰ Rappel : ${event.title}`);
-    }
-  } catch (error) {
-    await new Promise((resolve) => setTimeout(resolve, 5000)); // backend absent: ralentir
-  }
-  eventsActive = false;
-  if (!eventsHalted) eventTimer = setTimeout(pollEvents, 500);
-}
-pollEvents();
-
 setInterval(updateTelemetry, 3000);
 setInterval(updateTasks, 5000);
-setInterval(updateAgentFeed, 5000);
 setInterval(updatePlugins, 60000);
 
 animate();

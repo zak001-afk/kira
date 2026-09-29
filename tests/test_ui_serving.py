@@ -56,6 +56,9 @@ class StaticUiTests(unittest.TestCase):
         with running_server(partial(KiraUIHandler, directory=str(ROOT / "ui"))) as server:
             for path, expected in [("index.html", "text/html"), ("hologram.mjs", "javascript"),
                                    ("assets/kira-hologram.webp", "image/webp"),
+                                   ("assets/avatar-natural.webp?v=natural-face-1", "image/webp"),
+                                   ("avatar.mjs?v=lipsync-fix-1", "javascript"),
+                                   ("holo-mouth.mjs?v=lipsync-fix-1", "javascript"),
                                    ("assets/reticle.svg", "image/svg+xml"),
                                    ("assets/fonts/rajdhani-latin-500-normal.woff2", "font/woff2")]:
                 request = Request(f"http://127.0.0.1:{server.server_port}/{path}", headers={"Host": "8766-preview.e2b.app"})
@@ -76,6 +79,19 @@ class UIBundleTests(unittest.TestCase):
             Path(tmp, "index.html").write_text("old UI", encoding="utf-8")
             with self.assertRaisesRegex(FileNotFoundError, "do not replace main_window.py alone"):
                 validate_ui_bundle(tmp)
+
+    def test_partial_update_missing_natural_avatar_or_renderer_is_rejected(self):
+        for missing in ("assets/avatar-natural.webp", "avatar.mjs", "holo-mouth.mjs"):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as tmp:
+                for name in UI_REQUIRED_FILES:
+                    if name == missing:
+                        continue
+                    path = Path(tmp, name)
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes((ROOT / "ui" / name).read_bytes())
+                with self.assertRaises(FileNotFoundError) as error:
+                    validate_ui_bundle(tmp)
+                self.assertIn(missing, str(error.exception))
 
     def test_old_index_is_rejected_even_when_all_assets_exist(self):
         with tempfile.TemporaryDirectory() as tmp:

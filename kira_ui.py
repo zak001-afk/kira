@@ -15,14 +15,16 @@ from functools import partial
 from http.client import HTTPConnection, HTTPException
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
 UI_DIRECTORY = Path(__file__).resolve().parent / "ui"
-UI_BUILD_ID = "med-command-center-merged-01"
-UI_BUILD_LABEL = "AI COMMAND CENTER MED / MERGED 01"
+UI_BUILD_ID = "med-lipsync-fix-01"
+UI_BUILD_LABEL = "AI COMMAND CENTER MED / LIPSYNC FIX 01"
 UI_REQUIRED_FILES = (
-    "index.html", "style.css", "app.js", "speech.mjs", "locale.mjs", "lips.mjs", "assets/avatar_gold.png",
+    "index.html", "style.css", "app.js", "speech.mjs", "locale.mjs", "lips.mjs",
+    "avatar.mjs", "holo-mouth.mjs", "assets/avatar-natural.webp",
 )
 
 
@@ -136,21 +138,31 @@ class KiraUIHandler(SimpleHTTPRequestHandler):
         body = self.rfile.read(length) if length else None
         parsed = urlsplit(self.path)
         path = parsed.path + ("?" + parsed.query if parsed.query else "")
-        connection = HTTPConnection(self.api_host, self.api_port, timeout=self.api_timeout)
-        try:
-            connection.request(self.command, path, body=body, headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            })
-            response = connection.getresponse()
-            payload = response.read()
-            status = response.status
-            content_type = response.getheader("Content-Type", "application/json")
-        except (OSError, HTTPException):
+        # Deux essais rapides : absorbe la course au démarrage (API qui finit
+        # de monter pendant que l'UI répond déjà) avant de déclarer un 503.
+        last_error = None
+        for attempt in range(2):
+            connection = HTTPConnection(self.api_host, self.api_port, timeout=self.api_timeout)
+            try:
+                connection.request(self.command, path, body=body, headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                })
+                response = connection.getresponse()
+                payload = response.read()
+                status = response.status
+                content_type = response.getheader("Content-Type", "application/json")
+                last_error = None
+                break
+            except (OSError, HTTPException) as error:
+                last_error = error
+                if attempt == 0:
+                    time.sleep(0.15)
+            finally:
+                connection.close()
+        if last_error is not None:
             self._json_error(503, "KIRA backend unavailable. Start the KIRA desktop app or web launcher.")
             return
-        finally:
-            connection.close()
         self._send_payload(status, content_type, payload)
 
 
