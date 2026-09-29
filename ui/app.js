@@ -181,38 +181,104 @@ energySphere.position.z = -3.2;
 // reactor.add(energySphere); // retiré : centre vide
 
 /* =========================================================
-   AVATAR — visage doré de KIRA
+   AVATAR — visage HUD stylisé de KIRA (dessiné en primitives)
+   Trait néon cyan sur verre : aucun photoréalisme, une
+   présence humanoïde qui parle avec la voix.
    ========================================================= */
 
 const avatarGroup = new THREE.Group();
+// Face flottant devant la machinerie (z = 5.2, comme l'ancien avatar PNG :
+// caméra à z = 15 → le visage plane à mi-chemin, détaché des anneaux).
+avatarGroup.position.set(0, 0.55, 5.2);
 scene.add(avatarGroup);
 
-if (THREE.TextureLoader && THREE.PlaneGeometry) {
-  const avatarLoader = new THREE.TextureLoader();
-  const avatarTexture = avatarLoader.load("assets/avatar_gold.png", (texture) => {
-    if (texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-    if (texture) texture.needsUpdate = true;
-  });
-  // Rendu "visage réel" : blending normal (peau opaque, tons naturels).
-  // depthTest désactivé + renderOrder maximal : le visage est TOUJOURS
-  // dessiné en dernier, au-dessus de toute la machinerie — aucun élément 3D
-  // ne peut jamais passer devant, quelle que soit sa position.
-  const avatarMaterial = new THREE.MeshBasicMaterial({
-    map: avatarTexture,
+// Couleurs HUD : cyan « Neon Obsidian » + blanc glacé pour les points chauds.
+const HUD_CYAN = 0x22d3ee;
+const HUD_ICE = 0xa5f3fc;
+const HUD_DEEP = 0x0e7490;
+
+function hudLineMaterial(color, opacity) {
+  return new THREE.MeshBasicMaterial({
+    color,
     transparent: true,
-    opacity: 1.0,
+    opacity,
+    blending: THREE.AdditiveBlending,
     depthWrite: false,
     depthTest: false,
     toneMapped: false,
   });
-  const avatarPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(5.6, 5.6),
-    avatarMaterial
-  );
-  avatarPlane.renderOrder = 50;
-  avatarPlane.position.set(0, 0.4, 5.2);
-  avatarGroup.add(avatarPlane);
 }
+
+// Tout le visage porte le renderOrder maximal de l'ancien PNG : dessiné en
+// dernier, au-dessus de toute la machinerie, depthTest désactivé.
+function hudPart(mesh) {
+  mesh.renderOrder = 50;
+  return mesh;
+}
+
+// Échelle globale du visage (réappliquée dans animate() qui écrase scale).
+const HUD_SCALE = 0.72;
+
+// --- Casque : arc sourcil (moitié haute) + arc mâchoire (moitié basse) ---
+const browArc = hudPart(new THREE.Mesh(
+  new THREE.TorusGeometry(1.35, 0.04, 12, 96, Math.PI),
+  hudLineMaterial(HUD_CYAN, 0.8)
+));
+browArc.position.set(0, 0.2, 0);
+avatarGroup.add(browArc);
+
+const jawArc = hudPart(new THREE.Mesh(
+  new THREE.TorusGeometry(1.05, 0.025, 12, 96, Math.PI),
+  hudLineMaterial(HUD_DEEP, 0.55)
+));
+jawArc.position.set(0, -0.15, 0);
+jawArc.rotation.z = Math.PI; // moitié basse = mâchoire / menton
+avatarGroup.add(jawArc);
+
+// --- Visière frontale : fine lame horizontale au-dessus des yeux ---
+const visorBar = hudPart(new THREE.Mesh(
+  new THREE.BoxGeometry(1.5, 0.04, 0.02),
+  hudLineMaterial(HUD_ICE, 0.7)
+));
+visorBar.position.set(0, 0.52, 0);
+avatarGroup.add(visorBar);
+
+// --- Yeux : deux traites lumineuses (clignent, pulsent avec les aigus) ---
+function hudEye(x) {
+  const eye = hudPart(new THREE.Mesh(
+    new THREE.BoxGeometry(0.4, 0.08, 0.02),
+    hudLineMaterial(HUD_ICE, 0.95)
+  ));
+  eye.position.set(x, 0.3, 0);
+  avatarGroup.add(eye);
+  return eye;
+}
+const eyeLeft = hudEye(-0.38);
+const eyeRight = hudEye(0.38);
+
+// --- Nez : discret trait vertical (suggestion, pas un dessin) ---
+const noseTick = hudPart(new THREE.Mesh(
+  new THREE.BoxGeometry(0.025, 0.2, 0.02),
+  hudLineMaterial(HUD_CYAN, 0.3)
+));
+noseTick.position.set(0, 0.02, 0);
+avatarGroup.add(noseTick);
+
+// --- Bouche : egaliseur vocal — scaleY suit l'énergie de la parole ---
+const mouthBar = hudPart(new THREE.Mesh(
+  new THREE.BoxGeometry(0.62, 0.075, 0.02),
+  hudLineMaterial(HUD_CYAN, 0.9)
+));
+mouthBar.position.set(0, -0.5, 0);
+avatarGroup.add(mouthBar);
+
+// --- Halo couronne : anneau fin derrière le casque, tourne lentement ---
+const crownRing = hudPart(new THREE.Mesh(
+  new THREE.RingGeometry(1.5, 1.53, 96),
+  hudLineMaterial(HUD_DEEP, 0.35)
+));
+crownRing.position.set(0, 0.2, -0.05);
+avatarGroup.add(crownRing);
 
 /* =========================================================
    CLUSTER DU CŒUR — nœud d'énergie (fixe, sur la poitrine)
@@ -1580,14 +1646,33 @@ function animate() {
     voiceValEl.textContent = Math.round(level * 100) + "%";
   }
 
-  // La machinerie tourne lentement ; l'avatar reste face à vous mais
+  // La machinerie tourne lentement ; le visage HUD reste face à vous mais
   // respire avec la voix comme le reste du réacteur.
   reactor.rotation.y = motionTime * 0.09;
   reactor.rotation.x = Math.sin(motionTime * 0.18) * 0.08;
   reactor.scale.set(1.05 + energy * 0.12, 1.05 + energy * 0.23, 1.05 + energy * 0.12);
   reactor.position.y = Math.sin(motionTime * 3.5) * energy * 0.14;
-  // L'avatar reste stable et humain ; seule une respiration légère l'anime.
-  avatarGroup.scale.set(1 + energy * 0.02, 1 + energy * 0.045, 1);
+  // Respiration légère du visage (héritée de l'ancien avatar PNG),
+  // multipliée par l'échelle HUD globale.
+  avatarGroup.scale.set(
+    HUD_SCALE * (1 + energy * 0.02),
+    HUD_SCALE * (1 + energy * 0.045),
+    HUD_SCALE
+  );
+  // Vie du visage HUD : balancement discret de tête, clignement des yeux,
+  // bouche-égaliseur pilotée par l'énergie vocale réelle.
+  avatarGroup.rotation.y = disabled ? 0 : Math.sin(motionTime * 0.3) * 0.06;
+  avatarGroup.rotation.x = disabled ? 0 : Math.cos(motionTime * 0.23) * 0.035;
+  const blinkCycle = motionTime % 4.6;
+  const blink = (disabled || blinkCycle >= 0.13) ? 1
+    : Math.max(0.12, 1 - Math.sin((blinkCycle / 0.13) * Math.PI) * 0.9);
+  eyeLeft.scale.y = blink;
+  eyeRight.scale.y = blink;
+  eyeLeft.material.opacity = 0.75 + high * 0.25;
+  eyeRight.material.opacity = eyeLeft.material.opacity;
+  mouthBar.scale.y = 0.25 + level * 2.4;
+  mouthBar.material.opacity = 0.45 + level * 0.5;
+  crownRing.rotation.z = motionTime * 0.15;
   armorGroup.rotation.y = -motionTime * 0.08;
   verticalArmor.rotation.y = motionTime * 0.05;
   halo.rotation.z = motionTime * 1.8 + voiceRotation * 0.5;
