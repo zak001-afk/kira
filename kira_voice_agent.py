@@ -6,8 +6,11 @@ import platform
 import kira_memory
 import kira_tasks
 import kira_plugins
+import kira_language
+import kira_commands
 import re
 import subprocess
+import threading
 import time
 import webbrowser
 import base64
@@ -22,6 +25,7 @@ import psutil
 import speech_recognition as sr
 import sounddevice as sd
 import numpy as np
+import kira_open
 from ollama import chat
 
 # Shared Supabase knowledge base (non-personal web research and project
@@ -39,7 +43,6 @@ except ImportError:
 DEFAULT_MODEL = "qwen3:0.6b"
 DEFAULT_VISION_MODEL = "qwen3-vl:2b"
 WAKE_WORD = "kira"
-SAPI_VOICE = "Microsoft Zira Desktop"
 PREFERRED_MICROPHONE = "headset microphone (realtek"
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "kira_config.json")
 LOG_PATH = os.path.join(os.path.dirname(__file__), "kira.log")
@@ -69,7 +72,7 @@ def address_for_language(language: str) -> str:
         return "monsieur"
     if language == "ar":
         return "سيدي"
-    return preferred_address()
+    return preferred_address() if language == "en" else ""
 
 
 def personalize_address(text: str) -> str:
@@ -277,16 +280,16 @@ CHAT_SYSTEM_PROMPT = """
 You are KIRA, modeled after JARVIS from Iron Man - a sophisticated AI butler and personal assistant.
 
 CORE PERSONALITY (JARVIS-STYLE):
-- British butler-like formality with elegant, sophisticated language
+- Polite, composed and thoughtful; adapt formality naturally to the selected language
 - Dry wit and subtle humor - occasionally sardonic but always respectful
 - Proactive - anticipate needs and offer helpful suggestions
 - Calm and composed under any circumstances
 - Loyal, professional, and devoted to serving the user
-- Address the user as "sir" naturally throughout conversation
+- Use a natural local form of address, if appropriate; never force an English honorific
 - Use refined vocabulary and elegant phrasing
 - Be concise but informative - every word should have purpose
 
-SPEECH PATTERNS (Like JARVIS):
+STYLE EXAMPLES (translate the style naturally; these are NOT required English output):
 - "Right away, sir."
 - "As you wish, sir."
 - "I've taken the liberty of..."
@@ -296,7 +299,7 @@ SPEECH PATTERNS (Like JARVIS):
 - "Shall I proceed with...?"
 - "I've prepared..."
 - "At your service, sir."
-- Use understated British expressions
+- Use natural expressions in the selected language
 - Occasional dry observations or subtle quips
 
 CONVERSATION STYLE:
@@ -338,7 +341,7 @@ CAPABILITIES:
 - "I'm equipped to handle..." rather than "I can do..."
 
 FORMATTING:
-- Elegant, concise English
+- Elegant, concise writing in the selected RESPONSE LANGUAGE, never English by default
 - Short, well-crafted paragraphs
 - Sophisticated vocabulary without being pretentious
 - Prefer brevity - JARVIS doesn't ramble
@@ -346,8 +349,7 @@ FORMATTING:
 - Under 160 words unless detail is essential
 
 ADDRESSING THE USER:
-- Use "sir" naturally and frequently (like JARVIS does with Tony)
-- "sir" should feel natural, not forced
+- Use the selected local form of address only when it feels natural, at most once
 - Maintain respectful but warm tone
 - Professional intimacy - like a trusted personal assistant
 """
@@ -355,14 +357,9 @@ ADDRESSING THE USER:
 
 def build_chat_system_prompt(language: str) -> str:
     title = address_for_language(language)
-    language_name = {
-        "fr": "French",
-        "ar": "Arabic",
-    }.get(language, "English")
-
     return (
         f"{CHAT_SYSTEM_PROMPT}\n"
-        f"Reply in {language_name}.\n"
+        f"{kira_language.language_instruction(language)}\n"
         f"The user's preferred form of address is {title!r}.\n"
         "Use the preferred form of address naturally and at most once per response.\n\n"
 
@@ -518,61 +515,177 @@ def clean_json(text: str) -> str:
 
 def call_ollama(messages, options):
     last_error = None
-    for attempt in range(3):
+    merged = {**options}
+    merged["num_predict"] = min(int(merged.get("num_predict", 220)), 220)
+    for attempt in range(2):
         try:
-            return chat(model=MODEL, messages=messages, options=options)
+            return chat(model=MODEL, messages=messages, options=merged)
         except Exception as exc:
             last_error = exc
-            if attempt < 2:
-                time.sleep(0.7)
+            if attempt < 1:
+                time.sleep(0.3)
     raise last_error
 
 
-def select_voice(engine):
+CHAT_ANSWER_BUDGET = 5.0
+
+
+def _run_bounded(function, timeout):
+    """Run function() in a thread, return its result or None after timeout."""
+    box = []
+
+    def _runner():
+        try:
+            box.append((function(),))
+        except Exception:
+            box.append((None,))
+
+    worker = threading.Thread(target=_runner, daemon=True)
+    worker.start()
+    worker.join(max(0.0, timeout))
+    return box[0][0] if box and box[0] else None
+
+
+def chat_answer_with_web(command, language, ask_model, ask_web=None, synthesize=None, budget=None):
+    """Answer within the budget (max 5 s): the local model gets ~70 % of it,
+    then a quick web lookup whose raw results are REFORMULATED to answer the
+    actual question (never a bare copy-paste) while the budget holds — the
+    raw text is the fallback, then whatever the model produced meanwhile.
+    Returns (answer_or_empty, "model" | "web" | "timeout")."""
+    budget = budget or CHAT_ANSWER_BUDGET
+    deadline = time.monotonic() + budget
+    started = time.monotonic()
+    box = []
+
+    def _model():
+        try:
+            return ask_model(command, language) or None
+        except Exception:
+            return None
+
+    worker = threading.Thread(target=lambda: box.append((_model(),)), daemon=True)
+    worker.start()
+    worker.join(max(0.5, budget * 0.7))
+    if box and box[0][0]:
+        return box[0][0], "model"
+    if ask_web is not None:
+        remaining = deadline - time.monotonic()
+        found = _run_bounded(lambda: ask_web(command, language), max(0.3, remaining))
+        if found:
+            text, payload = found if isinstance(found, tuple) else (found, None)
+            if synthesize is not None and payload:
+                remaining = deadline - time.monotonic()
+                if remaining >= 0.5:
+                    synth = _run_bounded(lambda: synthesize(command, language, payload),
+                                         remaining * 0.85)
+                    if synth:
+                        return synth, "web"
+            return text, "web"
+    worker.join(max(0.0, deadline - time.monotonic()))
+    if box and box[0][0]:
+        return box[0][0], "model"
+    return "", "timeout"
+
+
+def _web_results(command):
+    """Raw web results (top 4) for the question, or an empty list."""
     try:
-        voices = engine.getProperty("voices") or []
-        if not voices:
-            return
-
-        best_voice = None
-        best_score = float("-inf")
-
-        for voice in voices:
-            name = (getattr(voice, "name", "") or "").lower()
-            lang = (getattr(voice, "languages", [""]) or [""])[0]
-            lang_str = str(lang).lower()
-
-            score = 0
-            if any(token in lang_str for token in ["en-us", "en-gb", "en"]):
-                score += 60
-            elif "fr" in lang_str or "fr-fr" in lang_str:
-                score -= 80
-
-            if any(
-                token in name
-                for token in [
-                    "zira",
-                    "samantha",
-                    "sonia",
-                    "hazel",
-                    "jenny",
-                    "aria",
-                    "female",
-                    "woman",
-                ]
-            ):
-                score += 40
-            if any(token in name for token in ["france", "french", "francais"]):
-                score -= 60
-
-            if score > best_score:
-                best_score = score
-                best_voice = voice
-
-        if best_voice is not None:
-            engine.setProperty("voice", best_voice.id)
+        from duckduckgo_search import DDGS
     except Exception:
-        pass
+        try:
+            from ddgs import DDGS
+        except Exception:
+            return []
+    try:
+        return list(DDGS(timeout=1.5).text(str(command), max_results=4) or [])
+    except Exception:
+        return []
+
+
+def _format_web_results(results, language):
+    """Readable fallback: the found pages, one short bullet each."""
+    lines = []
+    for item in list(results or [])[:4]:
+        title = str(item.get("title") or "").strip()
+        body = str(item.get("body") or "").strip()
+        link = str(item.get("href") or item.get("url") or "").strip()
+        if not body:
+            continue
+        line = f"• {title}: {body}" if title else f"• {body}"
+        if link:
+            line += f" ({link})"
+        lines.append(line)
+    if not lines:
+        return None
+    if language == "fr":
+        intro = "Voici ce que j'ai trouvé sur le web :\n"
+    elif language == "ar":
+        intro = "\u0625\u0644\u064a\u0643 \u0645\u0627 \u0648\u062c\u062f\u062a\u0647 \u0639\u0644\u0649 \u0627\u0644\u0648\u064a\u0628:\n"
+    else:
+        intro = "Here is what I found on the web:\n"
+    return intro + "\n".join(lines)
+
+
+def _web_answer(command, language):
+    """Quick web lookup when the local model is too slow or unavailable."""
+    return _format_web_results(_web_results(command), language)
+
+
+def _web_lookup(command, language):
+    """Formatted text AND raw results, for the reformulation stage."""
+    results = _web_results(command)
+    formatted = _format_web_results(results, language)
+    if not formatted:
+        return None
+    return formatted, results
+
+
+WEB_SYNTHESIS_PROMPTS = {
+    "fr": ("Tu es KIRA, l'assistante de l'utilisateur. Réponds en français à sa question "
+           "en t'appuyant UNIQUEMENT sur les résultats web fournis. Reformule avec tes "
+           "propre mots pour répondre exactement au besoin : 2 à 4 phrases claires et "
+           "directes, sans recopier les titres ni les liens, sans dire « voici les résultats »."),
+    "ar": ("أنت KIRA، مساعدة المستخدم. أجب بالعربية على سؤاله اعتمادًا فقط على نتائج الويب "
+           "المعطاة. أعد الصياغة بكلماتك للإجابة عن الحاجة بدقة: جملتان إلى أربع جمل واضحة "
+           "ومباشرة، دون نسخ العناوين أو الروابط."),
+    "en": ("You are KIRA, the user's assistant. Answer the question in English using ONLY "
+           "the provided web results. Reformulate in your own words to answer the actual "
+           "need: 2 to 4 clear, direct sentences, no copied titles or links, no "
+           "\u201chere are the results\u201d phrasing."),
+}
+
+
+def _synthesize_web_answer(command, language, results):
+    """Reformulate the web results into a direct answer to the question."""
+    bullets = []
+    for item in list(results or [])[:4]:
+        title = str(item.get("title") or "").strip()
+        body = str(item.get("body") or "").strip()
+        if not body:
+            continue
+        bullets.append(f"- {title}: {body}" if title else f"- {body}")
+    if not bullets:
+        return None
+    system = WEB_SYNTHESIS_PROMPTS.get(language) or WEB_SYNTHESIS_PROMPTS["en"]
+    content = f"{command}\n\n" + "\n".join(bullets)
+    try:
+        response = call_ollama(
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": content}],
+            options={"num_predict": 180, "temperature": 0.4},
+        )
+    except Exception:
+        return None
+    text = clean_chat_response(str(response.get("message", {}).get("content", "")))
+    return text or None
+
+
+def select_voice(engine, language="en"):
+    voice = kira_language.select_installed_voice(engine.getProperty("voices") or [], language)
+    if voice is None:
+        return False
+    engine.setProperty("voice", voice.id)
+    return True
 
 
 def get_or_create_speech_engine():
@@ -581,35 +694,23 @@ def get_or_create_speech_engine():
         try:
             _SPEECH_ENGINE = pyttsx3.init()
             _SPEECH_ENGINE.setProperty("rate", 180)
-            select_voice(_SPEECH_ENGINE)
         except Exception:
             _SPEECH_ENGINE = None
     return _SPEECH_ENGINE
 
 
-def speak(text: str):
+def speak(text: str, language=None):
     if not text:
         return
     response_text = personalize_address(text)
+    language = kira_language.normalize_language(language) or kira_language.detect_language(response_text, globals().get("_LAST_REPLY_LANGUAGE", "en")).language or "en"
     print(f"KIRA: {response_text}", flush=True)
+    from kira_speech import clean_for_speech
+    speech_text = clean_for_speech(response_text)
+    if not speech_text:
+        return
     try:
-        speech_text = re.sub(
-            "[\\U0001F000-\\U0001FAFF\\U00002700-\\U000027BF\\U0001F1E6-\\U0001F1FF]",
-            "",
-            response_text,
-        )
-        speech_text = re.sub(r"\\s{2,}", " ", speech_text).strip()
-        if not speech_text:
-            return
-        encoded_text = base64.b64encode(speech_text.encode("utf-8")).decode("ascii")
-        command = (
-            "Add-Type -AssemblyName System.Speech; "
-            "$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-            f"$speaker.SelectVoice('{SAPI_VOICE}'); "
-            "$speaker.Volume = 100; $speaker.Rate = 0; "
-            "$text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"
-            f"{encoded_text}')); $speaker.Speak($text); $speaker.Dispose()"
-        )
+        command = kira_language.sapi_script(speech_text, language)
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
             capture_output=True,
@@ -625,8 +726,8 @@ def speak(text: str):
         print(f"KIRA: Windows voice failed: {type(exc).__name__}: {exc}", flush=True)
         try:
             engine = get_or_create_speech_engine()
-            if engine is not None:
-                engine.say(text)
+            if engine is not None and select_voice(engine, language):
+                engine.say(speech_text)
                 engine.runAndWait()
         except Exception as fallback_exc:
             print(
@@ -644,46 +745,10 @@ def normalize_for_language(text: str) -> str:
 
 
 def detect_language(text: str) -> str:
-    value = (text or "").lower()
-    if any(
-        token in value
-        for token in [
-            "bonjour",
-            "ouvrir",
-            "ouvre",
-            "recherche",
-            "rechercher",
-            "écris",
-            "écrire",
-            "tape",
-            "appuie",
-            "salut",
-            "merci",
-            "s'il",
-            "ferme",
-            "fermer",
-            "cherche",
-            "capture",
-            "francais",
-        ]
-    ):
-        return "fr"
-    if any(
-        token in value
-        for token in [
-            "مرحبا",
-            "افتح",
-            "ابحث",
-            "اكتب",
-            "اضغط",
-            "اغلق",
-            "شغل",
-            "العربي",
-            "arabic",
-        ]
-    ):
-        return "ar"
-    return "en"
+    return kira_language.resolve_reply_language(
+        text, CONFIG.get("reply_language", "auto"),
+        globals().get("_LAST_REPLY_LANGUAGE"), CONFIG.get("interface_language", "en"),
+    ).language
 
 
 def build_reply(language: str, action: str, target: str = "") -> str:
@@ -692,6 +757,10 @@ def build_reply(language: str, action: str, target: str = "") -> str:
             return f"J'ouvre {target or 'l application'} maintenant, monsieur."
         if action == "open_url":
             return f"J'ouvre le lien {target or 'maintenant'}, monsieur."
+        if action == "open_file":
+            return f"J'ouvre le fichier {target or 'demandé'} maintenant, monsieur."
+        if action == "open_folder":
+            return f"J'ouvre le dossier {target or 'demandé'} maintenant, monsieur."
         if action == "search":
             return f"Je cherche {target or 'la requête'} maintenant, monsieur."
         if action == "type":
@@ -753,6 +822,10 @@ def build_reply(language: str, action: str, target: str = "") -> str:
             return f"سأفتح {target or 'التطبيق'} الآن، سيدي."
         if action == "open_url":
             return f"سأفتح الرابط {target or 'الآن'}، سيدي."
+        if action == "open_file":
+            return f"سأفتح الملف {target or 'المطلوب'} الآن، سيدي."
+        if action == "open_folder":
+            return f"سأفتح المجلد {target or 'المطلوب'} الآن، سيدي."
         if action == "search":
             return f"سأبحث عن {target or 'الاستعلام'} الآن، سيدي."
         if action == "type":
@@ -811,6 +884,10 @@ def build_reply(language: str, action: str, target: str = "") -> str:
         return f"Opening {target or 'the app'} now {user_title}."
     if action == "open_url":
         return f"Opening {target or 'the link'} now {user_title}."
+    if action == "open_file":
+        return f"Opening the file {target or 'you asked for'} now {user_title}."
+    if action == "open_folder":
+        return f"Opening the {target or 'requested'} folder now {user_title}."
     if action == "search":
         return f"Searching for {target or 'your request'} now {user_title}."
     if action == "type":
@@ -1381,6 +1458,14 @@ def parse_simple_command(command: str):
                 },
             ],
         }
+    # ── Files / applications / web pages: one resolver for EN/FR/AR ──
+    # Runs after the fixed phrases above so "start conversation", media
+    # commands, etc. keep their meaning. It fires only on an open request,
+    # never on a plain question.
+    parsed_open = kira_open.parse_open_command(text)
+    if parsed_open:
+        return parsed_open
+
     if lower.startswith("open "):
         target = text[5:].strip()
         if target:
@@ -1451,7 +1536,8 @@ def parse_simple_command(command: str):
             }
 
     if lower.startswith("search "):
-        return {"action": "search", "query": text[7:].strip()}
+        query, browser = kira_open.extract_browser(text[7:].strip())
+        return {"action": "search", "query": query, **({"browser": browser} if browser else {})}
 
     for phrase in [
         ("recherche ", "fr"),
@@ -1462,7 +1548,8 @@ def parse_simple_command(command: str):
     ]:
         prefix, _ = phrase
         if lower.startswith(prefix):
-            return {"action": "search", "query": text[len(prefix) :].strip()}
+            query, browser = kira_open.extract_browser(text[len(prefix) :].strip())
+            return {"action": "search", "query": query, **({"browser": browser} if browser else {})}
 
     if lower.startswith("type "):
         return {"action": "type", "text": text[5:].strip()}
@@ -1491,22 +1578,16 @@ def parse_simple_command(command: str):
     if lower.startswith("open ") and "http" in lower:
         return {"action": "open_url", "target": text[5:].strip()}
 
-    for key in [
-        "google",
-        "youtube",
-        "notepad",
-        "calculator",
-        "paint",
-        "vscode",
-        "edge",
-        "chrome",
-    ]:
-        if key in lower:
-            if key == "google":
-                return {"action": "open_url", "target": "https://www.google.com"}
-            if key == "youtube":
-                return {"action": "open_url", "target": "https://www.youtube.com"}
-            return {"action": "open_app", "target": key}
+    # A bare, exact name ("google", "notepad", "téléchargements" ...) opens it.
+    # Substring matching deliberately avoided: mentioning an app inside a
+    # question must not open anything — KIRA opens only what is requested.
+    known_names = {kira_open.fold(name) for name in list(kira_open.SITES) + list(kira_open.APPS) + list(kira_open.FOLDER_ALIASES)}
+    folded_command = kira_open.fold(text)
+    if folded_command in known_names:
+        resolved = kira_open.resolve_open(text)
+        if resolved:
+            action = {"url": "open_url", "folder": "open_folder", "file": "open_file", "app": "open_app"}[resolved["kind"]]
+            return {"action": action, "target": resolved["target"]}
 
     return None
 
@@ -2022,7 +2103,40 @@ def ask_agent(command: str):
         return {"action": "none"}
 
 
-def ask_chat(command: str):
+def ask_chat(command: str, language=None):
+    """The caller's selected language wins over history and persona examples.
+
+    Every question is answered within CHAT_ANSWER_BUDGET (5 s): local model
+    first, quick web lookup if it is too slow, honest message if neither
+    made it in time."""
+    global _LAST_REPLY_LANGUAGE
+    from kira_commands import try_web_learning
+    learning_reply = try_web_learning(command)
+    if learning_reply is not None:
+        return learning_reply
+    language = kira_language.normalize_language(language) or detect_language(command)
+    if language == "auto":
+        language = detect_language(command)
+    _LAST_REPLY_LANGUAGE = language
+    answer, source = chat_answer_with_web(command, language, _ask_chat_response,
+                                          _web_lookup, _synthesize_web_answer)
+    if not str(answer or "").strip():
+        answer = {
+            "fr": ("Je n'ai pas eu de réponse en 5 secondes : le modèle local est lent "
+                   "et le web n'a rien donné. Reformule ou réessaie."),
+            "ar": ("لم أحصل على رد خلال 5 ثوانٍ: النموذج المحلي بطيء والويب لم يعط شيئًا. "
+                   "أعد الصياغة أو حاول مرة أخرى."),
+            "en": ("I did not get an answer within 5 seconds: the local model is slow "
+                   "and the web gave nothing. Rephrase or try again."),
+        }.get(language) or ("I did not get an answer within 5 seconds: the local model is slow "
+                            "and the web gave nothing. Rephrase or try again.")
+        return answer
+    if source == "web":
+        return answer  # already readable; translating snippets would waste the budget
+    return kira_language.ensure_reply_language(answer, language, call_ollama)
+
+
+def _ask_chat_response(command: str, language: str):
     global _CHAT_HISTORY
 
     command = str(command or "").strip()
@@ -2030,12 +2144,17 @@ def ask_chat(command: str):
     if not command:
         return ""
 
+    from kira_commands import try_web_learning
+    learning_reply = try_web_learning(command)
+    if learning_reply is not None:
+        return learning_reply
+
     history_limit = max(
         4,
         int(CONFIG.get("chat_history_limit", 16)),
     )
 
-    language = detect_language(command)
+    # Language is resolved once by the caller, not overwritten by English history.
     # ---------------------------------------------------------
     # FORGET SPECIFIC MEMORY
     # ---------------------------------------------------------
@@ -2300,9 +2419,8 @@ def ask_chat(command: str):
         )
 
         if not answer:
-            raise ValueError(
-                "empty model response"
-            )
+            raise ValueError("empty model response")
+        answer = kira_language.ensure_reply_language(answer, language, call_ollama)
 
         _CHAT_HISTORY.append(
             {
@@ -2325,6 +2443,10 @@ def ask_chat(command: str):
 
         return answer
 
+    except kira_language.ReplyLanguageError:
+        if _CHAT_HISTORY and _CHAT_HISTORY[-1].get("role") == "user":
+            _CHAT_HISTORY.pop()
+        raise
     except Exception as exc:
         logging.warning(
             "Chat response failed: %s",
@@ -2334,11 +2456,7 @@ def ask_chat(command: str):
         if _CHAT_HISTORY:
             _CHAT_HISTORY.pop()
 
-        return personalize_address(
-            "I cannot reach Ollama right now sir. "
-            "Please start Ollama with `ollama serve`, "
-            "then try again."
-        )
+        return kira_commands.message("model_offline", language) or kira_commands.message("model_offline", "en")
 
 def reset_chat():
     global _SESSION_ID
@@ -2398,36 +2516,14 @@ def recognize_offline(audio, sample_rate):
 
 
 def open_app(target: str):
-    key = (target or "").strip().lower()
-    exe = APP_ALIASES.get(key, key)
-    if os.path.isdir(exe) or os.path.isfile(exe):
-        try:
-            os.startfile(exe)
-            return True
-        except Exception:
-            return False
-    if not exe.endswith(".exe"):
-        exe = f"{exe}.exe"
-
-    try:
-        subprocess.Popen(exe)
-        return True
-    except Exception:
-        try:
-            os.startfile(exe)
-            return True
-        except Exception:
-            return False
+    """Open an app via the shared resolver (aliases, Start Menu, web fallback)."""
+    return kira_open.open_app(target)
 
 
-def open_url(target: str):
-    url = (target or "").strip()
-    if not url:
-        return False
-    if not url.startswith("http://") and not url.startswith("https://"):
-        url = "https://" + url
-    webbrowser.open(url)
-    return True
+def open_url(target: str, browser=None):
+    """Open a page: requested browser first, then the remembered default."""
+    remembered = str(USER_MEMORY.get("default_browser", "") or "").strip() or None
+    return kira_open.open_url(target, browser=browser or remembered)
 
 
 def press_key(target: str):
@@ -2446,13 +2542,11 @@ def type_text(text: str):
     return True
 
 
-def search_web(query: str):
+def search_web(query: str, browser=None):
     q = quote_plus((query or "").strip())
     if not q:
         return False
-    url = f"https://www.google.com/search?q={q}"
-    webbrowser.open(url)
-    return True
+    return kira_open.open_url(f"https://www.google.com/search?q={q}", browser=browser)
 
 
 def shared_knowledge_status() -> dict:
@@ -2628,16 +2722,43 @@ def switch_app():
         return False
 
 
-def open_folder(target: str):
-    key = (target or "").strip().lower()
-    folder = APP_ALIASES.get(key, (target or "").strip())
-    if not folder:
-        return False
+def resolve_open_matches(action_data):
+    """Existing candidate paths for an open request (empty list if none).
+
+    Used to ask the user which one when several files or folders share the
+    same name, and to open every one of them on an "all" request.
+    """
+    if not isinstance(action_data, dict):
+        return []
+    action = str(action_data.get("action", "")).strip().lower()
+    target = str(action_data.get("target", "")).strip()
+    parent = action_data.get("parent")
     try:
-        os.startfile(folder)
-        return True
+        if action == "open_file":
+            if kira_open.fold(target) in kira_open.FOLDER_ALIASES:
+                return None  # a known place: nothing to disambiguate
+            return kira_open.file_matches(target, parent=parent, limit=20)
+        if action == "open_folder":
+            if kira_open.fold(target) in kira_open.FOLDER_ALIASES or kira_open.parse_drive(target):
+                return None
+            full_list = bool(action_data.get("any_kind") or action_data.get("all"))
+            if action_data.get("any_kind"):
+                return kira_open.mixed_matches(target, parent=parent, limit=20)
+            return kira_open.folder_matches(target, parent=parent, limit=20,
+                                            direct_only=not full_list)
     except Exception:
-        return False
+        logging.exception("resolve_open_matches failed")
+    return []
+
+
+def open_folder(target: str, parent=None):
+    """Open a folder, optionally inside a parent location or drive."""
+    return kira_open.open_folder(target, parent=parent)
+
+
+def open_file(target: str, parent=None):
+    """Open a document: direct path, parent location, common folders, drives."""
+    return kira_open.open_file(target, parent=parent)
 
 
 def take_screenshot():
@@ -2830,7 +2951,7 @@ def execute_action(action_data):
         return open_app(str(action_data.get("target", "")))
 
     if action == "open_url":
-        return open_url(str(action_data.get("target", "")))
+        return open_url(str(action_data.get("target", "")), browser=action_data.get("browser"))
 
     if action == "type":
         return type_text(str(action_data.get("text", "")))
@@ -2839,7 +2960,7 @@ def execute_action(action_data):
         return press_key(str(action_data.get("target", "")))
 
     if action == "search":
-        return search_web(str(action_data.get("query", "")))
+        return search_web(str(action_data.get("query", "")), browser=action_data.get("browser"))
 
     if action == "search_shared_knowledge":
         return search_shared_knowledge(str(action_data.get("query", "")))
@@ -2870,8 +2991,30 @@ def execute_action(action_data):
     if action == "switch_app":
         return switch_app()
 
+    if action in {"open_folder", "open_file"} and action_data.get("all"):
+        target = str(action_data.get("target", "")).strip()
+        parent = action_data.get("parent")
+        if action == "open_folder" and kira_open.fold(target) in kira_open.FOLDER_ALIASES and not parent:
+            return bool(open_folder(target))
+        matches = action_data.get("candidates")
+        if not (isinstance(matches, list) and matches
+                and all(isinstance(path, str) for path in matches)):
+            matches = resolve_open_matches(action_data)
+        opened = 0
+        for path in matches[:20]:
+            if kira_open.open_path(path):
+                opened += 1
+        return opened
+
     if action == "open_folder":
-        return open_folder(str(action_data.get("target", "")))
+        target = str(action_data.get("target", "")).strip()
+        if action_data.get("any_kind") and target and os.path.exists(target):
+            # Mixed search: the picked candidate may be a file or a folder.
+            return kira_open.open_path(target)
+        return open_folder(target, parent=action_data.get("parent"))
+
+    if action == "open_file":
+        return open_file(str(action_data.get("target", "")), parent=action_data.get("parent"))
 
     if action == "screenshot":
         return take_screenshot()
@@ -3011,6 +3154,14 @@ def describe_action(action_data):
     if action == "open_url":
         target = str(action_data.get("target", "website")).strip() or "website"
         return f"open the website {target}"
+
+    if action == "open_folder":
+        target = str(action_data.get("target", "folder")).strip() or "folder"
+        return f"open the {target} folder"
+
+    if action == "open_file":
+        target = str(action_data.get("target", "file")).strip() or "file"
+        return f"open the file {target}"
 
     if action == "type":
         text = str(action_data.get("text", "text")).strip() or "text"
@@ -3189,6 +3340,12 @@ def main():
                 speak(personalize_address("Goodbye sir."))
                 break
 
+            from kira_commands import try_web_learning
+            learning_reply = try_web_learning(cleaned)
+            if learning_reply is not None:
+                speak(learning_reply)
+                continue
+
             result = parse_simple_command(cleaned)
             if result is None and is_chat_question(cleaned):
                 speak(ask_chat(cleaned))
@@ -3273,6 +3430,8 @@ def main():
                     target_text = "screenshot"
                 elif action == "open_folder":
                     target_text = str((result or {}).get("target", "folder"))
+                elif action == "open_file":
+                    target_text = str((result or {}).get("target", "file"))
 
                 if action_name == "close_window":
                     speak(build_reply(lang, "close_window", target_text))

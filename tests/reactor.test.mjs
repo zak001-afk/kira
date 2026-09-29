@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
 import { SpeechPlayer } from "../ui/speech.mjs";
+import { AVATAR_BRIGHTNESS_DEFAULT } from "../ui/avatar.mjs";
 import { playerRig } from "./support/speech-fakes.mjs";
 
 // Run the actual app code, with lightweight rendering/DOM doubles. These tests
@@ -33,7 +34,7 @@ function appRig(options = {}) {
   class Geometry { setAttribute() {} }
   class Renderer {
     constructor() { this.domElement = {}; }
-    setPixelRatio() {} setSize() {} render() {} addPass() {}
+    setPixelRatio() {} setSize() {} render() {} addPass() {} clearDepth() {}
   }
   const drawing = { fillRect() {}, fillText() {} };
   function element(id) {
@@ -56,7 +57,7 @@ function appRig(options = {}) {
     WebGLRenderer: Renderer, Color: Vector, Vector2: Vector, Euler: Vector,
   };
   const context = vm.createContext({
-    ...rig.env, THREE: three,
+    ...rig.env, THREE: three, AVATAR_BRIGHTNESS_DEFAULT,
     SpeechPlayer: class extends SpeechPlayer {
       constructor(options) { super({ ...options, env: rig.env }); }
     },
@@ -215,4 +216,15 @@ test("explicit motion preference persists and is restored on the next launch", (
 test("diagnostic controls opt back into pointer events inside the HUD", () => {
   const css = readFileSync(new URL("../ui/style.css", import.meta.url), "utf8");
   assert.match(css, /\.speech-diagnostics\s*\{[^}]*pointer-events:\s*auto/);
+});
+
+test("MED French voice preference reaches the neural speech request", async () => {
+  const rig = appRig();
+  rig.storage.set("kira.voice", "denise");
+  await rig.probe.speak("Bonjour !");
+  const request = rig.requests.find(item => item.url.endsWith("/api/tts"));
+  const body = JSON.parse(request.init.body);
+  assert.equal(body.voice, "denise");
+  assert.equal(body.language, "fr-FR");
+  assert.equal(rig.probe.speech.session.language, "fr-FR");
 });

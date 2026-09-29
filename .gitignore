@@ -48,3 +48,6 @@ Thumbs.db
 # PyInstaller
 *.manifest
 *.spec.bak
+
+# Local tooling and visual-test artifacts
+.cache/

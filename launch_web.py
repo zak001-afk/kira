@@ -1,7 +1,7 @@
 """
 KIRA Web Launcher — Starts the API server and opens the web UI in a browser.
 
-This is the recommended way to launch KIRA with the cinematic 3D interface.
+This is the recommended way to launch KIRA with the holographic cockpit interface.
 
 Usage:
     python launch_web.py
@@ -22,6 +22,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+from kira_ui import KiraUIHandler, validate_ui_bundle, print_ui_info
+
 import kira_api
 import kira_voice_agent as backend
 
@@ -34,25 +36,18 @@ UI_PORT = 8766  # Static file server for the UI
 HOST = "0.0.0.0"
 
 
-class QuietHandler(http.server.SimpleHTTPRequestHandler):
-    """HTTP handler that serves the UI files with minimal logging."""
+class QuietHandler(KiraUIHandler):
+    """Serve the cockpit and its same-origin API in browser mode."""
 
-    # WebView2 must pick up new UI modules after a git pull, not a cached build.
-    extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map, ".mjs": "text/javascript"}
-
-    def end_headers(self):
-        self.send_header("Cache-Control", "no-store")
-        super().end_headers()
-
-    def log_message(self, format, *args):
-        pass  # Suppress access logs
+    api_port = API_PORT
 
 
 def start_ui_server():
     """Serve the ui/ directory on a separate port."""
-    ui_dir = HERE / "ui"
+    ui_dir = validate_ui_bundle(HERE / "ui")
+    print_ui_info(ui_dir)
     handler = partial(QuietHandler, directory=str(ui_dir))
-    server = http.server.HTTPServer((HOST, UI_PORT), handler)
+    server = http.server.ThreadingHTTPServer((HOST, UI_PORT), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server
@@ -70,8 +65,8 @@ def main():
     kira_api.set_backend(backend)
 
     # 2. Start the API server
-    print(f"[2/4] Starting API server on http://{HOST}:{API_PORT}")
-    api_server = kira_api.start_server(host=HOST, port=API_PORT, daemon=True)
+    print(f"[2/4] Starting API server on http://127.0.0.1:{API_PORT}")
+    api_server = kira_api.start_server(host="127.0.0.1", port=API_PORT, daemon=True)
 
     # 3. Start the UI file server
     print(f"[3/4] Starting UI server on http://localhost:{UI_PORT}")

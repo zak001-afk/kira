@@ -302,3 +302,15 @@ test("speech estimates do not require Array.findLast in older WebViews", () => {
   assert.ok(advance().energy > 0);
   assert.equal(motion.frame.source, "words");
 });
+
+test("speech strips emoji sequences but keeps multilingual text and numbers", () => {
+  assert.equal(cleanForSpeech("Hi 👩🏽‍💻 🇺🇸 1️⃣ ☀️ ❤️! مرحبا café 123"), "Hi ! مرحبا café 123");
+  assert.equal(cleanForSpeech("👨‍👩‍👧‍👦 ✅"), "");
+});
+
+test("emoji-only replies never request audio or browser speech", async () => {
+  const rig = playerRig();
+  await rig.player.speak("😀 ❤️");
+  assert.equal(rig.env.speechSynthesis.speaking || false, false);
+  assert.equal(rig.player.session, null);
+});

@@ -1,5 +1,86 @@
 # KIRA Changelog
 
+## Unreleased — Synchronisation labiale douce (med-lipsync-fix-01)
+
+- **Fini le « glitch » quand l'avatar parle** (`ui/holo-mouth.mjs`) : la bande
+  de dents statique, étirée mécaniquement sur toute l'ouverture, est supprimée.
+  Cavité buccale, langue et arc dentaire sont désormais dessinés sur la
+  géométrie réelle de chaque frame : les dents suivent la courbe déformée des
+  lèvres, s'amincissent vers les coins et disparaissent quand l'ouverture est
+  petite — plus aucun trait rectiligne figé sur le visage.
+- **Les lèvres se rejoignent aux coins de la bouche** : la fente ne s'étire
+  plus d'un coin à l'autre ; l'ouverture se referme naturellement aux coins
+  (exposant 0,85 sur |sin|, coins verrouillés), comme une vraie bouche. Le
+  reste du visage ne bouge toujours pas d'un pixel.
+- La synchronisation avec la voix est inchangée : horloge audio réelle,
+  chronométrage par mot d'edge-tts, visèmes articulés (MBP fermé, FV, AH, EE,
+  OH, OO) — c'est le rendu qui suit enfin la parole, sans saccades ni
+  clignotement d'artefacts.
+- **Disposition des pastilles d'agents** (`ui/style.css`) : les 6 chips
+  (Data Analyst, Web Developer, etc.) sont alignées sur les bords du module
+  central, en 3 paires gauche/droite — le visage de KIRA n'est plus recouvert.
+- **Placeholder « Tapez votre commande ici… » en vert #5FBF17** (il restait
+  doré hérité de l'ancien thème or).
+- Bundle UI `med-lipsync-fix-01` (étiquettes de cache des modules
+  actualisées). Vérifié sous Chromium headless (SwiftShader) : poses AH, OH,
+  OO, EE, MBP, FV rendues sans artefact, coins refermés, dents courbes ; les
+  79 tests Node et les tests de service UI passent inchangés.
+
+## Unreleased — Visage naturel de KIRA
+
+- Nouveau portrait fictif photoréaliste (`avatar-natural.webp`, généré par IA) :
+  teint humain, yeux non lumineux et lèvres naturelles. Le décor reste vert.
+- Couleurs photo conservées sur le visage **et** la bouche ; suppression du
+  monochrome vert, des glitches et des scanlines sur le portrait. Composition
+  après le bloom du décor pour préserver les détails et éviter la surexposition.
+- Lèvres recalibrées sur le nouveau portrait, patch coplanaire attaché au visage
+  et luminosité partagée pour éviter le décalage et les changements de teinte.
+- Luminosité initiale **90 %** ; les préférences déjà enregistrées restent
+  respectées. Le réglage n'affecte plus le bloom du décor.
+- Bundle natif/navigateur `med-natural-avatar-01` validant les nouveaux fichiers.
+  Tests de rendu, maillage labial, serveur statique et pixels WebGL dans Chromium.
+
+## Unreleased — AI Command Center (thème or)
+
+- **Nouvelle interface web complète** (`ui/`) : KIRA adopte le look
+  « AI COMMAND CENTER » noir & or, entièrement en français — panneau
+  Conversation, panneau Agents, jauges Système (CPU / RAM / Disque / Réseau),
+  Activité des agents, Tâches récentes et dock de navigation à 9 vues
+  (Accueil, Conversation, Agents, Fichiers, Outils, Paramètres, Historique,
+  Système) avec bouton vocal « K » central. Utilisée par l'app native
+  (pywebview) comme par le mode navigateur.
+- **Avatar holographique** (`ui/assets/avatar_gold.png`, généré par IA) :
+  rendu additif Three.js, anneaux orbitaux dorés, particules et bloom.
+  L'avatar respire avec la voix (same speech-sync pipeline, tests inchangés).
+- **Visage de l'avatar plus réaliste** (`ui/app.js`) : luminosité par défaut à
+  **45 %** (réglable dans Paramètres, préférence mémorisée) ; le shader du
+  portrait ajoute netteté (structure fine du visage), modelé (joues, arête du
+  nez, lèvres), un relief éclairé depuis le haut-gauche et une **teinte de peau
+  plus vive** — les bruits flous viennent des mipmaps de la texture, donc aucun
+  flou supplémentaire ni surcoût par pixel. **Scanlines (7 % → 3,5 %) et glitch
+  (×2,3 plus rares, décalage ÷2,3) plus discrets** : l'hologramme ne mange plus
+  le visage. Tests : `tests/avatar.test.mjs` fige le budget de rendu.
+- **Jauges temps réel réelles** : `kira_api._handle_system` ajoute
+  `cpu_cores`, `uptime_h` et les **débits réseau live** (`net_sent_kbps`,
+  `net_recv_kbps`, calculés par delta des compteurs `psutil`). L'UI trace des
+  sparklines CPU/RAM/Disque/Réseau et met à jour cloche de notifications,
+  barres d'activité (dont l'énergie vocale instantanée) et badge de tâches.
+- **Vues fonctionnelles branchées sur l'API** : Historique (`/api/history`),
+  Tâches (`/api/tasks`, ajout via `/api/task`), Agents (`/api/plugins`),
+  Système détaillé, Paramètres (choix de **voix** FR/EN et langue du micro,
+  persistés en `localStorage`), Outils (recherche web, apprentissage d'une
+  page, analyse d'écran, notes mémo via `/api/remember`), Fichiers
+  (raccourcis de commandes réelles).
+- **Voix françaises** (`kira_tts.py`) : Denise, Éloïse, Vivienne et Henri
+  (edge-tts) rejoignent les voix anglophones ; l'UI envoie le choix à
+  `/api/tts`.
+- Micro par défaut en **fr-FR** (modifiable dans Paramètres), horloge et dates
+  localisées en français, historique de session précédente affiché au démarrage.
+- `API_BASE` peut être surchargé via `window.KIRA_API_BASE` (déploiement
+  derrière un proxy même origine).
+- Suppression de la pluie Matrix (thème or épuré) ; les 12 tests du réacteur,
+  26 tests vocaux et 23 tests Python passent inchangés.
+
 ## Unreleased — Shared knowledge base (Supabase)
 
 - Add **`kira_shared_memory.py`**: the only module that talks to Supabase, and
@@ -278,3 +359,10 @@ Potential areas for improvement:
 ---
 
 **KIRA** — Continuously evolving to be the perfect local AI assistant.
+
+## Branch consolidation (MED priority)
+
+- Retain MED UI and voice preferences; use same-origin API requests.
+- Integrate multilingual command/file opening, timed TTS, and packaged UI serving.
+- Preserve web-learning routing, empty-result handling, emoji filtering, and shared-memory privacy guards.
+- Retain superseded branch histories without enabling competing interfaces or the obsolete server architecture. See BRANCH_CONSOLIDATION.md.

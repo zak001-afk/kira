@@ -12,7 +12,9 @@ import os
 import sys
 import threading
 import base64
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import kira_language
+import kira_commands
+from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,10 @@ logger = logging.getLogger(__name__)
 _backend = None
 _events_callback = None
 _command_handler = None
+
+# Previous network counters, used to compute live transfer rates.
+_net_lock = threading.Lock()
+_net_last = {"sent": None, "recv": None, "ts": None}
 
 DEFAULT_PORT = 8765
 DEFAULT_HOST = "0.0.0.0"
@@ -41,7 +47,9 @@ def set_events_callback(callback):
 def set_command_handler(handler):
     """Set a custom command handler function.
     
-    The handler receives (text: str) and should return a dict like:
+    The handler receives text and may accept reply_language, previous_language,
+    interface_language and chat_only keyword arguments. Older text-only handlers
+    remain supported and are never called twice. It should return a dict like:
     {"action": "chat", "response": "Hello!"}
     or {"error": "something went wrong"}
     """
@@ -84,7 +92,9 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/")
         params = parse_qs(parsed.query)
 
-        if path == "/api/status":
+        if path == "/api/languages":
+            self._send_json(kira_language.available_languages())
+        elif path == "/api/status":
             self._handle_status()
         elif path == "/api/config":
             self._handle_config()
@@ -150,6 +160,7 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         """Return current system status."""
         status = {
             "online": True,
+            "backend_available": _backend is not None or _command_handler is not None,
             "model": getattr(_backend, "MODEL", "unknown") if _backend else "unknown",
             "conversation_mode": getattr(_backend, "_CONVERSATION_MODE", False) if _backend else False,
             "version": "V8",
@@ -202,17 +213,46 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_json({"tasks": [], "error": str(e)})
 
+    _last_net_io = None
+    _last_net_time = None
+
     def _handle_system(self):
         """Return system telemetry."""
         try:
+            import time as _time
+
             import psutil
+            import time as _time
             data = {
                 "cpu_percent": psutil.cpu_percent(interval=None),
+                "cpu_cores": psutil.cpu_count(logical=True),
                 "memory_percent": psutil.virtual_memory().percent,
                 "memory_used_gb": round(psutil.virtual_memory().used / (1024**3), 1),
                 "memory_total_gb": round(psutil.virtual_memory().total / (1024**3), 1),
                 "disk_percent": psutil.disk_usage("/").percent,
+                "uptime_h": round(max(0.0, _time.time() - psutil.boot_time()) / 3600, 1),
             }
+            # Live network rates (bytes/s since the previous call)
+            try:
+                net = psutil.net_io_counters()
+                now = _time.time()
+                with _net_lock:
+                    prev_sent = _net_last["sent"]
+                    prev_recv = _net_last["recv"]
+                    prev_ts = _net_last["ts"]
+                    _net_last["sent"] = net.bytes_sent
+                    _net_last["recv"] = net.bytes_recv
+                    _net_last["ts"] = now
+                if prev_sent is not None and prev_ts is not None and now > prev_ts:
+                    dt = now - prev_ts
+                    data["net_sent_kbps"] = round(max(0.0, (net.bytes_sent - prev_sent) / dt / 1024), 1)
+                    data["net_recv_kbps"] = round(max(0.0, (net.bytes_recv - prev_recv) / dt / 1024), 1)
+                else:
+                    data["net_sent_kbps"] = 0.0
+                    data["net_recv_kbps"] = 0.0
+            except Exception:
+                data["net_sent_kbps"] = 0.0
+                data["net_recv_kbps"] = 0.0
             # GPU info (Windows)
             try:
                 import subprocess
@@ -241,71 +281,38 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
     # POST Handlers
     # ─────────────────────────────────────────
 
-    def _handle_command(self, data):
-        """Process a voice/text command."""
+    def _handle_command(self, data, chat_only=False):
+        """Resolve language in the shared command path, for native and web alike."""
         text = str(data.get("text", "")).strip()
         if not text:
             self._send_json({"error": "No text provided"}, 400)
             return
-
-        # Use custom command handler if registered (from main_window.py)
-        if _command_handler is not None:
-            try:
-                result = _command_handler(text)
-                self._send_json(result)
+        options = {"reply_language": data.get("reply_language", "auto"),
+                   "previous_language": data.get("previous_language"),
+                   "interface_language": data.get("interface_language", "en"),
+                   "chat_only": chat_only}
+        for key in ("reply_language", "previous_language", "interface_language"):
+            if options[key] is not None and kira_language.normalize_language(options[key]) is None:
+                self._send_json({"error": "Unsupported language preference", "error_code": "invalid_language"}, 400)
                 return
-            except Exception as e:
-                self._send_json({"error": str(e)}, 500)
-                return
-
-        # Fallback: use backend directly
-        if _backend is None:
-            self._send_json({"error": "Backend not available"}, 503)
+        learning_reply = kira_commands.try_web_learning(text)
+        if learning_reply is not None:
+            self._send_json({"response": learning_reply, "action": "web_learn"})
             return
-
+        if _command_handler is None and _backend is None:
+            self._send_json({"error": "Backend not available", "error_code": "backend_unavailable"}, 503)
+            return
         try:
-            cleaned = _backend.normalize_command(text)
-            if not cleaned:
-                self._send_json({"response": "", "action": "none"})
-                return
-
-            result = _backend.parse_simple_command(cleaned)
-            if result is None:
-                answer = _backend.ask_chat(cleaned)
-                self._send_json({"response": answer, "action": "chat"})
-                return
-
-            action = result.get("action", "none")
-            if action != "none":
-                success = _backend.execute_action(result)
-                self._send_json({
-                    "action": action,
-                    "success": success,
-                    "details": _backend.describe_action(result),
-                })
+            if _command_handler is not None:
+                result = kira_commands.call_with_options(_command_handler, text, **options)
             else:
-                answer = _backend.ask_chat(cleaned)
-                self._send_json({"response": answer, "action": "chat"})
-
-        except Exception as e:
-            self._send_json({"error": str(e)}, 500)
+                result = kira_commands.process_command(_backend, text, **options)
+            self._send_json(result, 422 if result.get("error_code") == "reply_language_unavailable" else 200)
+        except Exception as error:
+            self._send_json({"error": str(error)}, 500)
 
     def _handle_chat(self, data):
-        """Send a chat message and get a response."""
-        text = str(data.get("text", "")).strip()
-        if not text:
-            self._send_json({"error": "No text provided"}, 400)
-            return
-
-        if _backend is None:
-            self._send_json({"error": "Backend not available"}, 503)
-            return
-
-        try:
-            answer = _backend.ask_chat(text)
-            self._send_json({"response": answer})
-        except Exception as e:
-            self._send_json({"error": str(e)}, 500)
+        self._handle_command(data, chat_only=True)
 
     def _handle_add_task(self, data):
         """Add a new task."""
@@ -384,8 +391,17 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Text required"}, 400)
                 return
             
-            # Generate audio file
-            audio_path = kira_tts.generate_speech(text, voice)
+            language = data.get("language", "auto")
+            if kira_language.normalize_language(language) is None:
+                self._send_json({"error": "Unsupported speech language", "error_code": "invalid_language"}, 400)
+                return
+            selected_language = kira_language.speech_language(text, language)
+            selected_voice = kira_tts.select_neural_voice(text, voice=voice, language=selected_language)
+            if not selected_voice:
+                self._send_json({"error": "No neural voice available for this language", "error_code": "voice_unavailable", "language": selected_language}, 422)
+                return
+            # The audio and word timing use exactly the same selected voice.
+            audio_path = kira_tts.generate_speech(text, selected_voice, language=selected_language)
             
             if not audio_path:
                 self._send_json({"error": "Failed to generate speech"}, 500)
@@ -400,7 +416,11 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._send_json({
                 "success": True,
                 "audio": audio_base64,
-                "format": "mp3"
+                "format": "mp3",
+                "word_timings": kira_tts.get_word_timings(audio_path),
+                "language": selected_language,
+                "locale": kira_language.locale_for(selected_language),
+                "voice": selected_voice,
             })
             
         except Exception as e:
@@ -479,7 +499,9 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
 
 def start_server(host=DEFAULT_HOST, port=DEFAULT_PORT, daemon=True):
     """Start the API server in a background thread."""
-    server = HTTPServer((host, port), KiraAPIHandler)
+    # Threading : une commande lente ne bloque plus les autres requêtes.
+    server = ThreadingHTTPServer((host, port), KiraAPIHandler)
+    server.daemon_threads = True
     server.timeout = 1
 
     thread = threading.Thread(target=_run_server, args=(server,), daemon=daemon)

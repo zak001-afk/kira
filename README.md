@@ -1,11 +1,12 @@
 # KIRA — Local AI Computer Agent
 
-**KIRA** is a sophisticated local AI assistant with voice control, computer automation, persistent memory, task management, and an extensible plugin system. Built for Windows with a cinematic HUD interface.
+**KIRA** is a sophisticated local AI assistant with voice control, computer automation, persistent memory, task management, and an extensible plugin system. Built for Windows with a cinematic gold **AI Command Center** interface (in French).
 
 ## ✨ Features
 
 ### Core Capabilities
-- **Voice Control** — Natural language voice commands with wake word detection
+- **AI Command Center UI** — Gold/black HUD with holographic AI avatar, live system gauges (CPU / RAM / Disk / Network), agents panel, recent tasks and a 9-view navigation dock
+- **Voice Control** — Natural language voice commands with wake word detection (French voices included: Denise, Éloïse, Vivienne, Henri)
 - **Computer Control** — Open apps, control windows, manage files, automate tasks
 - **Persistent Memory** — SQLite-based memory system that remembers across sessions
 - **Multi-Language** — Supports English, French, and Arabic
@@ -136,6 +137,20 @@ Use the command bar at the bottom of the interface to type commands instead of u
 ### Web Interface
 With `main_window.py` running, the interface is served at `http://127.0.0.1:8766`;
 the API uses port 8765.
+
+### Visage naturel de KIRA
+Le visage utilise un **portrait fictif photoréaliste généré par IA**, avec un
+teint, des yeux et des lèvres naturels ; seuls le décor et les anneaux restent
+verts. Ce n'est ni une personne réelle ni une caméra en direct. Les lèvres
+animées reprennent les couleurs du même portrait et suivent le moteur vocal
+existant. Le visage est composé après les effets lumineux du décor pour ne
+pas devenir vert ou surexposé.
+
+Dans **Paramètres → Luminosité de l'avatar**, la valeur initiale est **90 %**
+(**100 %** restitue les couleurs de l'image). Une préférence déjà enregistrée,
+même à 45 %, reste prioritaire. Après mise à jour, relancez KIRA ; le terminal
+indique **AI COMMAND CENTER MED / NATURAL AVATAR 01**. Copiez tout le dossier
+`ui/`, pas uniquement `app.js` : le nouveau portrait et `avatar.mjs` sont requis.
 
 ### Speech-reactive neural core
 The core now moves with KIRA's spoken reply rather than running a fixed talking
@@ -381,3 +396,9 @@ Contributions welcome! Areas for improvement:
 ---
 
 **KIRA** — Your local AI companion, always ready to assist.
+
+## Consolidated branches
+
+The active interface follows MED’s French black-and-gold design. See
+[BRANCH_CONSOLIDATION.md](BRANCH_CONSOLIDATION.md) for integration decisions,
+validation, and the manual transition to `main`, `zakaria`, and the MED branch.
