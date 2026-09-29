@@ -8,6 +8,8 @@ browser voice). These regressions pin the direct tool routes added in
 kira_commands: execute_action and Ollama must never run for them.
 """
 import os
+import shutil
+import tempfile
 import types
 import unittest
 from types import SimpleNamespace
@@ -145,6 +147,8 @@ class ShareRouteTests(unittest.TestCase):
 
 class RouteBoundaryTests(unittest.TestCase):
     def test_every_direct_action_bypasses_execute_action(self):
+        sandbox = tempfile.mkdtemp(prefix="kira-code-route-")
+        self.addCleanup(shutil.rmtree, sandbox, ignore_errors=True)
         samples = {
             "search_shared_knowledge": {"action": "search_shared_knowledge", "query": "q"},
             "share_project_knowledge": {"action": "share_project_knowledge", "topic": "t", "content": "c"},
@@ -159,6 +163,8 @@ class RouteBoundaryTests(unittest.TestCase):
             "wiki_summary": {"action": "wiki_summary", "topic": "Tunis"},
             "translate_text": {"action": "translate_text", "text": "hello",
                                "target_language": "fr"},
+            "scaffold_project": {"action": "scaffold_project", "name": "route-check",
+                                 "template": "empty"},
         }
         self.assertEqual(set(samples), set(commands.DIRECT_TOOL_ACTIONS))
         web = types.SimpleNamespace(search_shared_knowledge=Mock(return_value="found"),
@@ -179,8 +185,9 @@ class RouteBoundaryTests(unittest.TestCase):
         )
         for action, parsed in samples.items():
             backend = make_backend(parsed)
-            with approvals_off(), patch.dict("sys.modules", kira_web=web, kira_tasks=fake_tasks(),
-                                             kira_info=info):
+            with approvals_off(), patch.dict(os.environ, {"KIRA_CODE_DIR": sandbox}), \
+                    patch.dict("sys.modules", kira_web=web, kira_tasks=fake_tasks(),
+                               kira_info=info):
                 result = commands.process_command(backend, "anything")
             self.assertEqual(result["action"], action)
             self.assertIn("elapsed_ms", result)

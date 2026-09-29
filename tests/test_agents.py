@@ -16,7 +16,7 @@ class RegistryTests(unittest.TestCase):
     def test_builtin_tools_belong_to_the_declared_agents(self):
         kira_agents.ensure_builtins()
         snapshot = {agent["id"]: agent for agent in kira_agents.agents_snapshot()}
-        self.assertEqual(set(snapshot), {"research", "memory", "windows", "plugins"})
+        self.assertEqual(set(snapshot), {"research", "memory", "windows", "plugins", "programming"})
         self.assertIn("search_shared_knowledge", snapshot["research"]["tools"])
         self.assertIn("share_project_knowledge", snapshot["research"]["tools"])
         self.assertIn("recall_memory", snapshot["memory"]["tools"])
@@ -145,7 +145,7 @@ class RegistryRoutingTests(unittest.TestCase):
         self.assertIn("agents", sent["payload"])
         self.assertIn("activity", sent["payload"])
         agent_ids = {agent["id"] for agent in sent["payload"]["agents"]}
-        self.assertEqual(agent_ids, {"research", "memory", "windows", "plugins"})
+        self.assertEqual(agent_ids, {"research", "memory", "windows", "plugins", "programming"})
 
 
 if __name__ == "__main__":

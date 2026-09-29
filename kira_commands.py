@@ -391,6 +391,15 @@ def process_command(backend, text, reply_language="auto", previous_language=None
                         "language_warning": "action_completed_translation_unavailable" if success else "action_failed_translation_unavailable", **metadata}
             return {"action": action, "success": bool(success), "response": reply, **metadata}
         if not chat_only:
+            # Programming requests first, BEFORE the planner: the tiny model
+            # picks the right tool but invents arguments (live bug 2026-09-29:
+            # "create a python project ui-demo" planned scaffold_project with
+            # name="python"). The deterministic parser owns the phrasings it
+            # knows; the planner only handles the rest.
+            scaffold_args = parse_scaffold_request(cleaned)
+            if scaffold_args:
+                return _direct_tool_route("scaffold_project", scaffold_args,
+                                          metadata, choice.language)
             # Optional planner (KIRA_PLANNER=1): the model picks ONE registered
             # tool or says none. Approval gates and validation stay intact;
             # any planner failure falls through to normal chat.
@@ -408,6 +417,15 @@ def process_command(backend, text, reply_language="auto", previous_language=None
                 if result.ok:
                     return result.to_payload(**metadata)
                 # A failed plan is not an error to the user: fall back to chat.
+            else:
+                # Programming requests need multi-file arguments (name,
+                # template, code) that the tiny planner cannot synthesize
+                # alone: derive the arguments deterministically instead of
+                # falling through to chat.
+                scaffold_args = parse_scaffold_request(cleaned)
+                if scaffold_args:
+                    return _direct_tool_route("scaffold_project", scaffold_args,
+                                              metadata, choice.language)
         answer = call_with_options(backend.ask_chat, cleaned, language=choice.language)
         return {"action": "chat", "response": answer, **metadata}
     except languages.ReplyLanguageError:
@@ -518,6 +536,37 @@ _SEARCH_SHARED_PATTERNS = (
                r"(?:pour|sur|à propos de|concernant)\s+(.+)$", re.IGNORECASE),
 )
 
+# Programming agent: "create a python project X" / "crée un projet web X".
+# "new project X" alone stays planner-only to avoid false routes on mundane
+# requests like "new project ideas".
+_TPL = r"(?P<template>python|web|node|empty|vide)"
+_PROJ = r"(?:programming\s+)?(?:projects?|projets?)"
+_SCAFFOLD_PATTERNS = (
+    # create a project X using python template / avec un template web
+    re.compile(r"^(?:create|make|build|start|scaffold|cr[ée]e(?:r|z)?)\s+"
+               r"(?:me\s+|moi\s+)?(?:a\s+|an\s+|the\s+|un\s+|une\s+|le\s+|la\s+)?"
+               + _PROJ + r"\s*[:\-]?\s+(?P<name>.+?)\s+"
+               r"(?:with|using|qui utilise|avec)\s+(?:a\s+|un\s+)?(?:template\s+)?"
+               + _TPL + r"\s+template$", re.IGNORECASE),
+    # create a python project X / build a node project X (template first, EN)
+    re.compile(r"^(?:create|make|build|start|scaffold)\s+"
+               r"(?:me\s+|a\s+|an\s+|the\s+)*"
+               + _TPL + r"\s+" + _PROJ + r"\s*[:\-]?\s+(?P<name>.+)$", re.IGNORECASE),
+    # crée un projet web X / génère un projet vide X (template after, FR)
+    re.compile(r"^(?:cr[ée]e(?:r|z)?|g[ée]n[ée]re(?:r)?|construis)\s+"
+               r"(?:moi\s+)?(?:un\s+|une\s+|le\s+|la\s+)?"
+               + _PROJ + r"\s+" + _TPL + r"\s+(?:nomm[ée]\s+|appel[ée]\s+)?(?P<name>.+)$", re.IGNORECASE),
+    # create a project X / scaffold project X / crée un projet X
+    re.compile(r"^(?:create|make|build|start|scaffold|cr[ée]e(?:r|z)?|g[ée]n[ée]re(?:r)?|construis)\s+"
+               r"(?:me\s+|moi\s+)?(?:a\s+|an\s+|the\s+|un\s+|une\s+|le\s+|la\s+)?"
+               + _PROJ + r"\s*[:\-]?\s+(?P<name>.+)$", re.IGNORECASE),
+)
+
+_TEMPLATE_WORDS = {"python": "python", "web": "web", "node": "node", "empty": "empty",
+                   "vide": "empty"}
+_SCAFFOLD_NAME_BLOCKLIST = {"ideas", "idea", "name", "names", "template", "templates",
+                            "plan", "plans", "management"}
+
 
 def parse_tool_command(text):
     """Deterministic EN/FR grammar for the direct tool routes, or None."""
@@ -568,12 +617,36 @@ def parse_tool_command(text):
     return None
 
 
+def parse_scaffold_request(text):
+    """{'name', 'template'} for "create a python project X", else None.
+
+    Kept out of parse_tool_command: "scaffold_project" runs with approval, so
+    this only feeds the planner-fallback branch, never the fast path.
+    """
+    value = str(text or "").strip().rstrip(".!?؟ ").strip()
+    for pattern in _SCAFFOLD_PATTERNS:
+        match = pattern.match(value)
+        if not match:
+            continue
+        name = str(match.group("name") or "").strip().strip("\"'")
+        # Drop a trailing language tag: "create a project X in python".
+        name = re.sub(r"\s+(?:in|en)\s+(?:python|web|node)$", "", name,
+                      flags=re.IGNORECASE).strip()
+        template = _TEMPLATE_WORDS.get(str(match.groupdict().get("template") or "").lower(), "")
+        if not name or name.lower() in _SCAFFOLD_NAME_BLOCKLIST:
+            continue
+        if not re.match(r"^[^/:\\?*<>|\"]{1,64}$", name) or name in {".", ".."}:
+            continue
+        return {"name": name, "template": template}
+    return None
+
+
 # Actions answered directly from tools: data out, no backend speech, no model.
 DIRECT_TOOL_ACTIONS = frozenset({
     "search_shared_knowledge", "share_project_knowledge",
     "add_reminder", "add_todo", "list_tasks", "clear_completed_tasks",
     "get_weather", "get_holidays", "convert_currency",
-    "wiki_summary", "translate_text",
+    "wiki_summary", "translate_text", "scaffold_project",
 })
 
 
@@ -658,6 +731,29 @@ def _direct_tool_route(action, parsed, metadata, language):
 
     def _num(value):  # Missing readings show as "?" instead of "None".
         return "?" if value is None else value
+
+    if action == "scaffold_project":
+        name = str(parsed.get("name", "")).strip()
+        # Guard against planner-invented arguments (name="python" or empty):
+        # never park an approval for a junk project name.
+        if not name or name.lower() in _TEMPLATE_WORDS:
+            text = ("Which project name should I use? For example: “create a python project todo-app”."
+                    if language == "en" else
+                    "Quel nom de projet dois-je utiliser ? Par exemple : « crée un projet python todo-app ».")
+            return {"action": action, "success": False, "error_code": "invalid_name",
+                    "response": text, **metadata}
+        result = kira_agents.run(action, {"name": name,
+                                          "template": str(parsed.get("template", "")).strip()})
+        if result.error_code == "approval_required":
+            approval_id = result.extra["approval_id"]
+            _set_pending_approval(approval_id, action)
+            text = ("⚠️ " + (f"Creating project '{name}' in the code workspace needs your confirmation. "
+                             f"Reply \"confirm\" or \"cancel\"." if language == "en" else
+                             f"La création du projet « {name} » dans l'espace de code demande votre confirmation. "
+                             f"Répondez « confirmer » ou « annuler »."))
+            return {"action": action, "success": False, "needs_approval": True,
+                    "approval_id": approval_id, "response": text, **metadata}
+        return result.to_payload(**metadata)
 
     if action == "get_weather":
         import kira_info

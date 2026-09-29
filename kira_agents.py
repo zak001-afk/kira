@@ -30,6 +30,7 @@ AGENTS = {
     "memory": "Controlled access to LOCAL memory. Nothing here leaves the machine.",
     "windows": "Tasks, reminders and Windows desktop helpers.",
     "plugins": "Capabilities contributed by plugins/ extensions. Manageable at runtime.",
+    "programming": "Create full projects and apply code changes inside the KIRA code workspace.",
 }
 
 
@@ -334,6 +335,50 @@ def _recall_memory(query, limit=5):
     return kira_memory.search_messages(query, limit=limit)
 
 
+# Programming agent (kira_code): everything is jailed to one workspace root
+# (KIRA_CODE_DIR or kira_workspace/). Reads are open; writes, deletes and
+# command runs are consequential and pass the user's approval gate.
+
+def _scaffold_project(name, template="", content=""):
+    import kira_code
+    return kira_code.scaffold_project(name, template=template, content=content)
+
+
+def _code_write_file(path, content=""):
+    import kira_code
+    return kira_code.write_file(path, content=content)
+
+
+def _code_read_file(path):
+    import kira_code
+    return kira_code.read_file(path)
+
+
+def _code_list_dir(path=""):
+    import kira_code
+    return kira_code.list_dir(path)
+
+
+def _code_search_code(query, path="", extension=""):
+    import kira_code
+    return kira_code.search_code(query, path=path, extension=extension)
+
+
+def _code_apply_edit(path, old, new=""):
+    import kira_code
+    return kira_code.apply_edit(path, old, new)
+
+
+def _code_run_command(command):
+    import kira_code
+    return kira_code.run_command(command)
+
+
+def _code_delete_path(path):
+    import kira_code
+    return kira_code.delete_path(path)
+
+
 def ensure_builtins():
     global _BUILTINS_READY
     if _BUILTINS_READY:
@@ -411,3 +456,42 @@ def ensure_builtins():
                   {"query": {"type": str, "required": True},
                    "limit": {"type": int, "required": False}},
                   _recall_memory)
+    register_tool("scaffold_project", "programming",
+                  "Create a full project in the code workspace. "
+                  "Templates: python (default), web, node, empty.",
+                  {"name": {"type": str, "required": True},
+                   "template": {"type": str, "required": False}},
+                  _scaffold_project, consequential=True)
+    register_tool("code_write_file", "programming",
+                  "Create or overwrite one text file inside the code workspace.",
+                  {"path": {"type": str, "required": True},
+                   "content": {"type": str, "required": False}},
+                  _code_write_file, consequential=True)
+    register_tool("code_read_file", "programming",
+                  "Read one text file from the code workspace (no binaries).",
+                  {"path": {"type": str, "required": True}},
+                  _code_read_file)
+    register_tool("code_list_dir", "programming",
+                  "List a folder of the code workspace.",
+                  {"path": {"type": str, "required": False}},
+                  _code_list_dir)
+    register_tool("code_search", "programming",
+                  "Regex search across workspace text files (skips node_modules, .git, venvs).",
+                  {"query": {"type": str, "required": True},
+                   "path": {"type": str, "required": False},
+                   "extension": {"type": str, "required": False}},
+                  _code_search_code)
+    register_tool("code_apply_edit", "programming",
+                  "Replace ONE exact text block in a workspace file (read the file first).",
+                  {"path": {"type": str, "required": True},
+                   "old": {"type": str, "required": True},
+                   "new": {"type": str, "required": False}},
+                  _code_apply_edit, consequential=True)
+    register_tool("code_run_command", "programming",
+                  "Run one whitelisted command (python, node, npm, pip, pytest) in the workspace.",
+                  {"command": {"type": str, "required": True}},
+                  _code_run_command, consequential=True)
+    register_tool("code_delete_path", "programming",
+                  "Delete a file or folder inside the code workspace.",
+                  {"path": {"type": str, "required": True}},
+                  _code_delete_path, consequential=True)

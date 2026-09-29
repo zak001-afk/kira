@@ -1,5 +1,37 @@
 # KIRA Changelog
 
+## Unreleased — Agent de programmation (création de projets + édition de code)
+
+- **Nouvel agent spécialiste `programming`** dans le registre
+  (`kira_agents.py`), aux côtés de research/memory/windows/plugins. Huit
+  outils implémentés dans `kira_code.py` : `scaffold_project` (gabarits
+  python / web / node / empty), `code_write_file`, `code_read_file`,
+  `code_list_dir`, `code_search` (regex, ignore node_modules/.git/venv),
+  `code_apply_edit` (remplacement exact d'UN bloc), `code_run_command`
+  (liste blanche : python, node, npm, pip, pytest) et `code_delete_path`.
+- **Sandbox à racine unique** : tous les chemins sont confinés dans
+  `KIRA_CODE_DIR` (variable optionnelle) ou `kira_workspace/` par défaut —
+  chemins absolus, lecteurs Windows, `~` et `..` sont refusés avec une erreur
+  structurée (`path_outside_workspace`), la racine elle-même n'est pas
+  supprimable. Les résultats sont des données, jamais de tracebacks.
+- **Sécurité par le contrat existant** : écritures, suppressions et commandes
+  sont `consequential=True` — la porte d'approbation (carte UI, « confirmer »
+  / « annuler ») s'applique automatiquement ; lectures/listes/recherches
+  restent ouvertes.
+- **Routage** : « create a python project X » / « crée un projet web X » /
+  « create a project X using node template » passent par un analyseur
+  déterministe (`parse_scaffold_request`) en repli du planner — le petit
+  modèle ne doit jamais inventer les arguments multi-fichiers. Les autres
+  outils (`code_write_file` avec le code, `code_apply_edit`…) sont visibles
+  du planner via le catalogue et demandent la confirmation habituelle.
+- **UI** : carte « Agent de programmation » dans la vue Agents (icône
+  `</>`), flux d'activité existant affiche chaque outil exécuté.
+- `kira_workspace/` ajouté au `.gitignore` (comme `kira_files/`).
+- **Tests** : `tests/test_code_agent.py` (23 tests : jail, gabarits,
+  édition exacte + refus d'ambiguïté, recherche, liste blanche des
+  commandes, wiring registre, approbation) ; ensembles d'agents mis à jour
+  dans `test_agents.py`. Suite complète au vert.
+
 ## Unreleased — Rôles de modèles spécialistes + fournisseur OpenRouter
 
 - **Chaque type de travail peut avoir son propre cerveau** (variables

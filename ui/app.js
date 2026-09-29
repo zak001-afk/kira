@@ -1042,6 +1042,7 @@ const ICONS = {
   plugin: '<svg viewBox="0 0 24 24"><path d="M12 2v4"></path><path d="M12 18v4"></path><path d="M2 12h4"></path><path d="M18 12h4"></path><circle cx="12" cy="12" r="4"></circle></svg>',
   eye: '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
   globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>',
+  code: '<svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>',
 };
 
 let pluginCount = 0;
@@ -1056,6 +1057,7 @@ const CORE_MODULES = [
   { id: "plugins", name: "Plugins", desc: "0 extension chargée", icon: "plugin", view: "agents" },
   { id: "vision", name: "Vision écran", desc: "Analyse d'écran via le modèle local", icon: "eye", action: "analyze screen" },
   { id: "web", name: "Recherche web", desc: "Recherche et apprentissage en ligne", icon: "globe", action: "__web" },
+  { id: "programmation", name: "Agent de programmation", desc: "Crée des projets complets et modifie le code sur demande", icon: "code", view: "agents" },
 ];
 
 function agentRowHtml(mod, online) {

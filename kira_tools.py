@@ -68,5 +68,16 @@ def run_tool(action, function, *args, **kwargs):
     elapsed = int((time.perf_counter() - started) * 1000)
     if isinstance(value, str):
         return ToolResult(action=action, ok=True, response=value, data=value, elapsed_ms=elapsed)
+    if isinstance(value, dict) and isinstance(value.get("response"), str) and value["response"]:
+        # Structured tools (kira_code) carry a ready-made sentence next to
+        # their data; show that instead of a dict repr.
+        return ToolResult(action=action, ok=bool(value.get("ok", True)), data=value,
+                          response=value["response"], elapsed_ms=elapsed)
+    if isinstance(value, dict) and value.get("ok") is False and isinstance(value.get("error"), str) and value["error"]:
+        # Same for structured failures: a sentence, not a dict repr.
+        return ToolResult(action=action, ok=False, data=value,
+                          error=value["error"],
+                          error_code=str(value.get("error_code") or "tool_failed"),
+                          response=value["error"], elapsed_ms=elapsed)
     return ToolResult(action=action, ok=True, data=value,
                       response="" if value is None else str(value), elapsed_ms=elapsed)

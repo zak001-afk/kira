@@ -22,6 +22,9 @@ kira_memory.db
 # KIRA files directory
 kira_files/
 
+# KIRA code workspace (agent de programmation)
+kira_workspace/
+
 # Logs
 *.log
 
