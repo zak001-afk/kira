@@ -86,15 +86,65 @@ class QuietHandler(KiraUIHandler):
     api_port = API_PORT
 
 
+def _port_busy(host, port):
+    """True si le port est déjà pris (vieux KIRA, autre application…)."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.4)
+        return sock.connect_ex((host, port)) == 0
+
+
+def start_api_server():
+    """Démarre l'API en essayant plusieurs ports si l'un est occupé.
+
+    Un vieux processus KIRA qui traîne sur 8765 faisait échouer l'API en
+    silence : l'UI répondait ensuite 503 à chaque message. On contourne
+    en prenant le premier port libre et on le reflète dans le proxy UI.
+    """
+    for port in (API_PORT, 8767, 8769, 8771):
+        try:
+            server = kira_api.start_server(host=HOST, port=port, daemon=True)
+            QuietHandler.api_port = port
+            print(f"       API server started on port {port}")
+            return server
+        except Exception as error:
+            print(f"       Port {port} indisponible ({error}), essai du suivant…")
+    return None
+
+
+def wait_api_healthy(timeout=4.0):
+    """Attend que /health réponde avant d'ouvrir la fenêtre."""
+    import urllib.request
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(
+                f"http://{HOST}:{QuietHandler.api_port}/health", timeout=0.8
+            ) as response:
+                if response.status == 200:
+                    return True
+        except Exception:
+            time.sleep(0.2)
+    return False
+
+
 def start_ui_server():
-    """Start HTTP server for UI files on UI_PORT."""
+    """Start HTTP server for UI files on UI_PORT (ports de secours inclus)."""
     ui_dir = validate_ui_bundle(HERE / "ui")
     print_ui_info(ui_dir)
-    handler = partial(QuietHandler, directory=str(ui_dir))
-    server = ThreadingHTTPServer((HOST, UI_PORT), handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    return server
+    for port in (UI_PORT, 8768, 8770):
+        try:
+            handler = partial(QuietHandler, directory=str(ui_dir))
+            server = ThreadingHTTPServer((HOST, port), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            UI_PORT_USED = port
+            globals()["UI_PORT_USED"] = port
+            print(f"       UI server started on port {port}")
+            return server
+        except OSError as error:
+            print(f"       Port {port} indisponible ({error}), essai du suivant…")
+    return None
 
 
 # ─────────────────────────────────────────────
@@ -198,15 +248,14 @@ def main():
         print(f"       Backend unavailable: {BACKEND_ERROR}")
         print("       Chat and actions will not work, but UI will load")
     
-    # 2. Start the API server
+    # 2. Start the API server (ports de secours si 8765 est occupé)
     print(f"[2/4] Starting API server on http://{HOST}:{API_PORT}")
-    try:
-        api_server = kira_api.start_server(host=HOST, port=API_PORT, daemon=True)
-        time.sleep(0.5)  # Give server time to start
-        print("       API server started")
-    except Exception as e:
-        print(f"       [ERROR] Failed to start API server: {e}")
-        api_server = None
+    api_server = start_api_server()
+    if api_server is not None:
+        if wait_api_healthy():
+            print("       API server healthy")
+        else:
+            print("       [WARNING] L'API ne répond pas encore à /health")
     
     # 3. Start the UI server
     print(f"[3/4] Starting UI server on http://{HOST}:{UI_PORT}")
@@ -227,10 +276,10 @@ def main():
     # Create the API bridge
     api = KiraAPI()
     
-    # Create the window
+    # Create the window (sur le port UI réellement utilisé)
     window = webview.create_window(
         WINDOW_TITLE,
-        f"http://{HOST}:{UI_PORT}",
+        f"http://{HOST}:{globals().get('UI_PORT_USED', UI_PORT)}",
         width=WINDOW_WIDTH,
         height=WINDOW_HEIGHT,
         min_size=(1000, 700),

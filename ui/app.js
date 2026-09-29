@@ -1,18 +1,21 @@
 import * as THREE from "three";
-import { SpeechPlayer } from "./speech.mjs?v=speech-sync-2";
+import { SpeechPlayer, cleanForSpeech } from "./speech.mjs?v=speech-sync-3";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { HoloMouth } from "./holo-mouth.mjs?v=lipsync-fix-1";
+import { AVATAR_PORTRAIT, AVATAR_BRIGHTNESS_DEFAULT, createPortraitMaterial } from "./avatar.mjs?v=lipsync-fix-1";
+import { lipDemoPose } from "./lips.mjs?v=command-center-45";
 
 /* =========================================================
    KIRA // AI COMMAND CENTER — thème or
    ========================================================= */
 
-const GOLD = 0xC2A66B;
-const GOLD_BRIGHT = 0xE3D3A6;
-const GOLD_SOFT = 0xD5BE8A;
-const GOLD_DARK = 0x5C4A28;
-const GOLD_DEEP = 0x241C0F;
+const GOLD = 0x5FBF17;
+const GOLD_BRIGHT = 0x8EFF4D;
+const GOLD_SOFT = 0x7AD63A;
+const GOLD_DARK = 0x2E6B0A;
+const GOLD_DEEP = 0x0A1804;
 
 /* =========================================================
    SCÈNE
@@ -20,7 +23,7 @@ const GOLD_DEEP = 0x241C0F;
 
 const container = document.getElementById("scene-container");
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x030200);
+scene.background = new THREE.Color(0x020101);
 
 /* =========================================================
    CAMÉRA
@@ -52,7 +55,7 @@ container.appendChild(renderer.domElement);
    LUMIÈRES
    ========================================================= */
 
-const ambient = new THREE.AmbientLight(0x1a1206, 2);
+const ambient = new THREE.AmbientLight(0x0A1204, 2);
 scene.add(ambient);
 
 const goldLight = new THREE.PointLight(GOLD, 16, 14);
@@ -85,10 +88,10 @@ reactor.scale.setScalar(1.05);
 // --- COQUILLE EXTERNE ---
 const shellGeometry = new THREE.SphereGeometry(2.25, 64, 64);
 const shellMaterial = new THREE.MeshStandardMaterial({
-  color: 0x0a0703,
+  color: 0x030201,
   metalness: 0.95,
   roughness: 0.25,
-  emissive: 0x241C0F,
+  emissive: 0x0A1804,
   emissiveIntensity: 0.18,
   transparent: true,
   opacity: 0.16,
@@ -100,7 +103,7 @@ const shell = new THREE.Mesh(shellGeometry, shellMaterial);
 // --- COQUILLE FILAIRE ---
 const wireGeometry = new THREE.SphereGeometry(2.3, 32, 32);
 const wireMaterial = new THREE.MeshBasicMaterial({
-  color: 0xA08652,
+  color: 0x4A8A2E,
   wireframe: true,
   transparent: true,
   opacity: 0.03,
@@ -113,10 +116,10 @@ const armorGroup = new THREE.Group();
 // reactor.add(armorGroup); // retiré : centre vide
 
 const armorMaterial = new THREE.MeshStandardMaterial({
-  color: 0x120c04,
+  color: 0x0A1408,
   metalness: 1.0,
   roughness: 0.18,
-  emissive: 0x6E5A33,
+  emissive: 0x2E6B0A,
   emissiveIntensity: 0.4,
 });
 
@@ -145,7 +148,7 @@ for (let i = 0; i < 8; i++) {
 // --- AURA D'ÉNERGIE (derrière l'avatar, se déforme avec la voix) ---
 const energyGeometry = new THREE.SphereGeometry(2.6, 64, 64);
 const energyMaterial = new THREE.MeshBasicMaterial({
-  color: 0xC2A66B,
+  color: 0x5FBF17,
   transparent: true,
   opacity: 0.1,
   blending: THREE.AdditiveBlending,
@@ -181,32 +184,45 @@ energySphere.position.z = -3.2;
 // reactor.add(energySphere); // retiré : centre vide
 
 /* =========================================================
-   AVATAR — visage doré de KIRA
+   AVATAR — visage humain, couleurs naturelles
    ========================================================= */
 
+let holoMouth = null;
+let holoUniforms = null;
+// Luminosité du visage (0.1 à 1.0), réglable dans Paramètres et mémorisée.
+let avatarBrightness = AVATAR_BRIGHTNESS_DEFAULT;
+try {
+  const savedB = parseFloat(localStorage.getItem("kira.avatarBrightness"));
+  if (savedB >= 0.1 && savedB <= 1) avatarBrightness = savedB;
+} catch { /* stockage optionnel */ }
+function applyAvatarBrightness() {
+  // La bouche partage ce même uniform : aucune différence de teint en parlant.
+  if (holoUniforms) holoUniforms.brightness.value = avatarBrightness;
+}
+// Scène séparée, composée après le bloom : le décor reste vert et lumineux,
+// mais ni son éclairage ni sa lueur ne recolorent/brûlent la peau et les yeux.
+const avatarScene = new THREE.Scene();
 const avatarGroup = new THREE.Group();
-scene.add(avatarGroup);
+avatarScene.add(avatarGroup);
 
+// ── HOLOGRAMME DE KIRA (image + lèvres animées) ──
 if (THREE.TextureLoader && THREE.PlaneGeometry) {
   const avatarLoader = new THREE.TextureLoader();
-  const avatarTexture = avatarLoader.load("assets/avatar_gold.png", (texture) => {
-    if (texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+  const avatarTexture = avatarLoader.load(AVATAR_PORTRAIT.url, (texture) => {
+    // Valeurs sRGB brutes : le portrait et les lèvres gardent les couleurs photo.
     if (texture) texture.needsUpdate = true;
+    // Lèvres animées : maillage visème sur les mesures réelles de la bouche,
+    // synchronisé sur l'horloge audio réelle (aucun décalage).
+    if (texture && texture.image && typeof HoloMouth === "function") {
+      try { holoMouth = new HoloMouth(texture.image, THREE, avatarScene, avatarPlane); }
+      catch (error) { console.error("HoloMouth :", error); holoMouth = null; }
+    }
+    applyAvatarBrightness();
   });
-  // Rendu "visage réel" : blending normal (peau opaque, tons naturels).
-  // depthTest désactivé + renderOrder maximal : le visage est TOUJOURS
-  // dessiné en dernier, au-dessus de toute la machinerie — aucun élément 3D
-  // ne peut jamais passer devant, quelle que soit sa position.
-  const avatarMaterial = new THREE.MeshBasicMaterial({
-    map: avatarTexture,
-    transparent: true,
-    opacity: 1.0,
-    depthWrite: false,
-    depthTest: false,
-    toneMapped: false,
-  });
+  const avatarMaterial = createPortraitMaterial(THREE, avatarTexture, avatarBrightness);
+  holoUniforms = avatarMaterial.uniforms;
   const avatarPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(5.6, 5.6),
+    new THREE.PlaneGeometry(6.4, 6.4),
     avatarMaterial
   );
   avatarPlane.renderOrder = 50;
@@ -226,7 +242,7 @@ if (false) scene.add(coreCluster);
 // --- CŒUR ---
 const coreGeometry = new THREE.SphereGeometry(0.42, 64, 64);
 const coreMaterial = new THREE.MeshBasicMaterial({
-  color: 0xfff6df,
+  color: 0xFFF6E2,
   toneMapped: false,
 });
 const core = new THREE.Mesh(coreGeometry, coreMaterial);
@@ -235,7 +251,7 @@ coreCluster.add(core);
 // --- HALO DU CŒUR ---
 const glowGeometry = new THREE.SphereGeometry(0.78, 64, 64);
 const glowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xC2A66B,
+  color: 0x5FBF17,
   transparent: true,
   opacity: 0.42,
   blending: THREE.AdditiveBlending,
@@ -248,7 +264,7 @@ coreCluster.add(coreGlow);
 // --- AURA BLANCHE CHAUDE ---
 const whiteGlowGeometry = new THREE.SphereGeometry(0.62, 64, 64);
 const whiteGlowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffefd0,
+  color: 0xFFF3D9,
   transparent: true,
   opacity: 0.28,
   blending: THREE.AdditiveBlending,
@@ -286,10 +302,10 @@ neuralCore.add(secondRing);
 
 const frameGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.16, 32);
 const frameMat = new THREE.MeshStandardMaterial({
-  color: 0x120c04,
+  color: 0x0A1408,
   metalness: 1,
   roughness: 0.2,
-  emissive: 0x6E5A33,
+  emissive: 0x2E6B0A,
   emissiveIntensity: 0.3,
 });
 const coreFrame = new THREE.Mesh(frameGeo, frameMat);
@@ -298,7 +314,7 @@ neuralCore.add(coreFrame);
 
 const discGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.18, 64);
 const discMat = new THREE.MeshBasicMaterial({
-  color: 0xC2A66B,
+  color: 0x5FBF17,
   transparent: true,
   opacity: 1.0,
   blending: THREE.AdditiveBlending,
@@ -365,7 +381,7 @@ halo.rotation.x = Math.PI / 2;
 // reactor.add(halo); // retiré : centre vide
 
 // --- LUMIÈRE DU RÉACTEUR ---
-const reactorLight = new THREE.PointLight(0xC2A66B, 3, 9);
+const reactorLight = new THREE.PointLight(0x5FBF17, 3, 9);
 reactorLight.position.set(0, -4.1, 1.0);
 scene.add(reactorLight);
 
@@ -373,7 +389,7 @@ scene.add(reactorLight);
 function createReactorRing(radius, tube, rotation, opacity) {
   const geo = new THREE.TorusGeometry(radius, tube, 12, 180);
   const mat = new THREE.MeshBasicMaterial({
-    color: 0xC2A66B,
+    color: 0x5FBF17,
     transparent: true,
     opacity: opacity,
   });
@@ -493,6 +509,48 @@ function addMessage(sender, text, isUser = false, extraClass = "") {
 
   conversation.appendChild(block);
   conversation.scrollTop = conversation.scrollHeight;
+  return block.querySelector?.(".message") || null;
+}
+
+function addSpokenMessage(text) {
+  const message = addMessage("KIRA", "", false, "spoken-message");
+  if (!message) { speak(text); return null; }
+  const spoken = cleanForSpeech(text);
+  const spokenWords = Array.from(spoken.matchAll(/\S+/gu));
+  const displayWords = Array.from(String(text).matchAll(/\S+/gu));
+  const conversation = document.getElementById("conversation");
+  const render = value => {
+    message.innerHTML = escapeHtml(value).replace(/\n/g, "<br />");
+    conversation.scrollTop = conversation.scrollHeight;
+  };
+
+  if (!speechEnabled || !spokenWords.length || !displayWords.length) {
+    render(text);
+    speak(text);
+    return message;
+  }
+
+  message.classList.add("typing");
+  let lastEnd = -1;
+  const reveal = charIndex => {
+    if (charIndex >= spoken.length) {
+      if (lastEnd !== String(text).length) {
+        render(text);
+        lastEnd = String(text).length;
+      }
+      message.classList.remove("typing");
+      return;
+    }
+    const wordCount = spokenWords.filter(word => word.index + word[0].length <= charIndex).length;
+    const displayCount = Math.min(displayWords.length,
+      Math.floor(wordCount * displayWords.length / spokenWords.length));
+    const end = displayCount ? displayWords[displayCount - 1].index + displayWords[displayCount - 1][0].length : 0;
+    if (end === lastEnd) return;
+    lastEnd = end;
+    render(String(text).slice(0, end));
+  };
+  speak(text, { onProgress: reveal });
+  return message;
 }
 
 function addHistoryDivider() {
@@ -565,18 +623,18 @@ const speech = new SpeechPlayer({
   },
 });
 
-function speak(text) {
+function speak(text, options = {}) {
   const voice = currentVoice();
   const language = ["denise", "eloise", "vivienne", "henri"].includes(voice)
     ? "fr-FR" : voice === "aria_uk" ? "en-GB" : "en-US";
-  return speech.speak(text, { language });
+  return speech.speak(text, { language, ...options });
 }
 
 function stopSpeaking() {
   speech.stop();
 }
 
-window.addEventListener("pagehide", () => speech.destroy());
+window.addEventListener("pagehide", () => { speech.destroy(); holoMouth?.destroy?.(); });
 
 // Bouton muet
 const muteButton = document.getElementById("mute");
@@ -635,6 +693,15 @@ async function sendCommand(text) {
     });
 
     if (!response.ok) {
+      // 503 : le serveur d'interface répond mais le moteur KIRA (API locale) est
+      // éteint ou occupé — message clair avec la marche à suivre réelle.
+      if (response.status === 503 || response.status === 502) {
+        throw new Error(
+          "MOTEUR OFF — Le moteur KIRA ne répond pas. Ferme complètement KIRA "
+          + "(Gestionnaire des tâches → tous les processus « python » / KIRA, "
+          + "ancienne fenêtre comprise) puis relance main_window.py."
+        );
+      }
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
@@ -643,11 +710,9 @@ async function sendCommand(text) {
     if (data.error) {
       addMessage("Système", `Erreur : ${data.error}`);
     } else if (data.response) {
-      addMessage("KIRA", data.response);
-      speak(data.response);
+      addSpokenMessage(data.response);
     } else if (data.action && data.success) {
-      addMessage("KIRA", `C'est fait : ${data.action}`);
-      speak(`C'est fait. ${data.action.replace(/_/g, " ")}`);
+      addSpokenMessage(`C'est fait. ${data.action.replace(/_/g, " ")}`);
     } else if (data.action) {
       addMessage("KIRA", `Exécuté : ${data.action}`);
     } else {
@@ -660,14 +725,37 @@ async function sendCommand(text) {
     console.error("Commande échouée :", error);
 
     if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError") || error.message.includes("fetch")) {
-      addMessage("Système", "Impossible de joindre le serveur KIRA (" + API_BASE + "). Vérifiez que le backend est lancé.");
+      addMessage("Système",
+        "MOTEUR OFF — Impossible de joindre le serveur KIRA. Ferme complètement KIRA "
+        + "(ancienne fenêtre et processus « python » compris) puis relance main_window.py.");
     } else {
       addMessage("Système", `Erreur : ${error.message}`);
     }
 
     setActivity("ERROR");
     setTimeout(() => setActivity("READY"), 3000);
+    watchEngineRecovery(); // préviens l'utilisateur dès que le moteur revient
   }
+}
+
+// Quand le moteur tombe, sonde /api/status toutes les 5 s et préviens
+// l'utilisateur dès qu'il revient — plus besoin de deviner à l'aveugle.
+let engineWatchdog = null;
+function watchEngineRecovery() {
+  if (engineWatchdog) return; // déjà en surveillance
+  engineWatchdog = setInterval(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/status`, { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json().catch(() => ({}));
+      if (data && data.online) {
+        clearInterval(engineWatchdog);
+        engineWatchdog = null;
+        showToast("Moteur KIRA reconnecté — tu peux renvoyer ton message.");
+        loadParamInfo && loadParamInfo();
+      }
+    } catch { /* moteur toujours éteint, on continue de sonder */ }
+  }, 5000);
 }
 
 // Entrée clavier
@@ -810,13 +898,13 @@ function drawSpark(canvas, values) {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = "rgba(194, 166, 107, 0.85)";
+  ctx.strokeStyle = "rgba(95, 191, 23, 0.85)";
   ctx.lineWidth = 1.4;
   ctx.stroke();
   ctx.lineTo(w, h);
   ctx.lineTo(0, h);
   ctx.closePath();
-  ctx.fillStyle = "rgba(194, 166, 107, 0.14)";
+  ctx.fillStyle = "rgba(95, 191, 23, 0.14)";
   ctx.fill();
 }
 
@@ -1085,6 +1173,25 @@ function openView(name) {
 }
 window.openView = openView;
 
+// Outils de la conversation : recherche visuelle et effacement de l'affichage.
+window.convSearch = function () {
+  const q = prompt("Rechercher dans la conversation :");
+  if (!q) return;
+  const nodes = [...document.querySelectorAll("#conversation > *")];
+  const found = nodes.find(n => n.textContent.toLowerCase().includes(q.toLowerCase()));
+  if (found) {
+    found.scrollIntoView({ behavior: "smooth", block: "center" });
+    found.classList.add("conv-flash");
+    setTimeout(() => found.classList.remove("conv-flash"), 1800);
+  } else {
+    alert("Aucun résultat pour « " + q + " ».");
+  }
+};
+window.convClear = function () {
+  if (!confirm("Effacer l'affichage de la conversation ?")) return;
+  document.getElementById("conversation").innerHTML = "";
+};
+
 function closeView() {
   activeView = null;
   document.getElementById("view-overlay").classList.add("hidden");
@@ -1333,6 +1440,20 @@ microSelect.addEventListener("change", () => {
    MOUVEMENT PILOTE PAR LA VOIX
    ========================================================= */
 
+// Réglage de luminosité de l'avatar (Paramètres).
+const brightnessSlider = document.getElementById("avatar-brightness");
+const brightnessValue = document.getElementById("avatar-brightness-value");
+if (brightnessSlider) {
+  brightnessSlider.value = String(Math.round(avatarBrightness * 100));
+  if (brightnessValue) brightnessValue.textContent = `${brightnessSlider.value} %`;
+  brightnessSlider.addEventListener("input", () => {
+    avatarBrightness = Number(brightnessSlider.value) / 100;
+    if (brightnessValue) brightnessValue.textContent = `${brightnessSlider.value} %`;
+    applyAvatarBrightness();
+    try { localStorage.setItem("kira.avatarBrightness", String(avatarBrightness)); } catch { /* optionnel */ }
+  });
+}
+
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let motionPreference = "auto";
 try {
@@ -1402,6 +1523,14 @@ function animate() {
   const light = level * (disabled ? 0.12 : 1);
   const motionTime = disabled ? 0 : time;
   const step = disabled ? 0 : dt;
+  // Lèvres de l'hologramme : même horloge audio que le son (zéro décalage).
+  if (holoMouth) {
+    holoMouth.update(
+      { mouth: voice.mouth, active: voice.active, level },
+      { now, disabled, demo: demo ? lipDemoPose(demoAge) : null }
+    );
+  }
+
   voiceRotation += energy * step;
   voiceUniforms.voiceTime.value = motionTime;
   voiceUniforms.voiceEnergy.value = energy;
@@ -1421,7 +1550,7 @@ function animate() {
   reactor.scale.set(1.05 + energy * 0.12, 1.05 + energy * 0.23, 1.05 + energy * 0.12);
   reactor.position.y = Math.sin(motionTime * 3.5) * energy * 0.14;
   // L'avatar reste stable et humain ; seule une respiration légère l'anime.
-  avatarGroup.scale.set(1 + energy * 0.02, 1 + energy * 0.045, 1);
+
   armorGroup.rotation.y = -motionTime * 0.08;
   verticalArmor.rotation.y = motionTime * 0.05;
   halo.rotation.z = motionTime * 1.8 + voiceRotation * 0.5;
@@ -1459,6 +1588,7 @@ function animate() {
   whiteGlow.scale.setScalar(1 + breath + high * 0.22 + energy * 0.1);
   whiteGlowMaterial.opacity = 0.22 + light * 0.07;
   reactorLight.intensity = 9 + light * 3;
+  // Bloom réservé au décor : le visage et sa luminosité restent indépendants.
   bloomPass.strength = 1.1 + light * 0.16;
 
   reactorParticles.rotation.y = motionTime * 0.025;
@@ -1467,6 +1597,12 @@ function animate() {
   particleMat.size = 0.028 + high * 0.012;
 
   composer.render();
+  // Couche photo nette au-dessus du décor traité, sans effacer ce dernier.
+  const autoClear = renderer.autoClear;
+  renderer.autoClear = false;
+  renderer.clearDepth();
+  renderer.render(avatarScene, camera);
+  renderer.autoClear = autoClear;
 }
 
 /* =========================================================

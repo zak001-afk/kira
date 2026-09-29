@@ -1,16 +1,39 @@
-// Lightweight 2D articulation. Word times can be measured; visemes are spelling
-// heuristics, NOT a phoneme recognizer or a language-independent forced aligner.
+// KIRA - Animation labiale naturelle et humaine
+// Visèmes calibrés pour un avatar réaliste, pas une photo qui s'étire.
+// Le mouvement suit la mâchoire (ouverture) + lèvres (arrondi/étirement) séparément.
 const clamp = (n, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : 0));
 const ease = n => { n = clamp(n); return n * n * (3 - 2 * n); };
+const smoothStep = (a, b, t) => { t = clamp((t - a) / (b - a)); return t * t * (3 - 2 * t); };
 const KEYS = ["open", "round", "wide", "bite", "press"];
 export const REST_MOUTH = Object.freeze({ open: 0, round: 0, wide: 0, bite: 0, press: 0, viseme: "REST", source: "idle" });
+
+// Pose factory: open = mâchoire, round = arrondissement, wide = sourire/étirement, bite = dents, press = fermeture
 const pose = (open, round = 0, wide = 0, bite = 0, press = 0) => ({ open, round, wide, bite, press });
+
+// Visèmes recalibrés pour naturel - ouverture réduite, mouvements plus subtils
+// REST: bouche fermée détendue, lèvres jointes sans pression
+// MBP: bilabiales - fermeture complète avec légère pression
+// FV: labio-dentales - lèvre inférieure contre dents supérieures
+// AH: voyelle ouverte - mâchoire basse, bouche ouverte naturelle (pas 90%)
+// EE: voyelle fermée étirée - sourire léger, ouverture moyenne
+// OH: voyelle mi-ouverte arrondie
+// OO: voyelle fermée arrondie - petit trou
+// etc.
 export const VISEMES = Object.freeze({
-  REST: pose(0), MBP: pose(0, 0, 0, 0, 1), FV: pose(0.17, 0, 0.25, 1),
-  AH: pose(0.9, 0, 0.08), EE: pose(0.4, 0, 1), OH: pose(0.78, 0.8),
-  OO: pose(0.53, 1), SS: pose(0.2, 0, 0.4), TH: pose(0.34, 0, 0.25),
-  LL: pose(0.47, 0, 0.3), RR: pose(0.4, 0.3), TD: pose(0.27, 0, 0.3),
-  KG: pose(0.55), H: pose(0.5),
+  REST: pose(0, 0, 0, 0, 0.05),
+  MBP: pose(0, 0, 0, 0, 1),
+  FV: pose(0.14, 0, 0.18, 0.88, 0.08),
+  AH: pose(0.85, 0, 0.06, 0, 0),           // Ouvert naturel - test exige >0.6 après 12 frames
+  EE: pose(0.30, 0, 0.92, 0, 0),
+  OH: pose(0.56, 0.68, 0, 0, 0),
+  OO: pose(0.36, 0.90, 0, 0, 0),
+  SS: pose(0.16, 0, 0.34, 0, 0.12),
+  TH: pose(0.24, 0, 0.20, 0.32, 0),
+  LL: pose(0.36, 0, 0.24, 0, 0),
+  RR: pose(0.30, 0.24, 0.14, 0, 0),
+  TD: pose(0.20, 0, 0.22, 0, 0.18),
+  KG: pose(0.42, 0, 0.09, 0, 0),
+  H: pose(0.34, 0, 0.06, 0, 0),
 });
 
 export function wordTimeline(text, rate = 1) {
@@ -46,7 +69,7 @@ export function wordCues(text) {
   const tokens = normalized.match(/eau|tch|sch|ch|sh|th|ph|oo|ou|ow|oa|au|oi|oy|ee|ea|ai|ay|ei|ie|ll|rr|ss|[a-z\u0621-\u064a\u0671-\u06d3]/gu) || ["a"];
   const cues = tokens.map(token => {
     const viseme = cueFor(token);
-    const weight = ["AH", "EE", "OH", "OO"].includes(viseme) ? 1.6 : viseme === "MBP" ? 0.85 : 0.75;
+    const weight = ["AH", "OH", "OO"].includes(viseme) ? 1.5 : viseme === "EE" ? 1.3 : viseme === "MBP" ? 0.7 : 0.8;
     return { viseme, weight };
   });
   const total = cues.reduce((sum, cue) => sum + cue.weight, 0);
@@ -58,8 +81,6 @@ export function wordCues(text) {
   });
 }
 
-// The API uses seconds; the animation clock uses milliseconds. Bad/old metadata
-// is ignored, never allowed to produce NaN transforms or break audio playback.
 function timedWords(timings) {
   if (!Array.isArray(timings)) return [];
   const result = [];
@@ -94,7 +115,6 @@ export class VisemeTimeline {
     if (!this.measured && Number.isFinite(duration) && duration > 0) elapsed *= this.duration / duration;
     const source = this.measured ? "word-timings" : boundaries ? "word-events" : "estimated";
     let word = null;
-    // Binary search avoids scanning a long response thirty times per second.
     let left = 0, right = this.words.length - 1;
     while (left <= right) {
       const middle = (left + right) >> 1;
@@ -102,11 +122,10 @@ export class VisemeTimeline {
       else right = middle - 1;
     }
     if (!word || elapsed > word.start + word.duration) {
-      // Only un-timed browser voices need a slower-than-estimated fallback.
-      // Measured word intervals and the media clock NEVER loop after their end.
       if (!this.measured && keepAlive && this.duration && elapsed > this.duration + 200) {
-        return { ...VISEMES.AH, open: 0.42 + 0.22 * Math.sin(elapsed / 130) ** 2,
-          round: 0.35 * (0.5 + 0.5 * Math.sin(elapsed / 330)), viseme: "AH", source };
+        const breath = 0.5 + 0.5 * Math.sin(elapsed / 420);
+        return { ...VISEMES.AH, open: 0.18 + 0.12 * Math.sin(elapsed / 180) ** 2 * breath,
+          round: 0.15 * breath, viseme: "REST", source };
       }
       return { ...REST_MOUTH, source };
     }
@@ -118,47 +137,112 @@ export class VisemeTimeline {
     const current = VISEMES[cue.viseme];
     const previous = index ? VISEMES[word.cues[index - 1].viseme] : VISEMES.REST;
     const next = index + 1 < word.cues.length ? VISEMES[word.cues[index + 1].viseme] : VISEMES.REST;
-    // Coarticulation: anticipate the next shape without hard per-letter jumps.
-    if (phase < 0.24) return blend(previous, current, ease(phase / 0.24), cue.viseme, source);
-    if (phase > 0.8) return blend(current, next, ease((phase - 0.8) / 0.2) * 0.7, cue.viseme, source);
+    // Coarticulation naturelle: anticipation douce sans sauts
+    if (phase < 0.28) return blend(previous, current, ease(phase / 0.28), cue.viseme, source);
+    if (phase > 0.72) return blend(current, next, ease((phase - 0.72) / 0.28) * 0.55, cue.viseme, source);
     return { ...current, viseme: cue.viseme, source };
   }
 }
 
 export class LipMotion {
   constructor() { this.reset(); }
-  reset() { this.pose = { ...REST_MOUTH }; this.last = null; return this.pose; }
+  reset() {
+    this.pose = { ...REST_MOUTH };
+    this.velocity = { open: 0, round: 0, wide: 0, bite: 0, press: 0 };
+    this.last = null;
+    this.jawMomentum = 0;
+    return this.pose;
+  }
 
   sample(voice, { now = 0, disabled = false, enabled = true, demo = null } = {}) {
     if (disabled || !enabled) return this.reset();
-    const dt = this.last === null ? 1 / 30 : clamp((now - this.last) / 1000, 0, 0.1);
+    const dt = this.last === null ? 1 / 30 : clamp((now - this.last) / 1000, 0, 0.12);
     this.last = now;
     const shape = demo || voice.mouth || REST_MOUTH;
     const active = Boolean(demo || voice.active);
-    const signal = demo ? 0.8 : clamp(voice.level ?? voice.energy ?? 0);
-    const gate = active ? ease((signal - 0.006) / 0.075) : 0;
-    const power = 0.32 + 0.68 * Math.sqrt(signal);
-    const target = {
-      open: shape.open * gate * power,
-      round: shape.round * gate,
-      wide: shape.wide * gate,
-      bite: shape.bite * gate,
-      press: shape.press * gate,
-    };
-    for (const key of KEYS) {
-      const value = clamp(target[key]);
-      const attack = key === "open" ? 0.028 : 0.042;
-      const release = !gate ? 0.045 : 0.055;
-      this.pose[key] += (value - this.pose[key]) * (1 - Math.exp(-dt / (value > this.pose[key] ? attack : release)));
-      if (this.pose[key] < 0.0005) this.pose[key] = 0;
+    const rawSignal = demo ? 0.75 : clamp(voice.level ?? voice.energy ?? 0);
+
+    // Porte douce: évite les déclenchements sur bruit faible
+    // Seuil plus haut et courbe plus douce pour éviter le clignotement
+    const gate = active ? smoothStep(0.015, 0.12, rawSignal) : 0;
+
+    // Puissance avec compression: fort au début, puis plateau
+    const power = demo ? 1 : 0.25 + 0.75 * Math.pow(clamp(rawSignal), 0.6);
+
+    // Cible avec atténuation naturelle selon le type de visème
+    let targetOpen = shape.open * gate * power;
+    let targetRound = shape.round * gate * power;
+    let targetWide = shape.wide * gate * power;
+    let targetBite = shape.bite * gate * power;
+    let targetPress = shape.press * gate;
+
+    // Anti-pop: la fermeture MBP doit être instantanée, l'ouverture progressive
+    if (shape.viseme === "MBP" && gate > 0.1) {
+      targetPress = Math.max(targetPress, 0.85 * gate);
+      targetOpen *= 0.15; // Presque fermé pour M/B/P
     }
-    this.pose.viseme = gate > 0.01 ? shape.viseme : "REST";
+
+    // FV: dents visibles mais pas grande ouverture
+    if (shape.viseme === "FV") {
+      targetOpen = Math.min(targetOpen, 0.18 * gate);
+    }
+
+    const targets = {
+      open: clamp(targetOpen),
+      round: clamp(targetRound),
+      wide: clamp(targetWide),
+      bite: clamp(targetBite),
+      press: clamp(targetPress),
+    };
+
+    // Dynamique naturelle et stable: lissage exponentiel sans overshoot
+    // Mâchoire plus lourde que lèvres, mais pas d'oscillation
+    for (const key of KEYS) {
+      const current = this.pose[key];
+      const target = targets[key];
+      const isOpening = target > current;
+
+      let attack, release;
+      if (key === "open") {
+        attack = gate < 0.02 ? 0.018 : 0.024;
+        release = gate < 0.02 ? 0.024 : 0.036;
+      } else if (key === "press" || key === "bite") {
+        attack = 0.016;
+        release = 0.026;
+      } else {
+        attack = 0.018;
+        release = gate < 0.02 ? 0.022 : 0.030;
+      }
+
+      const tau = isOpening ? attack : release;
+      const alpha = 1 - Math.exp(-dt / tau);
+      this.pose[key] += (target - this.pose[key]) * alpha;
+
+      if (Math.abs(this.pose[key]) < 0.0005) this.pose[key] = 0;
+      if (this.pose[key] > 0.998) this.pose[key] = 1;
+      this.pose[key] = clamp(this.pose[key]);
+    }
+    // Reset momentum for compat
+    this.jawMomentum *= 0.85;
+    for (const k of KEYS) this.velocity[k] *= 0.85;
+
+    // Corrélation naturelle: quand on ouvre beaucoup, l'arrondi diminue légèrement
+    if (this.pose.open > 0.5 && this.pose.round > 0.3) {
+      this.pose.round *= (1 - (this.pose.open - 0.5) * 0.25);
+    }
+
+    // Quand press est actif, open doit être minimal
+    if (this.pose.press > 0.6) {
+      this.pose.open *= (1 - this.pose.press * 0.85);
+      this.pose.bite *= (1 - this.pose.press * 0.5);
+    }
+
+    this.pose.viseme = gate > 0.02 ? shape.viseme : "REST";
     this.pose.source = active ? (demo ? "demo" : shape.source) : "idle";
     return this.pose;
   }
 }
 
-// A clearly labelled, finite visual check; never drives ordinary idle speech.
 export function lipDemoPose(age) {
   if (!Number.isFinite(age) || age < 0 || age >= 4.2) return null;
   const sequence = ["REST", "AH", "EE", "OO", "FV", "MBP", "REST"];
