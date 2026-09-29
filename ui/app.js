@@ -636,7 +636,7 @@ function stopSpeaking() {
   speech.stop();
 }
 
-window.addEventListener("pagehide", () => speech.destroy());
+window.addEventListener("pagehide", () => { speech.destroy(); stopEventPolling(); });
 
 // Bouton muet
 const muteButton = document.getElementById("mute");
@@ -1178,9 +1178,12 @@ const VIEW_TITLES = {
   parametres: "Paramètres",
   historique: "Historique",
   systeme: "Système",
+  sante: "Santé des agents",
+  documents: "Documents",
+  reglages: "Réglages moteur",
 };
 
-const VIEW_IDS = ["taches", "agents", "fichiers", "outils", "parametres", "historique", "systeme"];
+const VIEW_IDS = ["taches", "agents", "fichiers", "outils", "parametres", "historique", "systeme", "sante", "documents", "reglages"];
 const NAV_IDS = ["accueil", "conversation", "agents", "fichiers", "outils", "parametres", "historique", "systeme"];
 let activeView = null;
 
@@ -1211,6 +1214,9 @@ function openView(name) {
   if (name === "historique") loadHistoryFull();
   if (name === "systeme") loadSystemFull();
   if (name === "parametres") loadParamInfo();
+  if (name === "sante") loadHealth(true);
+  if (name === "documents") loadDocuments();
+  if (name === "reglages") loadSettings();
 }
 window.openView = openView;
 
@@ -1670,6 +1676,150 @@ updateTasks();
 updatePlugins();
 renderAgents();
 loadBootHistory();
+
+// ─────────────────────────────────────────────
+// Santé des agents (diagnostic) — vue dédiée
+// ─────────────────────────────────────────────
+window.loadHealth = async function(probe = false) {
+  const rows = document.getElementById("health-rows");
+  if (!rows) return;
+  try {
+    const response = await fetch(`${API_BASE}/api/health`);
+    const data = await response.json();
+    const checks = Array.isArray(data.checks) ? data.checks : [];
+    if (!checks.length) {
+      rows.innerHTML = '<div class="task-empty">Diagnostic indisponible.</div>';
+      return;
+    }
+    rows.innerHTML = checks.map((check) => `
+      <div class="health-row">
+        <span class="health-dot ${check.ok ? "ok" : ""}"></span>
+        <span class="health-label">${escapeHtml(check.label || check.agent)}</span>
+        <span class="health-detail">${escapeHtml(String(check.detail || ""))}</span>
+        <span class="health-ms">${Number(check.ms || 0)} ms</span>
+      </div>`).join("");
+  } catch (error) {
+    rows.innerHTML = '<div class="task-empty">Backend indisponible.</div>';
+  }
+};
+
+// ─────────────────────────────────────────────
+// Documents (kira_docs/) — vue dédiée
+// ─────────────────────────────────────────────
+window.loadDocuments = async function() {
+  const rows = document.getElementById("docs-rows");
+  if (!rows) return;
+  try {
+    const response = await fetch(`${API_BASE}/api/documents`);
+    const data = await response.json();
+    const documents = Array.isArray(data.documents) ? data.documents : [];
+    if (!documents.length) {
+      rows.innerHTML = '<div class="task-empty">Aucun document — déposez des fichiers dans kira_docs/.</div>';
+      return;
+    }
+    rows.innerHTML = documents.map((doc) => `
+      <div class="doc-row">
+        <span class="doc-name">${escapeHtml(doc.name)}</span>
+        <span class="doc-size">${Number(doc.bytes || 0)} o</span>
+      </div>`).join("");
+  } catch (error) {
+    rows.innerHTML = '<div class="task-empty">Backend indisponible.</div>';
+  }
+};
+
+// ─────────────────────────────────────────────
+// Réglages moteur (.env) — vue dédiée
+// ─────────────────────────────────────────────
+const SETTING_FIELDS = [
+  ["set-chat", "KIRA_MODEL_CHAT"], ["set-arabic", "KIRA_MODEL_ARABIC"],
+  ["set-planner-model", "KIRA_MODEL_PLANNER"], ["set-code", "KIRA_MODEL_CODE"],
+  ["set-city", "KIRA_CITY"], ["set-approval", "KIRA_REQUIRE_APPROVAL"],
+  ["set-planner", "KIRA_PLANNER"],
+];
+
+window.loadSettings = async function() {
+  try {
+    const response = await fetch(`${API_BASE}/api/settings`);
+    const data = await response.json();
+    const values = data.settings || {};
+    for (const [fieldId, key] of SETTING_FIELDS) {
+      const field = document.getElementById(fieldId);
+      if (!field) continue;
+      if (field.tagName === "SELECT") field.value = values[key] === "0" ? "0" : "1";
+      else field.value = values[key] || "";
+    }
+    const saved = document.getElementById("settings-saved");
+    if (saved) saved.textContent = "";
+  } catch (error) { /* backend absent : garder le formulaire */ }
+};
+
+window.saveSettings = async function() {
+  const saved = document.getElementById("settings-saved");
+  const body = {};
+  for (const [fieldId, key] of SETTING_FIELDS) {
+    const field = document.getElementById(fieldId);
+    if (!field) continue;
+    body[key] = field.tagName === "SELECT" ? field.value : field.value.trim();
+  }
+  try {
+    const response = await fetch(`${API_BASE}/api/settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (saved) saved.textContent = data.ok ? "✓ Enregistré — certains réglages prennent effet au redémarrage." : `Erreur : ${data.error || "?"}`;
+  } catch (error) {
+    if (saved) saved.textContent = `Erreur : ${error.message}`;
+  }
+};
+
+// ─────────────────────────────────────────────
+// KIRA proactive : long-poll des évènements (rappels à l'heure)
+// ─────────────────────────────────────────────
+let lastEventId = 0;
+let eventsActive = false;
+let eventsHalted = false;
+let eventTimer = null;
+
+function stopEventPolling() {
+  eventsHalted = true;
+  if (eventTimer) { clearTimeout(eventTimer); eventTimer = null; }
+}
+
+function showEventToast(event) {
+  const existing = document.querySelector(".event-toast");
+  if (existing) existing.remove();
+  const toast = document.createElement("div");
+  toast.className = "event-toast";
+  toast.innerHTML = `
+    <div class="event-title">⏰ Rappel</div>
+    <div class="event-text">${escapeHtml(String(event.title || ""))}</div>
+    <span class="event-close" title="Fermer">✕</span>`;
+  toast.querySelector(".event-close").addEventListener("click", () => toast.remove());
+  document.getElementById("hud").appendChild(toast);
+  setTimeout(() => toast.remove(), 30000);
+}
+
+async function pollEvents() {
+  if (eventsActive) return;
+  eventsActive = true;
+  try {
+    const response = await fetch(`${API_BASE}/api/events?after=${lastEventId}`);
+    const data = await response.json();
+    for (const event of (Array.isArray(data.events) ? data.events : [])) {
+      lastEventId = Math.max(lastEventId, Number(event.id || 0));
+      showEventToast(event);
+      if (event.speak && event.title) speak(`Rappel : ${event.title}`);
+      addMessage("KIRA", `⏰ Rappel : ${event.title}`);
+    }
+  } catch (error) {
+    await new Promise((resolve) => setTimeout(resolve, 5000)); // backend absent: ralentir
+  }
+  eventsActive = false;
+  if (!eventsHalted) eventTimer = setTimeout(pollEvents, 500);
+}
+pollEvents();
 
 setInterval(updateTelemetry, 3000);
 setInterval(updateTasks, 5000);

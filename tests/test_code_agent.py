@@ -49,10 +49,10 @@ class WorkspaceJailTests(unittest.TestCase):
                          "invalid_name")  # separators in the name are refused outright
 
     def test_deleting_the_whole_workspace_is_refused(self):
-        # "." resolves to the root itself and is refused before deletion.
+        # "." now resolves to the root itself and is refused by the guard.
         result = kira_code.delete_path(".")
         self.assertFalse(result["ok"])
-        self.assertEqual(result["error_code"], "path_required")
+        self.assertEqual(result["error_code"], "workspace_root_protected")
 
 
 class ScaffoldTests(unittest.TestCase):

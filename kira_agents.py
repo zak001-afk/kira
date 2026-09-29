@@ -402,6 +402,57 @@ def _code_delete_path(path):
     return kira_code.delete_path(path)
 
 
+def _code_build(request, project=""):
+    import kira_build
+    return kira_build.code_build(request, project)
+
+
+def _code_preview_build(request, project=""):
+    import kira_build
+    return kira_build.plan_build(request, project)
+
+
+def _search_docs(query, limit=4):
+    import kira_docs
+    return kira_docs.search_docs(query, limit)
+
+
+def _add_note(path, content=""):
+    import kira_docs
+    return kira_docs.add_document(path, content)
+
+
+def _list_documents():
+    import kira_docs
+    return kira_docs.list_documents()
+
+
+def _run_diagnostic():
+    import kira_health
+    return kira_health.run_health_check()
+
+
+def _backup_memory(keep=5):
+    import kira_ops
+    return kira_ops.backup_memory(keep)
+
+
+def _list_backups():
+    import kira_ops
+    return kira_ops.list_backups()
+
+
+def _generate_plugin(name, description):
+    import kira_ops
+    return kira_ops.generate_plugin(name, description)
+
+
+def _morning_briefing():
+    import kira_scheduler
+    text, data = kira_scheduler.briefing("fr")
+    return {"ok": True, "text": text, "data": data, "response": text}
+
+
 def ensure_builtins():
     global _BUILTINS_READY
     if _BUILTINS_READY:
@@ -529,3 +580,45 @@ def ensure_builtins():
                   "Delete a file or folder inside the code workspace.",
                   {"path": {"type": str, "required": True}},
                   _code_delete_path, consequential=True)
+    register_tool("code_preview_build", "programming",
+                  "Plan (read-only) which files KIRA would generate for a build request.",
+                  {"request": {"type": str, "required": True},
+                   "project": {"type": str, "required": False}},
+                  _code_preview_build)
+    register_tool("code_build", "programming",
+                  "Generate a full custom project from one sentence: plan files, write them "
+                  "with syntax checks and a self-fix round, then run the entry file.",
+                  {"request": {"type": str, "required": True},
+                   "project": {"type": str, "required": False}},
+                  _code_build, consequential=True)
+    register_tool("search_docs", "memory",
+                  "Search the user's LOCAL documents (kira_docs/). Nothing leaves the machine.",
+                  {"query": {"type": str, "required": True},
+                   "limit": {"type": int, "required": False}},
+                  _search_docs)
+    register_tool("add_note", "memory",
+                  "Save a note into the local documents folder (kira_docs/).",
+                  {"path": {"type": str, "required": True},
+                   "content": {"type": str, "required": False}},
+                  _add_note, consequential=True)
+    register_tool("list_documents", "memory",
+                  "List the documents stored in kira_docs/.",
+                  {}, _list_documents)
+    register_tool("run_diagnostic", "research",
+                  "Run one harmless health probe per agent and report green/red per system.",
+                  {}, _run_diagnostic)
+    register_tool("backup_memory", "memory",
+                  "Create a rotating backup of the local memory database.",
+                  {"keep": {"type": int, "required": False}},
+                  _backup_memory, consequential=True)
+    register_tool("list_backups", "memory",
+                  "List the memory database backups.",
+                  {}, _list_backups)
+    register_tool("generate_plugin", "plugins",
+                  "Generate a new KIRA plugin (plugins/<name>.py) from a description and load it.",
+                  {"name": {"type": str, "required": True},
+                   "description": {"type": str, "required": True}},
+                  _generate_plugin, consequential=True)
+    register_tool("morning_briefing", "research",
+                  "Morning briefing: weather, pending tasks and upcoming holidays.",
+                  {}, _morning_briefing)

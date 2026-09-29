@@ -165,6 +165,10 @@ class RouteBoundaryTests(unittest.TestCase):
                                "target_language": "fr"},
             "scaffold_project": {"action": "scaffold_project", "name": "route-check",
                                  "template": "empty"},
+            "morning_briefing": {"action": "morning_briefing"},
+            "run_diagnostic": {"action": "run_diagnostic"},
+            "code_build": {"action": "code_build", "request": "nothing real",
+                           "project": ""},
         }
         self.assertEqual(set(samples), set(commands.DIRECT_TOOL_ACTIONS))
         web = types.SimpleNamespace(search_shared_knowledge=Mock(return_value="found"),

@@ -57,9 +57,11 @@ def resolve_path(relative, must_exist=False):
     (Path, None) on success or (None, {ok, error, error_code}).
     """
     relative = str(relative or "").strip().strip("\"'").replace("\\", "/")
-    if not relative or relative in {".", "/"}:
+    if not relative:
         return None, {"ok": False, "error": "A path inside the workspace is required.",
                       "error_code": "path_required"}
+    if relative in {"./", ".\\"}:
+        relative = "."  # the workspace root itself
     if len(relative) > 2 and relative[1] == ":":
         return None, {"ok": False, "error": f"Absolute drive paths are not allowed: {relative}",
                       "error_code": "path_outside_workspace"}
@@ -310,8 +312,12 @@ def list_projects():
 
 
 def list_dir(path=""):
-    """List one workspace directory (files first, directories second)."""
-    target, failure = resolve_path(path or "")
+    """List one workspace directory (files first, directories second).
+    Empty means the workspace root."""
+    if not str(path or "").strip():
+        target, failure = workspace_root(), None
+    else:
+        target, failure = resolve_path(path)
     if failure:
         return failure
     if not target.exists():

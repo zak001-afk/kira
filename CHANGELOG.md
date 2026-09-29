@@ -1,5 +1,60 @@
 # KIRA Changelog
 
+## Unreleased — Planificateur proactif, documents, diagnostic, réglages et thème « Neon Obsidian »
+
+- **Rappels proactifs (`kira_scheduler.py`)** : un poller (20 s) scanne les
+  tâches dûes et déclenche chaque rappel UNE seule fois (un HH:MM déjà
+  passé du jour part quand même, pas de doublon au redémarrage).
+  Long-poll `GET /api/events` (+ `?recent=1`) : l'UI affiche un toast,
+  ajoute la mention dans la conversation et parle le rappel.
+- **Briefing du matin** : « briefing » / « point du matin » → météo +
+  tâches en attente + prochains jours fériés (FR/US selon la langue,
+  dédoublonnés). Nouveau nœud grammatical `parse_special_command`, comme
+  la météo — le mini-planificateur déformait ces phrases.
+- **Documents locaux RAG-lite (`kira_docs.py`)** : `add_note`,
+  `search_docs` (découpage ~900 caractères, score TF, extraits),
+  `list_documents` ; dossier `kira_docs/` ou `KIRA_DOCS_DIR`. Refuse
+  `..`. UI : vue DOCUMENTS.
+- **Boucle de construction agentique (`kira_build.py`)** : « build a todo
+  app » → plan JSON via le cerveau code, génération de ≤ 8 fichiers
+  (écriture via `code_write_file` : garde syntaxe + jail), un cycle
+  d'auto-réparation par fichier, vérification en exécutant le fichier
+  d'entrée, rapport en français. Cerveau indisponible → `brain_unavailable`
+  propre. `code_build` est conséquent (carte d'approbation),
+  `code_preview_build` reste en lecture seule.
+- **Diagnostic de santé (`kira_health.py`)** : sonde chaque agent
+  (recherche/météo, mémoire, tâches, plugins, programmation par
+  écriture+suppression temporaire, documents, cerveau IA) → « Diagnostic :
+  X/Y systèmes OK ». `GET /api/health` + vue SANTÉ (pastilles vertes et
+  délais, bouton Relancer).
+- **Réglages moteur** : `GET/POST /api/settings` — clés `KIRA_*`
+  autorisées (modèles chat/arabe/planificateur/code, ville,
+  KIRA_REQUIRE_APPROVAL, KIRA_PLANNER, KIRA_PERSONA…) écrites dans `.env`
+  en conservant les autres lignes, + mise à jour de l'environnement
+  courant. Nouvelle vue RÉGLAGES (7 champs, enregistrement en direct).
+- **Sauvegardes & plugins (`kira_ops.py`)** : `backup_memory` (checkpoint
+  WAL, rotation dans `kira_backups/`), `list_backups`, `backup_memory` et
+  `generate_plugin` (modèle complet, nom validé, compilation vérifiée,
+  chargement à chaud) — tous conséquents et approuvés via l'UI.
+  `GET /api/backups` + `POST /api/backup`.
+- **Multi-étapes planifiées** : « fais X puis Y » → `plan_steps` (mots de
+  séquence uniquement, outils connus, 2–4 étapes, budget séparé) ; si la
+  1ʳᵉ étape est conséquente, TOUT le plan restant est parqué dans la carte
+  d'approbation et se rejoue d'un coup après confirmation ; « annuler »
+  le retire.
+- **Garde d'accès distant** : hors localhost, `POST` exige
+  `Authorization: Bearer KIRA_REMOTE_TOKEN` quand la variable est définie
+  (localhost reste libre). Correctifs `kira_code` : `list_dir("")` liste
+  la racine du workspace ; supprimer `.` → `workspace_root_protected`.
+- **Thème « Neon Obsidian »** : nouveau calque `ui/theme.css` chargé
+  après `style.css` — base obsidienne `#05070d`, accent cyan `#22d3ee`,
+  panneaux en verre dépoli, gradients aurore ; aucune couleur de la scène
+  3D changée (calque CSS uniquement). Nouvelles vues SANTÉ / DOCUMENTS /
+  RÉGLAGES raccordées à la navigation.
+- **Tests** : 30 nouveaux tests (`tests/test_new_capabilities.py` :
+  scheduler, docs, health, ops, plan multi-étapes, routes spéciales,
+  réglages + garde distante). Suites au vert : 513 Python, 64 Node.
+
 ## Unreleased — Durcissement de l'agent de programmation + moteur mono-instance
 
 - **Un seul moteur KIRA par port** : le serveur API était mono-thread — une
