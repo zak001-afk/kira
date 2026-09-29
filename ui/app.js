@@ -553,6 +553,66 @@ function addSpokenMessage(text) {
   return message;
 }
 
+// Carte d'approbation : un outil "consequentiel" (ex. delete_file,
+// share_project_knowledge) attend confirm/cancel avant de s'exécuter.
+function addApprovalCard(data) {
+  const conversation = document.getElementById("conversation");
+  const time = new Date().toTimeString().slice(0, 5);
+  const approvalId = String(data.approval_id || "");
+  const tool = String(data.tool || data.action || "action");
+
+  const block = document.createElement("div");
+  block.className = "message-block approval-block";
+  block.innerHTML = `
+    <div class="message-meta">KIRA &nbsp;//&nbsp; ${time}</div>
+    <div class="message approval-card">
+      <span class="approval-warning">⚠</span>
+      <span>${escapeHtml(data.response || `« ${tool} » demande votre confirmation.`)}</span>
+      ${data.diff ? `<pre class="approval-diff">${escapeHtml(String(data.diff)).replace(/^\+([^\n]*)/gm, '<span class="diff-add">+$1</span>').replace(/^-([^\n]*)/gm, '<span class="diff-del">-$1</span>')}</pre>` : ""}
+      <div class="approval-actions">
+        <button class="mini-btn approval-yes" data-approval="${escapeHtml(approvalId)}">Confirmer</button>
+        <button class="mini-btn approval-no" data-approval="${escapeHtml(approvalId)}">Annuler</button>
+      </div>
+    </div>
+  `;
+
+  block.querySelectorAll("[data-approval]").forEach((button) => {
+    button.addEventListener("click", () => {
+      resolveApproval(approvalId, button.classList.contains("approval-yes"), block, button);
+    });
+  });
+
+  conversation.appendChild(block);
+  conversation.scrollTop = conversation.scrollHeight;
+}
+
+window.addApprovalCard = addApprovalCard;
+
+async function resolveApproval(approvalId, approve, block, button) {
+  const buttons = block.querySelectorAll("[data-approval]");
+  buttons.forEach((b) => { b.disabled = true; });
+  button.classList.add("chosen");
+  try {
+    const response = await fetch(`${API_BASE}/api/approval`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approval_id: approvalId, approve }),
+    });
+    const data = await response.json();
+    const verdict = approve ? "Confirmé — exécution…" : "Annulé — rien n'a été modifié.";
+    if (data.ok === false && data.error && approve) {
+      addMessage("KIRA", `Échec : ${data.error}`);
+    } else {
+      addMessage("KIRA", data.response || verdict);
+      speak(data.response || verdict);
+    }
+  } catch (error) {
+    addMessage("Système", `Erreur : ${error.message}`);
+  }
+  updateTasks();
+}
+window.resolveApproval = resolveApproval;
+
 function addHistoryDivider() {
   const conversation = document.getElementById("conversation");
   const divider = document.createElement("div");
@@ -634,7 +694,7 @@ function stopSpeaking() {
   speech.stop();
 }
 
-window.addEventListener("pagehide", () => { speech.destroy(); holoMouth?.destroy?.(); });
+window.addEventListener("pagehide", () => { speech.destroy(); holoMouth?.destroy?.(); stopEventPolling(); });
 
 // Bouton muet
 const muteButton = document.getElementById("mute");
@@ -709,6 +769,13 @@ async function sendCommand(text) {
 
     if (data.error) {
       addMessage("Système", `Erreur : ${data.error}`);
+    } else if (data.needs_approval) {
+      addApprovalCard(data);
+      speak(data.response || "Une action demande votre confirmation.");
+    } else if (data.error_code === "invalid_name" && data.response) {
+      // Pas une panne : une question de KIRA (ex. nom de projet manquant).
+      addMessage("KIRA", data.response);
+      speak(data.response);
     } else if (data.response) {
       addSpokenMessage(data.response);
     } else if (data.action && data.success) {
@@ -721,6 +788,7 @@ async function sendCommand(text) {
 
     setActivity("READY");
     updateTasks();
+    updateAgentFeed();
   } catch (error) {
     console.error("Commande échouée :", error);
 
@@ -1067,10 +1135,13 @@ const ICONS = {
   plugin: '<svg viewBox="0 0 24 24"><path d="M12 2v4"></path><path d="M12 18v4"></path><path d="M2 12h4"></path><path d="M18 12h4"></path><circle cx="12" cy="12" r="4"></circle></svg>',
   eye: '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
   globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>',
+  code: '<svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>',
 };
 
 let pluginCount = 0;
 let pluginNames = [];
+let pluginData = [];       // full plugin payloads (id, tools, actions, version...)
+let availablePlugins = []; // discovered on disk but not loaded
 
 const CORE_MODULES = [
   { id: "voix", name: "Voix & Commande", desc: "Commandes vocales et réponses parlées", icon: "mic", view: "parametres" },
@@ -1079,6 +1150,7 @@ const CORE_MODULES = [
   { id: "plugins", name: "Plugins", desc: "0 extension chargée", icon: "plugin", view: "agents" },
   { id: "vision", name: "Vision écran", desc: "Analyse d'écran via le modèle local", icon: "eye", action: "analyze screen" },
   { id: "web", name: "Recherche web", desc: "Recherche et apprentissage en ligne", icon: "globe", action: "__web" },
+  { id: "programmation", name: "Agent de programmation", desc: "Crée des projets complets et modifie le code sur demande", icon: "code", view: "agents" },
 ];
 
 function agentRowHtml(mod, online) {
@@ -1108,11 +1180,45 @@ window.agentClick = function(id) {
   else if (mod.action) window.quickCmd(mod.action);
 };
 
+// Flux d'activité réel du registre d'agents (kira_agents.recent_activity).
+async function updateAgentFeed() {
+  const list = document.getElementById("agent-feed");
+  if (!list) return;
+  try {
+    const response = await fetch(`${API_BASE}/api/agents`);
+    const data = await response.json();
+    const activity = Array.isArray(data.activity) ? data.activity : [];
+    const count = document.getElementById("feed-count");
+    if (count) count.textContent = activity.length ? `${activity.length} évènements` : "";
+    if (activity.length === 0) {
+      list.innerHTML = '<div class="task-empty">Aucune activité — demandez une action à KIRA</div>';
+      return;
+    }
+    list.innerHTML = activity.slice(0, 6).map((entry) => {
+      const time = String(entry.time || "").slice(11, 16) || "--:--";
+      const status = entry.ok ? "OK" : (entry.error_code || "échec");
+      const statusClass = entry.ok ? "feed-ok" : "feed-ko";
+      return `
+        <div class="feed-row">
+          <span class="feed-time">${escapeHtml(time)}</span>
+          <span class="feed-agent">${escapeHtml(String(entry.agent || "—"))}</span>
+          <span class="feed-tool">${escapeHtml(String(entry.tool || "—"))}</span>
+          <span class="feed-status ${statusClass}">${escapeHtml(String(status))}</span>
+          <span class="feed-ms">${Number(entry.elapsed_ms || 0)} ms</span>
+        </div>`;
+    }).join("");
+  } catch (error) {
+    // Backend indisponible : garder l'affichage courant.
+  }
+}
+
 async function updatePlugins() {
   try {
     const response = await fetch(`${API_BASE}/api/plugins`);
     const data = await response.json();
     const plugins = Array.isArray(data.plugins) ? data.plugins : [];
+    pluginData = plugins;
+    availablePlugins = Array.isArray(data.available) ? data.available : [];
     pluginCount = plugins.length;
     pluginNames = plugins.map((p) =>
       typeof p === "string" ? p : (p.name || p.id || "plugin")
@@ -1124,6 +1230,29 @@ async function updatePlugins() {
     // Backend indisponible
   }
 }
+
+function pluginActionButton(pluginId, action, label) {
+  return `<button class="mini-btn" onclick="pluginManage('${escapeHtml(String(pluginId))}', '${action}')">${label}</button>`;
+}
+
+async function pluginManage(id, action) {
+  try {
+    const response = await fetch(`${API_BASE}/api/plugins/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      alert(`Plugin ${action} (${id || "tous"}) : ${data.error || "échec"}`);
+    }
+  } catch (error) {
+    alert(`Plugin ${action} (${id || "tous"}) : backend indisponible`);
+  }
+  await updatePlugins();
+  if (activeView === "agents") loadAgentsFull();
+}
+window.pluginManage = pluginManage;
 
 // ─────────────────────────────────────────────
 // Vues (overlay central)
@@ -1137,9 +1266,12 @@ const VIEW_TITLES = {
   parametres: "Paramètres",
   historique: "Historique",
   systeme: "Système",
+  sante: "Santé des agents",
+  documents: "Documents",
+  reglages: "Réglages moteur",
 };
 
-const VIEW_IDS = ["taches", "agents", "fichiers", "outils", "parametres", "historique", "systeme"];
+const VIEW_IDS = ["taches", "agents", "fichiers", "outils", "parametres", "historique", "systeme", "sante", "documents", "reglages"];
 const NAV_IDS = ["accueil", "conversation", "agents", "fichiers", "outils", "parametres", "historique", "systeme"];
 let activeView = null;
 
@@ -1170,6 +1302,9 @@ function openView(name) {
   if (name === "historique") loadHistoryFull();
   if (name === "systeme") loadSystemFull();
   if (name === "parametres") loadParamInfo();
+  if (name === "sante") loadHealth(true);
+  if (name === "documents") loadDocuments();
+  if (name === "reglages") loadSettings();
 }
 window.openView = openView;
 
@@ -1241,18 +1376,49 @@ window.loadTasksFull = loadTasksFull;
 
 async function loadAgentsFull() {
   const list = document.getElementById("agents-full");
+  try {
+    await updatePlugins();
+  } catch (error) {
+    // L'affichage continue avec les données déjà en mémoire.
+  }
   const rows = CORE_MODULES.map((mod) =>
     listRow(mod.name, mod.desc, backendOnline ? "En ligne" : "Hors ligne")
   );
   let pluginRows = "";
-  if (pluginNames.length > 0) {
-    pluginRows = pluginNames.map((name) =>
-      listRow(String(name), "Plugin utilisateur", "Chargé")
-    ).join("");
+  if (pluginData.length > 0) {
+    pluginRows = pluginData.map((p) => {
+      const tools = (p.tools && p.tools.length > 0)
+        ? "Outils gérés : " + p.tools.map((t) => escapeHtml(String(t))).join(", ")
+        : "Aucun outil déclaré";
+      const version = p.version ? " v" + p.version : "";
+      const sub = `Plugin utilisateur${version} · ${escapeHtml(tools)}`;
+      return `
+        <div class="list-row">
+          <div class="row-main">
+            <span class="row-title">${escapeHtml(String(p.name || p.id))}</span>
+            <span class="row-sub">${sub}</span>
+          </div>
+          <span class="row-side">
+            ${pluginActionButton(p.id, "unload", "Décharger")}
+            ${pluginActionButton(p.id, "reload", "Recharger")}
+          </span>
+        </div>`;
+    }).join("");
   } else {
     pluginRows = '<div class="task-empty">Aucun plugin utilisateur dans plugins/</div>';
   }
-  list.innerHTML = rows.join("") + pluginRows;
+  const availableRows = availablePlugins.map((id) => `
+    <div class="list-row">
+      <div class="row-main">
+        <span class="row-title">${escapeHtml(String(id))}</span>
+        <span class="row-sub">Plugin détecté, non chargé</span>
+      </div>
+      <span class="row-side">${pluginActionButton(id, "load", "Charger")}</span>
+    </div>`).join("");
+  const reloadAll = `<div class="view-actions" style="justify-content:flex-start">
+    <button class="mini-btn" onclick="pluginManage('', 'reload')">↻ Recharger tous les plugins</button>
+  </div>`;
+  list.innerHTML = rows.join("") + pluginRows + availableRows + reloadAll;
 }
 window.loadAgentsFull = loadAgentsFull;
 
@@ -1543,7 +1709,7 @@ function animate() {
     voiceValEl.textContent = Math.round(level * 100) + "%";
   }
 
-  // La machinerie tourne lentement ; l'avatar reste face à vous mais
+  // La machinerie tourne lentement ; le visage HUD reste face à vous mais
   // respire avec la voix comme le reste du réacteur.
   reactor.rotation.y = motionTime * 0.09;
   reactor.rotation.x = Math.sin(motionTime * 0.18) * 0.08;
@@ -1647,8 +1813,153 @@ updatePlugins();
 renderAgents();
 loadBootHistory();
 
+// ─────────────────────────────────────────────
+// Santé des agents (diagnostic) — vue dédiée
+// ─────────────────────────────────────────────
+window.loadHealth = async function(probe = false) {
+  const rows = document.getElementById("health-rows");
+  if (!rows) return;
+  try {
+    const response = await fetch(`${API_BASE}/api/health`);
+    const data = await response.json();
+    const checks = Array.isArray(data.checks) ? data.checks : [];
+    if (!checks.length) {
+      rows.innerHTML = '<div class="task-empty">Diagnostic indisponible.</div>';
+      return;
+    }
+    rows.innerHTML = checks.map((check) => `
+      <div class="health-row">
+        <span class="health-dot ${check.ok ? "ok" : ""}"></span>
+        <span class="health-label">${escapeHtml(check.label || check.agent)}</span>
+        <span class="health-detail">${escapeHtml(String(check.detail || ""))}</span>
+        <span class="health-ms">${Number(check.ms || 0)} ms</span>
+      </div>`).join("");
+  } catch (error) {
+    rows.innerHTML = '<div class="task-empty">Backend indisponible.</div>';
+  }
+};
+
+// ─────────────────────────────────────────────
+// Documents (kira_docs/) — vue dédiée
+// ─────────────────────────────────────────────
+window.loadDocuments = async function() {
+  const rows = document.getElementById("docs-rows");
+  if (!rows) return;
+  try {
+    const response = await fetch(`${API_BASE}/api/documents`);
+    const data = await response.json();
+    const documents = Array.isArray(data.documents) ? data.documents : [];
+    if (!documents.length) {
+      rows.innerHTML = '<div class="task-empty">Aucun document — déposez des fichiers dans kira_docs/.</div>';
+      return;
+    }
+    rows.innerHTML = documents.map((doc) => `
+      <div class="doc-row">
+        <span class="doc-name">${escapeHtml(doc.name)}</span>
+        <span class="doc-size">${Number(doc.bytes || 0)} o</span>
+      </div>`).join("");
+  } catch (error) {
+    rows.innerHTML = '<div class="task-empty">Backend indisponible.</div>';
+  }
+};
+
+// ─────────────────────────────────────────────
+// Réglages moteur (.env) — vue dédiée
+// ─────────────────────────────────────────────
+const SETTING_FIELDS = [
+  ["set-chat", "KIRA_MODEL_CHAT"], ["set-arabic", "KIRA_MODEL_ARABIC"],
+  ["set-planner-model", "KIRA_MODEL_PLANNER"], ["set-code", "KIRA_MODEL_CODE"],
+  ["set-city", "KIRA_CITY"], ["set-approval", "KIRA_REQUIRE_APPROVAL"],
+  ["set-planner", "KIRA_PLANNER"],
+];
+
+window.loadSettings = async function() {
+  try {
+    const response = await fetch(`${API_BASE}/api/settings`);
+    const data = await response.json();
+    const values = data.settings || {};
+    for (const [fieldId, key] of SETTING_FIELDS) {
+      const field = document.getElementById(fieldId);
+      if (!field) continue;
+      if (field.tagName === "SELECT") field.value = values[key] === "0" ? "0" : "1";
+      else field.value = values[key] || "";
+    }
+    const saved = document.getElementById("settings-saved");
+    if (saved) saved.textContent = "";
+  } catch (error) { /* backend absent : garder le formulaire */ }
+};
+
+window.saveSettings = async function() {
+  const saved = document.getElementById("settings-saved");
+  const body = {};
+  for (const [fieldId, key] of SETTING_FIELDS) {
+    const field = document.getElementById(fieldId);
+    if (!field) continue;
+    body[key] = field.tagName === "SELECT" ? field.value : field.value.trim();
+  }
+  try {
+    const response = await fetch(`${API_BASE}/api/settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (saved) saved.textContent = data.ok ? "✓ Enregistré — certains réglages prennent effet au redémarrage." : `Erreur : ${data.error || "?"}`;
+  } catch (error) {
+    if (saved) saved.textContent = `Erreur : ${error.message}`;
+  }
+};
+
+// ─────────────────────────────────────────────
+// KIRA proactive : long-poll des évènements (rappels à l'heure)
+// ─────────────────────────────────────────────
+let lastEventId = 0;
+let eventsActive = false;
+let eventsHalted = false;
+let eventTimer = null;
+
+function stopEventPolling() {
+  eventsHalted = true;
+  if (eventTimer) { clearTimeout(eventTimer); eventTimer = null; }
+}
+
+function showEventToast(event) {
+  const existing = document.querySelector(".event-toast");
+  if (existing) existing.remove();
+  const toast = document.createElement("div");
+  toast.className = "event-toast";
+  toast.innerHTML = `
+    <div class="event-title">⏰ Rappel</div>
+    <div class="event-text">${escapeHtml(String(event.title || ""))}</div>
+    <span class="event-close" title="Fermer">✕</span>`;
+  toast.querySelector(".event-close").addEventListener("click", () => toast.remove());
+  document.getElementById("hud").appendChild(toast);
+  setTimeout(() => toast.remove(), 30000);
+}
+
+async function pollEvents() {
+  if (eventsActive) return;
+  eventsActive = true;
+  try {
+    const response = await fetch(`${API_BASE}/api/events?after=${lastEventId}`);
+    const data = await response.json();
+    for (const event of (Array.isArray(data.events) ? data.events : [])) {
+      lastEventId = Math.max(lastEventId, Number(event.id || 0));
+      showEventToast(event);
+      if (event.speak && event.title) speak(`Rappel : ${event.title}`);
+      addMessage("KIRA", `⏰ Rappel : ${event.title}`);
+    }
+  } catch (error) {
+    await new Promise((resolve) => setTimeout(resolve, 5000)); // backend absent: ralentir
+  }
+  eventsActive = false;
+  if (!eventsHalted) eventTimer = setTimeout(pollEvents, 500);
+}
+pollEvents();
+
 setInterval(updateTelemetry, 3000);
 setInterval(updateTasks, 5000);
+setInterval(updateAgentFeed, 5000);
 setInterval(updatePlugins, 60000);
 
 animate();

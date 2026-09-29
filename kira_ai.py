@@ -334,11 +334,14 @@ def _as_messages(prompt_or_messages) -> list:
 
 
 def chat(prompt_or_messages, provider: str = "", model: str = "",
-         timeout: int = DEFAULT_TIMEOUT, options: dict = None) -> AIReply:
+         timeout: int = DEFAULT_TIMEOUT, options: dict = None,
+         think=None) -> AIReply:
     """One chat call against the selected provider, as structured data.
 
     `prompt_or_messages` is a plain string or a list of
     ``{"role": ..., "content": ...}`` dicts (roles: system/user/assistant).
+    ``think`` (Ollama only): None = caller decides via options, False = no
+    reasoning phase (fast paths like the planner), True = ask for it.
     """
     provider = (provider or LOCAL_PROVIDER).strip().lower()
     messages = _as_messages(prompt_or_messages)
@@ -384,7 +387,8 @@ def chat(prompt_or_messages, provider: str = "", model: str = "",
                 return fail("missing_api_key",
                             "OPENROUTER_API_KEY is not set in the backend environment (.env).")
             return _chat_openrouter(messages, model or active_openrouter_model(), key, timeout, started)
-        return _chat_ollama(messages, model or ollama_model(), timeout, started, options or {})
+        return _chat_ollama(messages, model or ollama_model(), timeout, started,
+                            options or {}, think)
     except requests.Timeout:
         return fail("timeout", f"The {provider} request exceeded {timeout} seconds.")
     except requests.RequestException as error:
@@ -394,16 +398,34 @@ def chat(prompt_or_messages, provider: str = "", model: str = "",
         return fail("provider_failed", f"{provider} failed: {error}")
 
 
-def _chat_ollama(messages, model, timeout, started, options) -> AIReply:
+def _strip_think_blocks(text: str) -> str:
+    """Remove <think>…</think> blocks a thinking model may inline."""
+    return re.sub(r"<think>[\s\S]*?</think>", "", str(text or ""),
+                  flags=re.IGNORECASE).strip()
+
+
+def _chat_ollama(messages, model, timeout, started, options, think=None) -> AIReply:
+    """One Ollama chat call.
+
+    Thinking-capable models (qwen3, deepseek-r1, …) reason BEFORE answering
+    by default. Left unbounded, that reasoning silently eats short-deadline
+    callers like the planner. Default behaviour here:
+    - ``think=False`` (pass ``think=True`` to ask for reasoning);
+    - ``num_predict`` capped at 512 unless the caller sets its own value.
+    """
+    opts = {**(options or {})}
+    opts.setdefault("num_predict", 512)
+    body = {"model": model, "messages": messages, "stream": False,
+            "think": bool(think), "options": opts}
     response = requests.post(
         f"{ollama_url()}/api/chat",
-        json={"model": model, "messages": messages, "stream": False,
-              **({"options": options} if options else {})},
+        json=body,
         timeout=timeout,
     )
     response.raise_for_status()
     payload = response.json()
     text = str(((payload or {}).get("message") or {}).get("content", "")).strip()
+    text = _strip_think_blocks(text)
     elapsed = int((time.perf_counter() - started) * 1000)
     if not text:
         return AIReply(ok=False, provider=LOCAL_PROVIDER, model=model, elapsed_ms=elapsed,

@@ -112,7 +112,7 @@ function avatarRig(options = {}) {
     fetch: async () => ({ ok: true, json: async () => ({}) }),
   });
   context.window = context;
-  const stripImports = source => source.replace(/^import .*;\n/gm, "");
+  const stripImports = source => source.replace(/^import .*;\r?\n/gm, ""); // \r?: Windows checkouts are CRLF
   const mouthSource = stripImports(readFileSync(new URL("../ui/holo-mouth.mjs", import.meta.url), "utf8"))
     .replace(/^export /gm, "");
   vm.runInContext(`globalThis.HoloMouth = (() => { ${mouthSource}\nreturn HoloMouth; })();`, context);

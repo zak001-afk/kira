@@ -69,7 +69,9 @@ def build_planner_prompt(catalog, command):
     for spec in catalog:
         args = ", ".join(
             f"{name}:{rules['type']}{'' if rules['required'] else '?'}"
-            for name, rules in spec["args"].items()) or "no arguments"
+            for name, rules in spec["args"].items())
+        if not args:
+            args = "any arguments" if spec.get("accepts_extra") else "no arguments"
         lines.append(f"- {spec['name']} ({args}): {spec['description']}")
     tools = "\n".join(lines)
     return (
@@ -103,8 +105,93 @@ def parse_plan(text, catalog):
     return tool, (dict(args) if isinstance(args, dict) else {})
 
 
+# ── Multi-step plans: two to four tool calls, one approval summary ──────────
+
+_MULTI_STEP_HINTS = re.compile(
+    r"\b(?:puis|ensuite|after that|then|also|et aussi|and also|et ensuite)\b"
+    r"|\b(?:and then|first.*then)\b", re.IGNORECASE)
+
+
+def plan_steps(command, ask=None, timeout=8):
+    """[{tool, args}, ...] (2-4 steps) for explicit multi-action requests,
+    else None. Only fires on clear sequencing words (puis/then/ensuite...):
+    a single request keeps the fast one-tool path. The model sees the same
+    catalog; unknown tools or non-list shapes mean 'no plan'."""
+    command = str(command or "").strip()
+    if not command or not planner_enabled():
+        return None
+    if not _MULTI_STEP_HINTS.search(command):
+        return None
+    if _PERSONAL.search(command):
+        return None
+    import kira_agents
+    catalog = kira_agents.tool_catalog()
+    names = {spec["name"] for spec in catalog}
+    lines = []
+    for spec in catalog:
+        args = ", ".join(
+            f"{name}:{rules['type']}{'' if rules['required'] else '?'}"
+            for name, rules in spec["args"].items())
+        if not args:
+            args = "any arguments" if spec.get("accepts_extra") else "no arguments"
+        lines.append(f"- {spec['name']} ({args}): {spec['description']}")
+    prompt = (
+        "You split a user request into tool steps. Reply with ONE JSON array "
+        'only, 2 to 4 items, no prose: [{"tool": "<name>", "args": {...}}, '
+        '...] — or [] when the request is a single action or not tool-shaped. '
+        "Never invent tool names or arguments. Each step must be one of the "
+        "listed tools.\n"
+        f"Tools:\n" + "\n".join(lines) + f"\nUser request: {command}\n"
+        "JSON:"
+    )
+    try:
+        if ask is None:
+            import kira_ai
+            provider, model = planner_route()
+            reply = kira_ai.chat(prompt, provider=provider, model=model,
+                                 timeout=timeout, options={"temperature": 0,
+                                                           "num_predict": 220},
+                                 think=False)
+            text = reply.text if reply.ok else ""
+        else:
+            text = ask(prompt) or ""
+    except Exception:
+        logger.warning("Planner steps call failed", exc_info=True)
+        return None
+    match = re.search(r"\[.*\]", str(text or ""), re.DOTALL)
+    if not match:
+        return None
+    try:
+        steps = json.loads(match.group(0))
+    except ValueError:
+        return None
+    if not isinstance(steps, list) or not 2 <= len(steps) <= 4:
+        return None
+    plan = []
+    for step in steps:
+        if not isinstance(step, dict):
+            return None
+        tool = str(step.get("tool") or "").strip()
+        if tool not in names:
+            return None
+        args = step.get("args")
+        plan.append({"tool": tool,
+                     "args": dict(args) if isinstance(args, dict) else {}})
+    if len({step["tool"] for step in plan}) < len(plan):
+        return None  # the same tool twice is a loop, not a plan
+    logger.info("Planner steps: '%s' -> %s", command[:80],
+                [step["tool"] for step in plan])
+    return plan
+
+
 def plan_command(command, ask=None, timeout=6):
-    """A (tool, args) plan for the request, or None for 'just chat'."""
+    """A (tool, args) plan for the request, or None for 'just chat'.
+
+    The model call is tuned for one-word JSON decisions: reasoning phase
+    off (``think=False`` — the registry, not the model, is the contract),
+    tiny token cap, short timeout. Any failure means "no plan": the message
+    falls through to normal chat, never an error to the user.
+    """
     command = str(command or "").strip()
     if not command or not planner_enabled():
         return None
@@ -117,7 +204,10 @@ def plan_command(command, ask=None, timeout=6):
         if ask is None:
             import kira_ai
             provider, model = planner_route()
-            reply = kira_ai.chat(prompt, provider=provider, model=model, timeout=timeout)
+            reply = kira_ai.chat(prompt, provider=provider, model=model,
+                                 timeout=timeout, options={"temperature": 0,
+                                                           "num_predict": 96},
+                                 think=False)
             text = reply.text if reply.ok else ""
         else:
             text = ask(prompt) or ""

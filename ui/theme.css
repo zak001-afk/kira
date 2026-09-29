@@ -1,0 +1,210 @@
+/* =========================================================
+   KIRA // NEON OBSIDIAN — couche de thème (surcharge style.css)
+   Base obsidienne profonde, or champagne conservé pour la marque,
+   accent cyan électrique, panneaux en verre dépoli, aurore d'ambiance.
+   ========================================================= */
+
+:root {
+  --bg: #05070d;
+  --bg-raise: #0a0e18;
+  --accent: #22d3ee;
+  --accent-soft: rgba(34, 211, 238, 0.14);
+  --accent-line: rgba(34, 211, 238, 0.38);
+  --panel: rgba(10, 14, 24, 0.62);
+  --panel-solid: rgba(8, 11, 19, 0.94);
+  --border: rgba(120, 160, 200, 0.16);
+  --border-bright: rgba(34, 211, 238, 0.5);
+  --text: #e6eef8;
+  --muted: #7d8ba1;
+  --gold: #d9c48d;
+  --gold-bright: #f0e3bc;
+  --green: #4ade80;
+  --danger: #fb7185;
+}
+
+/* Ambiance: aurores discrètes derrière le HUD */
+html, body {
+  background:
+    radial-gradient(1200px 800px at 18% -10%, rgba(34, 211, 238, 0.10), transparent 60%),
+    radial-gradient(900px 600px at 85% 110%, rgba(129, 100, 255, 0.10), transparent 60%),
+    radial-gradient(700px 500px at 50% 40%, rgba(16, 22, 36, 0.85), transparent 70%),
+    var(--bg);
+}
+
+/* ── Panneaux: verre dépoli + liseré lumineux au survol ── */
+.hud-panel {
+  background: linear-gradient(180deg, rgba(13, 18, 30, 0.72), rgba(8, 11, 19, 0.55));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: border-color .25s ease, box-shadow .25s ease;
+}
+.hud-panel:hover {
+  border-color: var(--accent-line);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(34, 211, 238, 0.12),
+              0 0 28px rgba(34, 211, 238, 0.08);
+}
+
+.panel-title { letter-spacing: 2.2px; }
+.panel-line { background: linear-gradient(90deg, var(--accent), transparent 70%) !important; opacity: .5; }
+
+/* ── Titres & accents ── */
+.brand-name,
+.panel-title,
+.view-title {
+  background: linear-gradient(120deg, var(--gold-bright) 20%, var(--accent) 75%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+}
+
+/* ── Dock: pilule flottante en verre ── */
+.dock {
+  border-radius: 18px !important;
+  border: 1px solid var(--border) !important;
+  background: rgba(10, 14, 24, 0.72) !important;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,.05) !important;
+}
+.dock-btn { border-radius: 12px; }
+.dock-btn.active {
+  background: var(--accent-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--accent-line), 0 0 18px rgba(34, 211, 238, 0.15) !important;
+}
+.dock-btn.active span { color: var(--accent) !important; }
+.dock-btn.active svg { stroke: var(--accent); }
+.dock-btn svg { transition: stroke .2s ease; }
+.dock-btn:hover svg { stroke: var(--accent); }
+
+/* ── Bouton K: halo cyan au lieu de l'or ── */
+#k-btn {
+  background: radial-gradient(circle at 35% 30%, #123243, #0a1622 70%) !important;
+  border: 1px solid var(--accent-line) !important;
+  box-shadow: 0 0 34px rgba(34, 211, 238, 0.25), 0 18px 50px rgba(0,0,0,.6) !important;
+}
+#k-btn span {
+  background: linear-gradient(160deg, #d8fbff, var(--accent)) !important;
+  -webkit-background-clip: text; background-clip: text; color: transparent !important;
+}
+#k-btn:hover { box-shadow: 0 0 46px rgba(34, 211, 238, 0.4), 0 18px 50px rgba(0,0,0,.6) !important; }
+
+/* ── Boutons & champs ── */
+.mini-btn {
+  border-radius: 9px;
+  border: 1px solid var(--border) !important;
+  background: rgba(15, 21, 34, 0.8) !important;
+  transition: border-color .2s, box-shadow .2s, transform .1s;
+}
+.mini-btn:hover {
+  border-color: var(--accent-line) !important;
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.18);
+}
+.mini-btn:active { transform: translateY(1px); }
+select, input[type="text"], input[type="password"], textarea {
+  background: rgba(8, 12, 20, 0.9) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 9px !important;
+  color: var(--text) !important;
+}
+select:focus, input:focus, textarea:focus {
+  outline: none !important;
+  border-color: var(--accent-line) !important;
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.15) !important;
+}
+
+/* ── Agent rows: statut lumineux ── */
+.agent-row { border-radius: 11px; }
+.agent-row:hover { border-color: var(--accent-line) !important; }
+.agent-status { color: var(--green); }
+.agent-status.off { color: var(--danger); }
+
+/* ── Cartes d'approbation: liseré ambre, diff inchangé ── */
+.approval-card { border-left: 3px solid #f0b454 !important; border-radius: 10px; }
+
+/* ── Feed d'activité: point de statut cyan/rouge ── */
+.feed-ok { color: var(--green); }
+.feed-ko { color: var(--danger); }
+.feed-agent { color: var(--accent); }
+
+/* ── Jauges & barres: dégradé or→cyan ── */
+.gauge-ring circle { stroke: url(#theme-arc); }
+.bar-core, .bar-voice, .bar-mem, .bar-tasks, .bar-net {
+  background: linear-gradient(90deg, var(--gold-dark, #6E5A33), var(--accent)) !important;
+}
+
+/* ── Toast & veille ── */
+.toast {
+  border: 1px solid var(--accent-line) !important;
+  background: rgba(8, 12, 20, 0.95) !important;
+  box-shadow: 0 0 30px rgba(34, 211, 238, 0.2), 0 18px 50px rgba(0,0,0,.6) !important;
+}
+.standby { background: rgba(3, 5, 9, 0.92) !important; }
+.standby-k {
+  background: linear-gradient(160deg, #d8fbff, var(--accent)) !important;
+  -webkit-background-clip: text; background-clip: text; color: transparent !important;
+}
+
+/* ── Vue overlay (tâches, agents, réglages…) ── */
+.view-overlay {
+  background: rgba(4, 6, 11, 0.88) !important;
+  backdrop-filter: blur(18px);
+}
+.view-overlay .hud-panel, .view-body .param-block {
+  border-radius: 14px;
+}
+
+/* ── Bandeau santé (nouveau) ── */
+.health-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(12, 17, 28, 0.7);
+  margin-bottom: 7px; font-size: 13px;
+}
+.health-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--danger); box-shadow: 0 0 10px rgba(251, 113, 133, 0.7);
+  flex: 0 0 auto;
+}
+.health-dot.ok { background: var(--green); box-shadow: 0 0 10px rgba(74, 222, 128, 0.7); }
+.health-label { color: var(--text); min-width: 110px; }
+.health-detail { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.health-ms { color: var(--muted); font-size: 11px; }
+
+/* ── Réglages (nouveau) ── */
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.setting-row { display: flex; flex-direction: column; gap: 5px; }
+.setting-row label { color: var(--muted); font-size: 12px; letter-spacing: .8px; text-transform: uppercase; }
+.setting-row input { padding: 8px 10px; font-family: 'Share Tech Mono', monospace; font-size: 13px; }
+.settings-saved { color: var(--green); font-size: 13px; min-height: 18px; }
+
+/* ── Documents (nouveau) ── */
+.doc-row {
+  display: flex; gap: 10px; align-items: center;
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px;
+  background: rgba(12, 17, 28, 0.7); margin-bottom: 6px; font-size: 13px;
+}
+.doc-name { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.doc-size { color: var(--muted); font-size: 11px; }
+
+/* ── Alertes proactives (toast d'évènement) ── */
+.event-toast {
+  position: fixed; right: 22px; bottom: 96px; z-index: 60;
+  max-width: 340px; padding: 12px 14px;
+  border: 1px solid var(--accent-line); border-radius: 12px;
+  background: rgba(8, 12, 20, 0.96);
+  box-shadow: 0 0 30px rgba(34, 211, 238, 0.22), 0 18px 50px rgba(0, 0, 0, 0.6);
+  animation: event-in .3s ease;
+}
+.event-toast .event-title { color: var(--accent); font-weight: 600; letter-spacing: 1px; font-size: 12px; text-transform: uppercase; }
+.event-toast .event-text { color: var(--text); margin-top: 4px; font-size: 14px; }
+.event-toast .event-close { position: absolute; top: 6px; right: 10px; color: var(--muted); cursor: pointer; }
+@keyframes event-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ── Scrollbars discrètes ── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(120, 160, 200, 0.22); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(34, 211, 238, 0.35); }
+::-webkit-scrollbar-track { background: transparent; }

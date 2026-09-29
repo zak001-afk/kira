@@ -38,6 +38,60 @@ def ollama_ok(text="Bonjour d'Ollama."):
     return response
 
 
+class OllamaThinkTests(unittest.TestCase):
+    """Thinking models (qwen3, …) must not silently eat short deadlines:
+    reasoning off by default, token cap always applied, think blocks stripped."""
+
+    def test_think_off_and_default_cap_by_default(self):
+        with patch.object(kira_ai.requests, "post", return_value=ollama_ok()) as post, \
+                clean_env():
+            kira_ai.chat("hello", provider="ollama")
+        body = post.call_args.kwargs["json"]
+        self.assertFalse(body["think"])
+        self.assertEqual(body["options"]["num_predict"], 512)
+
+    def test_caller_can_opt_into_reasoning(self):
+        with patch.object(kira_ai.requests, "post", return_value=ollama_ok()) as post, \
+                clean_env():
+            kira_ai.chat("hello", provider="ollama", think=True)
+        body = post.call_args.kwargs["json"]
+        self.assertTrue(body["think"])
+
+    def test_caller_num_predict_wins_over_default_cap(self):
+        with patch.object(kira_ai.requests, "post", return_value=ollama_ok()) as post, \
+                clean_env():
+            kira_ai.chat("hello", provider="ollama", options={"num_predict": 96})
+        body = post.call_args.kwargs["json"]
+        self.assertEqual(body["options"]["num_predict"], 96)
+
+    def test_inline_think_blocks_are_stripped(self):
+        with patch.object(kira_ai.requests, "post",
+                          return_value=ollama_ok("<think>pondering</think>Answer.")), \
+                clean_env():
+            reply = kira_ai.chat("hello", provider="ollama")
+        self.assertTrue(reply.ok)
+        self.assertEqual(reply.text, "Answer.")
+
+    def test_planner_asks_for_fast_no_think_json(self):
+        import kira_planner
+        captured = {}
+
+        def fake_chat(prompt, **kwargs):
+            captured.update(kwargs)
+            return kira_ai.AIReply(ok=True, text='{"tool": "none"}')
+
+        with patch.dict(os.environ, {"KIRA_PLANNER": "1"}), \
+                patch.object(kira_planner, "planner_route", return_value=("ollama", "")), \
+                patch("kira_ai.chat", side_effect=fake_chat):
+            plan = kira_planner.plan_command("look for python info")
+        self.assertIsNone(plan)  # 'none' -> no plan, chat fallback
+        self.assertFalse(captured.get("think", True))
+        self.assertLessEqual(captured.get("options", {}).get("num_predict", 10**9), 96)
+
+
+
+
+
 class CloudGateTests(unittest.TestCase):
     def test_cloud_disabled_refuses_before_any_network(self):
         post = Mock()

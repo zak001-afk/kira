@@ -29,6 +29,8 @@ AGENTS = {
     "research": "Web research and the shared (non-personal) knowledge base.",
     "memory": "Controlled access to LOCAL memory. Nothing here leaves the machine.",
     "windows": "Tasks, reminders and Windows desktop helpers.",
+    "plugins": "Capabilities contributed by plugins/ extensions. Manageable at runtime.",
+    "programming": "Create full projects and apply code changes inside the KIRA code workspace.",
 }
 
 
@@ -40,27 +42,48 @@ class ToolSpec:
     args: dict            # arg name -> {"type": type, "required": bool}
     handler: object
     consequential: bool = False
+    accepts_extra: bool = False   # forward unknown args instead of dropping them
+    owner: str = ""               # plugin id when the tool came from plugins/
 
 
 _REGISTRY = {}
+_TOOL_OWNER = {}      # tool name -> owner id ("" for built-ins)
 _ACTIVITY = deque(maxlen=200)
 _LOCK = threading.Lock()
 _BUILTINS_READY = False
 
 
-def register_tool(name, agent, description, args, handler, consequential=False):
+def register_tool(name, agent, description, args, handler, consequential=False,
+                  accepts_extra=False, owner=""):
     if agent not in AGENTS:
         raise ValueError(f"Unknown agent '{agent}'. Agents: {', '.join(AGENTS)}.")
     with _LOCK:
         _REGISTRY[str(name)] = ToolSpec(name=str(name), agent=agent, description=description,
                                         args=dict(args or {}), handler=handler,
-                                        consequential=bool(consequential))
+                                        consequential=bool(consequential),
+                                        accepts_extra=bool(accepts_extra),
+                                        owner=str(owner or ""))
+        _TOOL_OWNER[str(name)] = str(owner or "")
 
 
 def unregister_tool(name):
     """Test/plugin hygiene; built-ins are simply re-registered on demand."""
     with _LOCK:
         _REGISTRY.pop(str(name), None)
+        _TOOL_OWNER.pop(str(name), None)
+
+
+def unregister_tools_of(owner):
+    """Remove every tool contributed by one plugin (unload/reload)."""
+    owner = str(owner or "")
+    if not owner:
+        return []
+    with _LOCK:
+        names = [name for name, spec in _REGISTRY.items() if spec.owner == owner]
+        for name in names:
+            _REGISTRY.pop(name, None)
+            _TOOL_OWNER.pop(name, None)
+    return sorted(names)
 
 
 def validate_args(spec, raw):
@@ -82,6 +105,12 @@ def validate_args(spec, raw):
                 return None, (f"Argument '{arg_name}' of tool '{spec.name}' must be "
                               f"{expected.__name__}, got {type(value).__name__}.")
         kwargs[arg_name] = value
+    if spec.accepts_extra:
+        # Tools that declare no schema (typical simple plugins) receive every
+        # argument they were given, as-is.
+        for arg_name, value in raw.items():
+            if arg_name not in kwargs:
+                kwargs[arg_name] = value
     return kwargs, None
 
 
@@ -148,9 +177,22 @@ def run(name, raw_args=None, source="api", approved=False):
             _prune_approvals()
             _PENDING_APPROVALS[approval_id] = {"spec": spec, "kwargs": kwargs,
                                                "created": time.monotonic()}
+        extra = {"approval_id": approval_id, "agent": spec.agent}
+        if spec.name == "code_apply_edit":
+            # The approval card shows WHAT will change: attach a read-only
+            # diff when the target file exists and the old block is unique.
+            try:
+                import kira_code
+                preview = kira_code.preview_edit(kwargs.get("path", ""),
+                                                 kwargs.get("old", ""),
+                                                 kwargs.get("new", ""))
+                if preview.get("diff"):
+                    extra["diff"] = preview["diff"]
+            except Exception:
+                pass
         result = kira_tools.ToolResult(action=spec.name, ok=False, error_code="approval_required",
                                        error=f"'{spec.name}' needs your confirmation before it runs.",
-                                       extra={"approval_id": approval_id, "agent": spec.agent})
+                                       extra=extra)
         _record(spec, result, source)
         return result
     result = kira_tools.run_tool(spec.name, spec.handler, **kwargs)
@@ -182,6 +224,8 @@ def tool_catalog():
         "agent": spec.agent,
         "description": spec.description,
         "consequential": spec.consequential,
+        "accepts_extra": spec.accepts_extra,
+        "owner": spec.owner,
         "args": {name: {"type": rules.get("type", str).__name__,
                         "required": bool(rules.get("required", False))}
                  for name, rules in spec.args.items()},
@@ -212,6 +256,8 @@ def agents_snapshot():
             "consequential_tools": sorted(s.name for s in specs
                                           if s.agent == agent_id and s.consequential),
             "last_activity": last_by_agent.get(agent_id),
+            "plugin_tools": sorted(s.name for s in specs
+                                   if s.agent == agent_id and s.owner),
         })
     return snapshot
 
@@ -302,6 +348,111 @@ def _recall_memory(query, limit=5):
     return kira_memory.search_messages(query, limit=limit)
 
 
+# Programming agent (kira_code): everything is jailed to one workspace root
+# (KIRA_CODE_DIR or kira_workspace/). Reads are open; writes, deletes and
+# command runs are consequential and pass the user's approval gate.
+
+def _scaffold_project(name, template=""):
+    import kira_code
+    return kira_code.scaffold_project(name, template=template)
+
+
+def _code_write_file(path, content=""):
+    import kira_code
+    return kira_code.write_file(path, content=content)
+
+
+def _code_read_file(path):
+    import kira_code
+    return kira_code.read_file(path)
+
+
+def _code_list_dir(path=""):
+    import kira_code
+    return kira_code.list_dir(path)
+
+
+def _code_list_projects():
+    import kira_code
+    return kira_code.list_projects()
+
+
+def _code_preview_edit(path, old, new=""):
+    import kira_code
+    return kira_code.preview_edit(path, old, new)
+
+
+def _code_search_code(query, path="", extension=""):
+    import kira_code
+    return kira_code.search_code(query, path=path, extension=extension)
+
+
+def _code_apply_edit(path, old, new=""):
+    import kira_code
+    return kira_code.apply_edit(path, old, new)
+
+
+def _code_run_command(command):
+    import kira_code
+    return kira_code.run_command(command)
+
+
+def _code_delete_path(path):
+    import kira_code
+    return kira_code.delete_path(path)
+
+
+def _code_build(request, project=""):
+    import kira_build
+    return kira_build.code_build(request, project)
+
+
+def _code_preview_build(request, project=""):
+    import kira_build
+    return kira_build.plan_build(request, project)
+
+
+def _search_docs(query, limit=4):
+    import kira_docs
+    return kira_docs.search_docs(query, limit)
+
+
+def _add_note(path, content=""):
+    import kira_docs
+    return kira_docs.add_document(path, content)
+
+
+def _list_documents():
+    import kira_docs
+    return kira_docs.list_documents()
+
+
+def _run_diagnostic():
+    import kira_health
+    return kira_health.run_health_check()
+
+
+def _backup_memory(keep=5):
+    import kira_ops
+    return kira_ops.backup_memory(keep)
+
+
+def _list_backups():
+    import kira_ops
+    return kira_ops.list_backups()
+
+
+def _generate_plugin(name, description):
+    import kira_ops
+    return kira_ops.generate_plugin(name, description)
+
+
+def _morning_briefing():
+    import kira_scheduler
+    text, data = kira_scheduler.briefing("fr")
+    return {"ok": True, "text": text, "data": data, "response": text}
+
+
 def ensure_builtins():
     global _BUILTINS_READY
     if _BUILTINS_READY:
@@ -379,3 +530,95 @@ def ensure_builtins():
                   {"query": {"type": str, "required": True},
                    "limit": {"type": int, "required": False}},
                   _recall_memory)
+    register_tool("scaffold_project", "programming",
+                  "Create a full project in the code workspace. "
+                  "Templates: python (default), web, node, empty.",
+                  {"name": {"type": str, "required": True},
+                   "template": {"type": str, "required": False}},
+                  _scaffold_project, consequential=True)
+    register_tool("code_list_projects", "programming",
+                  "List the projects in the code workspace (name, files, modified).",
+                  {}, _code_list_projects)
+    register_tool("code_preview_edit", "programming",
+                  "Preview (read-only) the diff an edit would apply to a workspace file.",
+                  {"path": {"type": str, "required": True},
+                   "old": {"type": str, "required": True},
+                   "new": {"type": str, "required": False}},
+                  _code_preview_edit)
+    register_tool("code_write_file", "programming",
+                  "Create, overwrite or append to one text file in the code workspace. "
+                  "Python/JSON syntax is checked before saving.",
+                  {"path": {"type": str, "required": True},
+                   "content": {"type": str, "required": False},
+                   "mode": {"type": str, "required": False}},
+                  _code_write_file, consequential=True)
+    register_tool("code_read_file", "programming",
+                  "Read one text file from the code workspace (no binaries).",
+                  {"path": {"type": str, "required": True}},
+                  _code_read_file)
+    register_tool("code_list_dir", "programming",
+                  "List a folder of the code workspace.",
+                  {"path": {"type": str, "required": False}},
+                  _code_list_dir)
+    register_tool("code_search", "programming",
+                  "Regex search across workspace text files (skips node_modules, .git, venvs).",
+                  {"query": {"type": str, "required": True},
+                   "path": {"type": str, "required": False},
+                   "extension": {"type": str, "required": False}},
+                  _code_search_code)
+    register_tool("code_apply_edit", "programming",
+                  "Replace ONE exact text block in a workspace file (read the file first).",
+                  {"path": {"type": str, "required": True},
+                   "old": {"type": str, "required": True},
+                   "new": {"type": str, "required": False}},
+                  _code_apply_edit, consequential=True)
+    register_tool("code_run_command", "programming",
+                  "Run one whitelisted command (python, node, npm, pip, pytest) in the workspace.",
+                  {"command": {"type": str, "required": True}},
+                  _code_run_command, consequential=True)
+    register_tool("code_delete_path", "programming",
+                  "Delete a file or folder inside the code workspace.",
+                  {"path": {"type": str, "required": True}},
+                  _code_delete_path, consequential=True)
+    register_tool("code_preview_build", "programming",
+                  "Plan (read-only) which files KIRA would generate for a build request.",
+                  {"request": {"type": str, "required": True},
+                   "project": {"type": str, "required": False}},
+                  _code_preview_build)
+    register_tool("code_build", "programming",
+                  "Generate a full custom project from one sentence: plan files, write them "
+                  "with syntax checks and a self-fix round, then run the entry file.",
+                  {"request": {"type": str, "required": True},
+                   "project": {"type": str, "required": False}},
+                  _code_build, consequential=True)
+    register_tool("search_docs", "memory",
+                  "Search the user's LOCAL documents (kira_docs/). Nothing leaves the machine.",
+                  {"query": {"type": str, "required": True},
+                   "limit": {"type": int, "required": False}},
+                  _search_docs)
+    register_tool("add_note", "memory",
+                  "Save a note into the local documents folder (kira_docs/).",
+                  {"path": {"type": str, "required": True},
+                   "content": {"type": str, "required": False}},
+                  _add_note, consequential=True)
+    register_tool("list_documents", "memory",
+                  "List the documents stored in kira_docs/.",
+                  {}, _list_documents)
+    register_tool("run_diagnostic", "research",
+                  "Run one harmless health probe per agent and report green/red per system.",
+                  {}, _run_diagnostic)
+    register_tool("backup_memory", "memory",
+                  "Create a rotating backup of the local memory database.",
+                  {"keep": {"type": int, "required": False}},
+                  _backup_memory, consequential=True)
+    register_tool("list_backups", "memory",
+                  "List the memory database backups.",
+                  {}, _list_backups)
+    register_tool("generate_plugin", "plugins",
+                  "Generate a new KIRA plugin (plugins/<name>.py) from a description and load it.",
+                  {"name": {"type": str, "required": True},
+                   "description": {"type": str, "required": True}},
+                  _generate_plugin, consequential=True)
+    register_tool("morning_briefing", "research",
+                  "Morning briefing: weather, pending tasks and upcoming holidays.",
+                  {}, _morning_briefing)

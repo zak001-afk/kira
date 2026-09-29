@@ -163,11 +163,7 @@ class KiraUIHandler(SimpleHTTPRequestHandler):
         if last_error is not None:
             self._json_error(503, "KIRA backend unavailable. Start the KIRA desktop app or web launcher.")
             return
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+        self._send_payload(status, content_type, payload)
 
 
 def main():
