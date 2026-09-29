@@ -1,5 +1,39 @@
 # KIRA Changelog
 
+## Unreleased — Durcissement de l'agent de programmation + moteur mono-instance
+
+- **Un seul moteur KIRA par port** : le serveur API était mono-thread — une
+  requête bloquante (outil coincé, retry cloud) gelait toutes les autres, et
+  sous Windows un DEUXIÈME lancement de KIRA pouvait alors se lier au MÊME
+  port 8765. Résultat : cerveau divisé (approbations exécutées dans un
+  processus, `/api/agents` répondait depuis l'autre — flux d'activité vide,
+  confirmations expirées). Désormais `ThreadingHTTPServer` + refus de
+  démarrage (`OSError` clair) quand le port est déjà servi. Régression
+  couverte par `tests/test_api_single_instance.py`.
+- **`code_run_command` durci** : plus aucun shell (`shell=False`, parsing
+  `shlex`) — les chaînages `;` `|` `&&` `||` `&` `` ` `` `$()` sont refusés,
+  tout comme les échappatoires d'interpréteur `-c`/`-m`/`-e`/`--eval` : seul
+  du code ISSU du workspace peut s'exécuter. La frontière de confiance est
+  documentée dans le code (le jail contraint les chemins, pas ce que fait un
+  code approuvé).
+- **Vérification syntaxique automatique** : `code_write_file` refuse
+  d'enregistrer un fichier Python qui ne compile pas ou un JSON invalide
+  (`syntax_error`, rien n'est écrit) ; les fichiers JS sont vérifiés après
+  écriture par `node --check` (avertissement non bloquant, node absent = ok).
+- **Diff dans la carte d'approbation** : un `code_apply_edit` en attente
+  embarque désormais un diff unifié lisible (lignes vertes/rouges dans la
+  carte) — l'utilisateur voit CE QUI va changer avant de confirmer.
+  Nouveau `code_preview_edit` (lecture seule) pour obtenir le diff sans rien
+  modifier ; `apply_edit` renvoie aussi son diff après exécution.
+- **Outils supplémentaires** : `code_list_projects` (projets du workspace :
+  nom, fichiers, dernière modification) ; `code_write_file` gagne un mode
+  `append` ; paramètre `content` mort de `scaffold_project` supprimé.
+- **UI** : styles `.approval-diff` (diff coloré) et les questions de KIRA
+  (`invalid_name`, ex. nom de projet manquant) s'affichent comme des
+  messages normaux au lieu d'une carte d'erreur.
+- **Tests** : 14 nouveaux tests (syntaxe, append, diff/preview, durcissement
+  run_command, list_projects, mono-instance). Suites au vert.
+
 ## Unreleased — Agent de programmation (création de projets + édition de code)
 
 - **Nouvel agent spécialiste `programming`** dans le registre

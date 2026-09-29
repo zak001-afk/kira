@@ -18,11 +18,14 @@ Lazy imports everywhere; nothing here runs at import time.
 """
 
 from pathlib import Path
+from datetime import datetime
+import difflib
+import json as _json
 import os
 import re
+import shlex
 import shutil
 import subprocess
-import sys
 
 # ── Workspace jail ───────────────────────────────────────────────────────────
 
@@ -97,7 +100,7 @@ def _entry_info(path, relative_to):
 
 # ── Tools ────────────────────────────────────────────────────────────────────
 
-def scaffold_project(name, template="", content=""):
+def scaffold_project(name, template=""):
     """Create kira_workspace/<name>/ with a starter skeleton, return data."""
     name = str(name or "").strip().strip("\"'/\\")
     if not name or name in {".", ".."} or any(part in name for part in ("/", "\\", ":")):
@@ -152,17 +155,106 @@ def scaffold_project(name, template="", content=""):
         return {"ok": False, "error": str(error), "error_code": "scaffold_failed"}
 
 
-def write_file(path, content=""):
-    """Create or overwrite one text file inside the workspace."""
+def _check_python_syntax(text):
+    """None when the source compiles, else a one-line error with the line
+    number. In-memory only: nothing is written, nothing is executed."""
+    try:
+        compile(text, "<kira-workspace>", "exec")
+    except SyntaxError as error:
+        line = f" line {error.lineno}:" if error.lineno else ":"
+        return f"SyntaxError{line} {error.msg}"
+    return None
+
+
+def _check_json_syntax(text):
+    try:
+        _json.loads(text)
+    except ValueError as error:
+        return f"Invalid JSON: {error}"
+    return None
+
+
+def _check_js_syntax(path):
+    """Post-write node --check (non-fatal). None when clean or node absent."""
+    if shutil.which("node") is None:
+        return None
+    try:
+        completed = subprocess.run(
+            [shutil.which("node"), "--check", str(path)], capture_output=True,
+            text=True, timeout=15, encoding="utf-8", errors="replace",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    output = (completed.stderr or completed.stdout or "").strip()
+    return output[:400] if completed.returncode != 0 else None
+
+
+def _syntax_guard(relative, content):
+    """(failure_dict, warning) for a would-be write. Hard stop for Python and
+    JSON (checked before writing); non-fatal warning for JS (checked after)."""
+    suffix = Path(relative).suffix.lower()
+    if suffix == ".py":
+        problem = _check_python_syntax(content)
+        if problem:
+            return {"ok": False,
+                    "error": f"Refusing to write {relative}: {problem}",
+                    "error_code": "syntax_error"}, None
+    elif suffix == ".json":
+        problem = _check_json_syntax(content)
+        if problem:
+            return {"ok": False,
+                    "error": f"Refusing to write {relative}: {problem}",
+                    "error_code": "syntax_error"}, None
+    elif suffix in {".js", ".mjs", ".cjs"}:
+        # JS needs the file on disk for `node --check`; callers re-check after
+        # writing and surface the warning without discarding the file.
+        return None, "pending_js_check"
+    return None, None
+
+
+def write_file(path, content="", mode="write"):
+    """Create, overwrite (default) or append to one text file.
+
+    Python and JSON content must compile/parse BEFORE the write: a coding
+    assistant that saves broken syntax is a trap, not a helper. JS files are
+    written then checked with `node --check` when node exists (warning only).
+    """
     target, failure = resolve_path(path)
     if failure:
         return failure
+    mode = str(mode or "write").strip().lower()
+    if mode not in {"write", "append"}:
+        return {"ok": False, "error": f"Unknown mode '{mode}' (write or append).",
+                "error_code": "invalid_mode"}
+    text = str(content or "")
+    if mode == "write":
+        failure, js_pending = _syntax_guard(target.relative_to(workspace_root()).as_posix(), text)
+        if failure:
+            return failure
+    else:
+        js_pending = target.suffix.lower() in {".js", ".mjs", ".cjs"}
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(str(content or ""), encoding="utf-8")
-        return {"ok": True, "path": target.relative_to(workspace_root()).as_posix(),
-                "bytes": target.stat().st_size,
-                "response": f"Written: {target.name} ({target.stat().st_size} bytes)"}
+        if mode == "append":
+            with open(target, "a", encoding="utf-8") as handle:
+                handle.write(text)
+        else:
+            target.write_text(text, encoding="utf-8")
+        warning = None
+        if js_pending:
+            warning = _check_js_syntax(target)
+        result = {"ok": True,
+                  "path": target.relative_to(workspace_root()).as_posix(),
+                  "bytes": target.stat().st_size, "mode": mode}
+        if warning:
+            result["warning"] = f"node --check: {warning}"
+            result["response"] = (f"Written: {target.name} — but node reports a "
+                                  f"syntax problem: {warning}")
+        else:
+            result["response"] = (f"Appended to {target.name} " if mode == "append"
+                                  else f"Written: {target.name}") + \
+                                 f" ({result['bytes']} bytes)"
+        return result
     except OSError as error:
         return {"ok": False, "error": str(error), "error_code": "write_failed"}
 
@@ -187,6 +279,34 @@ def read_file(path):
                 "response": target.read_text(encoding="utf-8", errors="replace")}
     except (OSError, UnicodeError) as error:
         return {"ok": False, "error": str(error), "error_code": "read_failed"}
+
+
+def list_projects():
+    """Top-level project folders of the workspace, newest first."""
+    root = workspace_root()
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        entries = []
+        for child in sorted(root.iterdir(), key=lambda item: item.stat().st_mtime,
+                            reverse=True):
+            if not child.is_dir():
+                continue
+            try:
+                mtime = child.stat().st_mtime
+                files = sum(1 for leaf in child.rglob("*") if leaf.is_file())
+            except OSError:
+                continue
+            stamp = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+            entries.append({"name": child.name, "files": files, "modified": stamp})
+        if not entries:
+            return {"ok": True, "projects": [], "count": 0,
+                    "response": "The workspace is empty — ask for a project and it appears here."}
+        listed = "\n".join(f"- {row['name']} ({row['files']} files, {row['modified']})"
+                           for row in entries[:12])
+        return {"ok": True, "projects": entries, "count": len(entries),
+                "response": f"{len(entries)} project(s) in the workspace:\n{listed}"}
+    except OSError as error:
+        return {"ok": False, "error": str(error), "error_code": "list_failed"}
 
 
 def list_dir(path=""):
@@ -288,25 +408,78 @@ def apply_edit(path, old, new=""):
     except OSError as error:
         return {"ok": False, "error": str(error), "error_code": "write_failed"}
     return {"ok": True, "path": target.relative_to(workspace_root()).as_posix(),
+            "diff": _unified_diff(current, updated),
             "response": f"Edit applied to {target.name}."}
 
 
+def _unified_diff(before, after):
+    return "".join(difflib.unified_diff(
+        before.splitlines(keepends=True), after.splitlines(keepends=True),
+        fromfile="before", tofile="after"))[:4000]
+
+
+def preview_edit(path, old, new=""):
+    """Read-only would-be diff of an edit, for the approval card. Never
+    writes; returns {} (no diff) instead of failing the parking flow."""
+    try:
+        target, failure = resolve_path(path, must_exist=True)
+        if failure or not target.is_file():
+            return {}
+        current = target.read_text(encoding="utf-8")
+        old_text = str(old or "")
+        if not old_text or current.count(old_text) != 1:
+            return {}
+        diff = _unified_diff(current, current.replace(old_text, str(new or ""), 1))
+        return {"diff": diff} if diff else {}
+    except (OSError, UnicodeError):
+        return {}
+
+
+_RUN_EXECUTABLES = {"python", "python3", "py", "node", "npm", "pip", "pytest"}
+# Interpreter escapes: arbitrary code would leave the workspace jail
+# (subprocess, open(), network...). Only files FROM the workspace may run.
+_RUN_BLOCKED_FLAGS = {"-c", "-m", "-e", "--eval", "-x"}
+
+
 def run_command(command):
-    """Run ONE whitelisted command inside a workspace folder, capture output."""
+    """Run ONE whitelisted executable against workspace files, no shell.
+
+    Trust boundary, in order: the whitelist (python, node, npm, pip, pytest),
+    then the argument scan (no chaining via ; | && || & ` $(), no -c/-m code
+    strings), then the approval gate in kira_agents. NOTE: an approved run
+    still executes real code from the workspace on this machine — the jail
+    constrains file PATHS, not what approved code may do.
+    """
     command = str(command or "").strip().strip("\"'")
     if not command:
         return {"ok": False, "error": "A command is required.", "error_code": "command_required"}
-    parts = command.split()
+    if any(marker in command for marker in ";|&`$"):
+        return {"ok": False,
+                "error": "Command chaining ( ; | & ` $ ) is not allowed — one command at a time.",
+                "error_code": "command_not_allowed"}
+    try:
+        parts = shlex.split(command)
+    except ValueError as error:
+        return {"ok": False, "error": f"Could not parse the command: {error}",
+                "error_code": "command_not_allowed"}
+    if not parts:
+        return {"ok": False, "error": "A command is required.", "error_code": "command_required"}
     executable = Path(parts[0]).name.lower()
-    if executable not in {"python", "python3", "py", "node", "npm", "pip", "pytest"}:
+    if executable not in _RUN_EXECUTABLES:
         return {"ok": False,
                 "error": f"'{parts[0]}' is not allowed. Allowed: python, node, npm, pip, pytest.",
+                "error_code": "command_not_allowed"}
+    blocked = [token for token in parts[1:] if token.lower() in _RUN_BLOCKED_FLAGS]
+    if blocked:
+        return {"ok": False,
+                "error": f"Flags {', '.join(blocked)} are not allowed: only files from "
+                         f"the workspace may run.",
                 "error_code": "command_not_allowed"}
     # Target directory: a bare second token is the script (file) or the
     # working folder (dir). Files run from the workspace root so their
     # workspace-relative path in the command still resolves.
     relative = ""
-    if executable in {"python", "python3", "py", "node", "npm", "pip", "pytest"} and len(parts) > 1 and not parts[1].startswith("-"):
+    if len(parts) > 1 and not parts[1].startswith("-"):
         relative = parts[1]
     target, failure = (resolve_path(relative) if relative else (workspace_root(), None))
     if failure:
@@ -318,10 +491,11 @@ def run_command(command):
     else:
         return {"ok": False, "error": f"Target not found in the workspace: {relative}",
                 "error_code": "not_found"}
+    executable_path = shutil.which(parts[0]) or parts[0]
     try:
         completed = subprocess.run(
-            command, shell=True, cwd=str(cwd), capture_output=True, text=True,
-            timeout=_MAX_RUN_SECONDS,
+            [executable_path, *parts[1:]], shell=False, cwd=str(cwd),
+            capture_output=True, text=True, timeout=_MAX_RUN_SECONDS,
             encoding="utf-8", errors="replace",
             env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
         output = ((completed.stdout or "") + (completed.stderr or "")).strip()

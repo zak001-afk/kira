@@ -510,6 +510,7 @@ function addApprovalCard(data) {
     <div class="message approval-card">
       <span class="approval-warning">⚠</span>
       <span>${escapeHtml(data.response || `« ${tool} » demande votre confirmation.`)}</span>
+      ${data.diff ? `<pre class="approval-diff">${escapeHtml(String(data.diff)).replace(/^\+([^\n]*)/gm, '<span class="diff-add">+$1</span>').replace(/^-([^\n]*)/gm, '<span class="diff-del">-$1</span>')}</pre>` : ""}
       <div class="approval-actions">
         <button class="mini-btn approval-yes" data-approval="${escapeHtml(approvalId)}">Confirmer</button>
         <button class="mini-btn approval-no" data-approval="${escapeHtml(approvalId)}">Annuler</button>
@@ -704,6 +705,10 @@ async function sendCommand(text) {
     } else if (data.needs_approval) {
       addApprovalCard(data);
       speak(data.response || "Une action demande votre confirmation.");
+    } else if (data.error_code === "invalid_name" && data.response) {
+      // Pas une panne : une question de KIRA (ex. nom de projet manquant).
+      addMessage("KIRA", data.response);
+      speak(data.response);
     } else if (data.response) {
       addMessage("KIRA", data.response);
       speak(data.response);

@@ -9,12 +9,13 @@ http.server with minimal overhead.
 import json
 import logging
 import os
+import socket
 import sys
 import threading
 import base64
 import kira_language
 import kira_commands
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
@@ -611,7 +612,15 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
 
 
 def start_server(host=DEFAULT_HOST, port=DEFAULT_PORT, daemon=True):
-    """Start the API server in a background thread."""
+    """Start the API server in a background thread.
+
+    Threaded on purpose: the single-threaded HTTPServer froze every other
+    request whenever one handler blocked (stuck tool call, cloud retry), and
+    on Windows that let a SECOND KIRA launch bind the same port — split-brain
+    state where approvals ran in one process while /api/agents answered from
+    another (empty activity feed, expiring confirmations). If the port is
+    already taken by a live KIRA, this startup refuses and says so.
+    """
     # Plugins load here, independently of the voice/model init chain: the
     # UI must see its extensions even when the model is offline at boot.
     try:
@@ -619,7 +628,17 @@ def start_server(host=DEFAULT_HOST, port=DEFAULT_PORT, daemon=True):
         kira_plugins.load_all_plugins()
     except Exception:
         pass
-    server = HTTPServer((host, port), KiraAPIHandler)
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.settimeout(1.0)
+        if probe.connect_ex((host, port)) == 0:
+            raise OSError(
+                f"port {port} already served by another KIRA instance "
+                f"({host}:{port}) — close it or set a different API_PORT")
+    finally:
+        probe.close()
+    server = ThreadingHTTPServer((host, port), KiraAPIHandler)
+    server.daemon_threads = True
     server.timeout = 1
 
     thread = threading.Thread(target=_run_server, args=(server,), daemon=daemon)

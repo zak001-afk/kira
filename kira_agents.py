@@ -177,9 +177,22 @@ def run(name, raw_args=None, source="api", approved=False):
             _prune_approvals()
             _PENDING_APPROVALS[approval_id] = {"spec": spec, "kwargs": kwargs,
                                                "created": time.monotonic()}
+        extra = {"approval_id": approval_id, "agent": spec.agent}
+        if spec.name == "code_apply_edit":
+            # The approval card shows WHAT will change: attach a read-only
+            # diff when the target file exists and the old block is unique.
+            try:
+                import kira_code
+                preview = kira_code.preview_edit(kwargs.get("path", ""),
+                                                 kwargs.get("old", ""),
+                                                 kwargs.get("new", ""))
+                if preview.get("diff"):
+                    extra["diff"] = preview["diff"]
+            except Exception:
+                pass
         result = kira_tools.ToolResult(action=spec.name, ok=False, error_code="approval_required",
                                        error=f"'{spec.name}' needs your confirmation before it runs.",
-                                       extra={"approval_id": approval_id, "agent": spec.agent})
+                                       extra=extra)
         _record(spec, result, source)
         return result
     result = kira_tools.run_tool(spec.name, spec.handler, **kwargs)
@@ -339,9 +352,9 @@ def _recall_memory(query, limit=5):
 # (KIRA_CODE_DIR or kira_workspace/). Reads are open; writes, deletes and
 # command runs are consequential and pass the user's approval gate.
 
-def _scaffold_project(name, template="", content=""):
+def _scaffold_project(name, template=""):
     import kira_code
-    return kira_code.scaffold_project(name, template=template, content=content)
+    return kira_code.scaffold_project(name, template=template)
 
 
 def _code_write_file(path, content=""):
@@ -357,6 +370,16 @@ def _code_read_file(path):
 def _code_list_dir(path=""):
     import kira_code
     return kira_code.list_dir(path)
+
+
+def _code_list_projects():
+    import kira_code
+    return kira_code.list_projects()
+
+
+def _code_preview_edit(path, old, new=""):
+    import kira_code
+    return kira_code.preview_edit(path, old, new)
 
 
 def _code_search_code(query, path="", extension=""):
@@ -462,10 +485,21 @@ def ensure_builtins():
                   {"name": {"type": str, "required": True},
                    "template": {"type": str, "required": False}},
                   _scaffold_project, consequential=True)
-    register_tool("code_write_file", "programming",
-                  "Create or overwrite one text file inside the code workspace.",
+    register_tool("code_list_projects", "programming",
+                  "List the projects in the code workspace (name, files, modified).",
+                  {}, _code_list_projects)
+    register_tool("code_preview_edit", "programming",
+                  "Preview (read-only) the diff an edit would apply to a workspace file.",
                   {"path": {"type": str, "required": True},
-                   "content": {"type": str, "required": False}},
+                   "old": {"type": str, "required": True},
+                   "new": {"type": str, "required": False}},
+                  _code_preview_edit)
+    register_tool("code_write_file", "programming",
+                  "Create, overwrite or append to one text file in the code workspace. "
+                  "Python/JSON syntax is checked before saving.",
+                  {"path": {"type": str, "required": True},
+                   "content": {"type": str, "required": False},
+                   "mode": {"type": str, "required": False}},
                   _code_write_file, consequential=True)
     register_tool("code_read_file", "programming",
                   "Read one text file from the code workspace (no binaries).",

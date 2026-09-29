@@ -173,6 +173,119 @@ class RunCommandTests(unittest.TestCase):
         self.assertEqual(result["error_code"], "not_found")
 
 
+class SyntaxGuardTests(unittest.TestCase):
+    def setUp(self):
+        self._previous = os.environ.get("KIRA_CODE_DIR")
+        self.root = Path(tempfile.mkdtemp(prefix="kira-code-test-"))
+        os.environ["KIRA_CODE_DIR"] = str(self.root)
+
+    def tearDown(self):
+        if self._previous is None:
+            os.environ.pop("KIRA_CODE_DIR", None)
+        else:
+            os.environ["KIRA_CODE_DIR"] = self._previous
+
+    def test_broken_python_is_refused_before_writing(self):
+        result = kira_code.write_file("broken.py", "def f(:\n    pass\n")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "syntax_error")
+        self.assertFalse((self.root / "broken.py").exists())
+
+    def test_valid_python_writes_normally(self):
+        result = kira_code.write_file("fine.py", "x = 1\n")
+        self.assertTrue(result["ok"])
+
+    def test_broken_json_is_refused(self):
+        result = kira_code.write_file("data.json", "{not json")
+        self.assertEqual(result["error_code"], "syntax_error")
+
+    def test_append_mode_extends_the_file(self):
+        kira_code.write_file("log.txt", "one\n")
+        result = kira_code.write_file("log.txt", "two\n", mode="append")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["mode"], "append")
+        self.assertEqual((self.root / "log.txt").read_text(encoding="utf-8"), "one\ntwo\n")
+
+    def test_apply_edit_returns_a_diff(self):
+        kira_code.write_file("app.py", "value = 1\n")
+        result = kira_code.apply_edit("app.py", old="value = 1", new="value = 2")
+        self.assertTrue(result["ok"])
+        self.assertIn("-value = 1", result["diff"])
+        self.assertIn("+value = 2", result["diff"])
+
+    def test_preview_edit_is_read_only(self):
+        kira_code.write_file("p.py", "a = 1\n")
+        preview = kira_code.preview_edit("p.py", old="a = 1", new="a = 2")
+        self.assertIn("+a = 2", preview["diff"])
+        self.assertEqual((self.root / "p.py").read_text(encoding="utf-8"), "a = 1\n")
+
+    def test_preview_edit_returns_empty_for_ambiguous_old(self):
+        kira_code.write_file("dup.py", "x = 1\nx = 1\n")
+        self.assertEqual(kira_code.preview_edit("dup.py", old="x = 1"), {})
+
+    def test_parked_apply_edit_carries_the_diff(self):
+        kira_code.write_file("g.py", "go = True\n")
+        result = kira_agents.run("code_apply_edit", {"path": "g.py", "old": "go = True",
+                                                     "new": "go = False"})
+        self.assertEqual(result.error_code, "approval_required")
+        self.assertIn("+go = False", result.extra["diff"])
+        kira_agents.resolve_approval(result.extra["approval_id"], approve=False)
+
+
+class RunCommandHardeningTests(unittest.TestCase):
+    def setUp(self):
+        self._previous = os.environ.get("KIRA_CODE_DIR")
+        self.root = Path(tempfile.mkdtemp(prefix="kira-code-test-"))
+        os.environ["KIRA_CODE_DIR"] = str(self.root)
+        kira_code.scaffold_project("app", template="python")
+
+    def tearDown(self):
+        if self._previous is None:
+            os.environ.pop("KIRA_CODE_DIR", None)
+        else:
+            os.environ["KIRA_CODE_DIR"] = self._previous
+
+    def test_command_chaining_is_refused(self):
+        for command in ("python app/main.py; del x", "python a.py && python b.py",
+                        "python app/main.py | tee out", "python app/main.py & echo x"):
+            self.assertEqual(kira_code.run_command(command)["error_code"],
+                             "command_not_allowed", command)
+
+    def test_interpreter_escapes_are_refused(self):
+        for command in ("python -c import os", "python -m http.server",
+                        "node -e require('fs')", "node --eval x"):
+            self.assertEqual(kira_code.run_command(command)["error_code"],
+                             "command_not_allowed", command)
+
+    def test_workspace_script_still_runs(self):
+        result = kira_code.run_command("python app/main.py")
+        self.assertTrue(result["ok"])
+        self.assertIn("Hello from app!", result["output"])
+
+    def test_list_projects_reports_projects(self):
+        result = kira_code.list_projects()
+        self.assertTrue(result["ok"])
+        names = [row["name"] for row in result["projects"]]
+        self.assertIn("app", names)
+        self.assertTrue(result["projects"][0]["files"] >= 2)
+
+    def test_list_projects_on_empty_workspace(self):
+        result = kira_code.list_projects()
+        # 'app' exists from setUp; delete it to exercise the empty branch.
+        kira_code.delete_path("app")
+        result = kira_code.list_projects()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["count"], 0)
+
+    def test_scaffold_no_longer_takes_a_content_argument(self):
+        try:
+            kira_code.scaffold_project("nope", content="x")
+        except TypeError:
+            pass  # expected: the dead parameter is gone
+        else:
+            self.fail("scaffold_project still accepts 'content'")
+
+
 class RegistryAndRoutingTests(unittest.TestCase):
     def setUp(self):
         kira_agents.ensure_builtins()
@@ -181,8 +294,9 @@ class RegistryAndRoutingTests(unittest.TestCase):
         snapshot = {agent["id"]: agent for agent in kira_agents.agents_snapshot()}
         self.assertIn("programming", snapshot)
         for tool in ("scaffold_project", "code_write_file", "code_read_file",
-                     "code_list_dir", "code_search", "code_apply_edit",
-                     "code_run_command", "code_delete_path"):
+                     "code_list_dir", "code_list_projects", "code_search",
+                     "code_apply_edit", "code_preview_edit", "code_run_command",
+                     "code_delete_path"):
             self.assertIn(tool, snapshot["programming"]["tools"])
         for gated in ("scaffold_project", "code_write_file", "code_apply_edit",
                       "code_run_command", "code_delete_path"):
