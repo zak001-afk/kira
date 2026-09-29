@@ -3,6 +3,7 @@ import ast
 from contextlib import contextmanager
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import tempfile
@@ -207,7 +208,11 @@ class ModelPromptTests(unittest.TestCase):
             {"message": {"content": "Le Soleil est une étoile au centre de notre système solaire."}},
         ])
         namespace, saved = self.namespace(model)
-        answer = namespace["ask_chat"]("Parle-moi du Soleil", language="fr")
+        # Cloud OFF for this test: with a real GEMINI/GROQ key in .env the
+        # answer would come from the actual cloud and the local model mock
+        # would never be called (and the test would burn real quota).
+        with patch.dict(os.environ, {"KIRA_CLOUD_AI": "0"}):
+            answer = namespace["ask_chat"]("Parle-moi du Soleil", language="fr")
         prompt = model.call_args_list[0].kwargs["messages"][0]["content"]
         self.assertIn("write the entire answer in French", prompt)
         self.assertNotIn("Elegant, concise English", prompt)
