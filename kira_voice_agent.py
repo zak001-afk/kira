@@ -277,9 +277,13 @@ Rules:
 """
 
 CHAT_SYSTEM_PROMPT = """
-You are KIRA, modeled after JARVIS from Iron Man - a sophisticated AI butler and personal assistant.
+You are KIRA - a sophisticated AI butler and personal assistant.
 
-CORE PERSONALITY (JARVIS-STYLE):
+IDENTITY (ABSOLUTE):
+- Your name is KIRA and only KIRA. If asked who you are, say you are KIRA.
+- Never claim to be JARVIS, an Iron Man character, or any other assistant.
+
+CORE PERSONALITY (REFINED BUTLER STYLE):
 - Polite, composed and thoughtful; adapt formality naturally to the selected language
 - Dry wit and subtle humor - occasionally sardonic but always respectful
 - Proactive - anticipate needs and offer helpful suggestions
@@ -311,7 +315,7 @@ CONVERSATION STYLE:
 - Be helpful without being obsequious
 - Show personality through wit, not through excessive chatter
 
-PROACTIVE BEHAVIOR (Like JARVIS):
+PROACTIVE BEHAVIOR:
 - Offer relevant information before being asked
 - Suggest next steps or actions
 - Provide context that might be useful
@@ -335,7 +339,7 @@ CONTEXT AWARENESS:
 - "Based on what I learned about..."
 
 CAPABILITIES:
-- If asked who you are, explain with JARVIS-like elegance
+- If asked who you are, introduce yourself as KIRA, with elegance
 - Describe capabilities with sophistication
 - Never boast - be matter-of-fact about abilities
 - "I'm equipped to handle..." rather than "I can do..."
@@ -344,7 +348,7 @@ FORMATTING:
 - Elegant, concise writing in the selected RESPONSE LANGUAGE, never English by default
 - Short, well-crafted paragraphs
 - Sophisticated vocabulary without being pretentious
-- Prefer brevity - JARVIS doesn't ramble
+- Prefer brevity - a good butler doesn't ramble
 - Minimal formatting - let the words speak
 - Under 160 words unless detail is essential
 
@@ -530,6 +534,35 @@ def call_ollama(messages, options):
 CHAT_ANSWER_BUDGET = 5.0
 
 
+def chat_budget():
+    """Answer budget in seconds: KIRA_CHAT_BUDGET env, else kira_config.json
+    'chat_budget_seconds', else the 5-second default. Clamped to 2..60."""
+    import os
+    try:
+        import kira_ai
+        kira_ai.ensure_env_loaded()  # .env works even without python-dotenv
+    except Exception:
+        pass
+    value = None
+    raw = os.environ.get("KIRA_CHAT_BUDGET", "").strip()
+    if raw:
+        try:
+            value = float(raw)
+        except ValueError:
+            value = None
+    if value is None:
+        try:
+            import json
+            from pathlib import Path
+            config = json.loads((Path(__file__).resolve().parent / "kira_config.json").read_text(encoding="utf-8"))
+            value = float(config.get("chat_budget_seconds") or 0) or None
+        except Exception:
+            value = None
+    if value is None:
+        value = CHAT_ANSWER_BUDGET
+    return min(60.0, max(2.0, value))
+
+
 def _run_bounded(function, timeout):
     """Run function() in a thread, return its result or None after timeout."""
     box = []
@@ -546,12 +579,14 @@ def _run_bounded(function, timeout):
     return box[0][0] if box and box[0] else None
 
 
-def chat_answer_with_web(command, language, ask_model, ask_web=None, synthesize=None, budget=None):
-    """Answer within the budget (max 5 s): the local model gets ~70 % of it,
-    then a quick web lookup whose raw results are REFORMULATED to answer the
-    actual question (never a bare copy-paste) while the budget holds — the
-    raw text is the fallback, then whatever the model produced meanwhile.
-    Returns (answer_or_empty, "model" | "web" | "timeout")."""
+def chat_answer_with_web(command, language, ask_model, ask_web=None, synthesize=None, budget=None,
+                         ask_cloud=None):
+    """Answer within the budget: the local model gets ~70 % of it, then the
+    optional cloud model (fast, already privacy-gated by the caller), then a
+    quick web lookup whose raw results are REFORMULATED to answer the actual
+    question (never a bare copy-paste) while the budget holds — the raw text
+    is the fallback, then whatever the local model produced meanwhile.
+    Returns (answer_or_empty, "model" | "cloud" | "web" | "timeout")."""
     budget = budget or CHAT_ANSWER_BUDGET
     deadline = time.monotonic() + budget
     started = time.monotonic()
@@ -568,6 +603,14 @@ def chat_answer_with_web(command, language, ask_model, ask_web=None, synthesize=
     worker.join(max(0.5, budget * 0.7))
     if box and box[0][0]:
         return box[0][0], "model"
+    if ask_cloud is not None:
+        remaining = deadline - time.monotonic()
+        if remaining >= 0.5:
+            # Leave ~1 s for the web fallback in case the cloud also stalls.
+            found = _run_bounded(lambda: ask_cloud(command, language),
+                                 max(0.5, remaining - 1.0))
+            if found:
+                return found, "cloud"
     if ask_web is not None:
         remaining = deadline - time.monotonic()
         found = _run_bounded(lambda: ask_web(command, language), max(0.3, remaining))
@@ -2103,6 +2146,351 @@ def ask_agent(command: str):
         return {"action": "none"}
 
 
+_FR_DAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+_FR_MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+              "août", "septembre", "octobre", "novembre", "décembre"]
+_EN_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_EN_MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+              "August", "September", "October", "November", "December"]
+_AR_DAYS = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
+_AR_MONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو",
+              "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
+
+_TIME_QUESTIONS = (r"(?:what\s+time\s+is\s+it|what(?:'?s|\s+is)\s+the\s+time"
+                   r"|quelle\s+heure\s+est[\s-]il|il\s+est\s+quelle\s+heure"
+                   r"|donne[\s-]moi\s+l'?heure|كم\s+الساعة|كم\s+الوقت)")
+_DATE_QUESTIONS = (r"(?:what(?:'?s|\s+is)\s+(?:today'?s\s+date|the\s+date(?:\s+today)?)"
+                   r"|what\s+day\s+is\s+it(?:\s+today)?|what\s+day\s+are\s+we"
+                   r"|quelle\s+est\s+la\s+date(?:\s+(?:d'?aujourd'?hui|du\s+jour))?"
+                   r"|quel\s+jour\s+sommes[\s-]nous|on\s+est\s+quel\s+jour"
+                   r"|ما\s+هو\s+تاريخ\s+اليوم|ما\s+التاريخ\s+اليوم|ما\s+هو\s+اليوم)")
+_MATH_LEADINS = (r"^(?:what\s+is|what'?s|whats|how\s+much\s+is|calculate|compute"
+                 r"|calcule|combien\s+font|combien\s+fait|ça\s+fait\s+combien"
+                 r"|احسب|كم\s+يساوي)\s+")
+_MATH_WORDS = [
+    (r"\bdivided\s+by\b|\bdivisé\s+par\b|÷", "/"),
+    (r"\btimes\b|\bmultiplied\s+by\b|\bfois\b|\bmultiplié\s+par\b|[x×]", "*"),
+    (r"\bplus\b", "+"),
+    (r"\bminus\b|\bmoins\b", "-"),
+]
+
+
+def _safe_math(expr):
+    """Evaluate pure arithmetic (+ - * / and parentheses) safely, or None."""
+    import ast
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError:
+        return None
+    allowed = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant,
+               ast.Add, ast.Sub, ast.Mult, ast.Div, ast.USub, ast.UAdd)
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed):
+            return None
+        if isinstance(node, ast.Constant) and not isinstance(node.value, (int, float)):
+            return None
+    try:
+        return eval(compile(tree, "<math>", "eval"), {"__builtins__": {}}, {})
+    except ZeroDivisionError:
+        return "zero-division"
+    except Exception:
+        return None
+
+
+def direct_answer(command, language):
+    """Instant offline answers for questions with exactly one logical answer:
+    time, date and arithmetic. No model, no cloud, no waiting — a tiny model
+    must never get the chance to hallucinate 2 + 2."""
+    import re
+    from datetime import datetime
+    text = str(command or "").strip().rstrip(".!?؟").strip().lower()
+    if not text:
+        return None
+    lang = language if language in {"fr", "ar"} else "en"
+    now = datetime.now()
+
+    if re.fullmatch(_TIME_QUESTIONS, text, flags=re.IGNORECASE):
+        if lang == "fr":
+            return f"Il est {now:%H} h {now:%M}."
+        if lang == "ar":
+            return f"الساعة الآن {now:%H}:{now:%M}."
+        return f"It is {now:%H}:{now:%M}."
+
+    if re.fullmatch(_DATE_QUESTIONS, text, flags=re.IGNORECASE):
+        index = now.weekday()
+        if lang == "fr":
+            return (f"Nous sommes le {_FR_DAYS[index]} {now.day} "
+                    f"{_FR_MONTHS[now.month - 1]} {now.year}.")
+        if lang == "ar":
+            return (f"اليوم هو {_AR_DAYS[index]}، {now.day} "
+                    f"{_AR_MONTHS[now.month - 1]} {now.year}.")
+        return (f"Today is {_EN_DAYS[index]}, {now.day} "
+                f"{_EN_MONTHS[now.month - 1]} {now.year}.")
+
+    candidate = re.sub(_MATH_LEADINS, "", text, flags=re.IGNORECASE)
+    candidate = candidate.rstrip("=").strip()
+    for pattern, symbol in _MATH_WORDS:
+        candidate = re.sub(pattern, symbol, candidate, flags=re.IGNORECASE)
+    candidate = re.sub(r"(?<=\d),(?=\d)", ".", candidate)  # 7,5 -> 7.5
+    if not re.fullmatch(r"[0-9+\-*/(). ]+", candidate):
+        return None
+    if not (re.search(r"\d", candidate) and re.search(r"[+\-*/]", candidate)):
+        return None
+    result = _safe_math(candidate)
+    if result == "zero-division":
+        return {"fr": "On ne peut pas diviser par zéro.",
+                "ar": "لا يمكن القسمة على صفر."}.get(lang, "You cannot divide by zero.")
+    if result is None:
+        return None
+    if isinstance(result, float) and result.is_integer():
+        result = int(result)
+    elif isinstance(result, float):
+        result = round(result, 6)
+    pretty = re.sub(r"\s+", " ", candidate).strip()
+    return f"{pretty} = {result}"
+
+
+def _is_personal(command):
+    """True when the question is about the user's own data (name, memories,
+    preferences). Those must be answered from LOCAL memory — the cloud cannot
+    know the answer, and the phrasing should never leave the machine."""
+    import re
+    text = str(command or "").strip().lower()
+    if not text:
+        return False
+    keywords = (r"(?:\bmy\s+name\b|\bmy\s+favou?rite\b|\bremember\b|\bmemorize\b"
+                r"|\bforget\b|\bdid\s+i\s+(?:say|tell)\b|\bcall\s+me\b"
+                r"|mon\s+nom|mon\s+prénom|je\s+m'appelle|appelle[\s-]moi"
+                r"|souviens[\s-]toi|rappelle[\s-]toi|oublie|retiens"
+                r"|ma\s+langue\s+préférée|mon\s+\S+\s+préférée?"
+                r"|اسمي|ما\s+اسمي|تذكر|احفظ|انسَ?\s)")
+    return re.search(keywords, text, flags=re.IGNORECASE) is not None
+
+
+_NAME_STATEMENTS = (r"^(?:my\s+name\s+is|je\s+m'appelle|mon\s+nom\s+est|mon\s+prénom\s+est"
+                    r"|اسمي(?:\s+هو)?)\s+(.+)$")
+
+
+def _name_capture(command, language):
+    """'My name is Zakaria' must save the name locally and confirm instantly —
+    never wander into a model that answers with a canned greeting."""
+    import re
+    text = str(command or "").strip().rstrip(".!?؟").strip()
+    match = re.match(_NAME_STATEMENTS, text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    name = match.group(1).strip(" .!?،؟")
+    if not name or len(name.split()) > 4:
+        return None
+    if not re.search(r"[^\W\d_]", name, flags=re.UNICODE):
+        return None
+    name = " ".join(part if part.isupper() else part.capitalize()
+                    for part in name.split())
+    try:
+        kira_memory.save_memory(category="identity", key="name",
+                                value=name, confidence=1.0)
+        refresh_shared_private_terms()  # the name must never reach the shared store
+    except Exception:
+        logging.warning("Could not persist the user's name", exc_info=True)
+        return None
+    if language == "fr":
+        return f"Enchantée, {name}. Je retiendrai votre nom."
+    if language == "ar":
+        return f"تشرفت بمعرفتك يا {name}. سأتذكر اسمك."
+    return f"Nice to meet you, {name}. I will remember your name."
+
+
+def _diagnostic_answer(command, language):
+    """'cloud status' explains, honestly and instantly, whether Gemini can
+    answer — so a silent cloud is diagnosable without reading logs.
+    Never shows any part of the key."""
+    import re
+    text = str(command or "").strip().rstrip(".!?؟").strip().lower()
+    if not re.fullmatch(r"(?:cloud\s+status|status\s+cloud|statut\s+(?:du\s+)?cloud"
+                        r"|[ée]tat\s+du\s+cloud|حالة\s+السحابة)", text):
+        return None
+    enabled = key_present = groq_key = router_key = False
+    model = groq_model = "?"
+    try:
+        import kira_ai
+        kira_ai.ensure_env_loaded()
+        enabled = bool(kira_ai.cloud_enabled())
+        key_present = bool(kira_ai._gemini_key())
+        model = (kira_ai.active_gemini_model() if hasattr(kira_ai, "active_gemini_model")
+                 else kira_ai.gemini_model())
+        groq_key = bool(getattr(kira_ai, "_groq_key", lambda: "")())
+        groq_model = (kira_ai.active_groq_model() if hasattr(kira_ai, "active_groq_model") else "?")
+        router_key = bool(getattr(kira_ai, "_openrouter_key", lambda: "")())
+    except Exception:
+        pass
+    provider = chat_provider()
+    budget = int(chat_budget())
+    ready = enabled and key_present
+    groq_ready = enabled and groq_key
+    if language == "fr":
+        yes, no = "oui", "non"
+        lines = [f"Mode de chat : {provider} · budget {budget} s.",
+                 f"Cloud activé (KIRA_CLOUD_AI) : {yes if enabled else no}. "
+                 f"Clé Gemini présente : {yes if key_present else no}. Modèle : {model}. "
+                 f"Clé Groq présente : {yes if groq_key else no}. Modèle : {groq_model}. "
+                 f"Clé OpenRouter présente : {yes if router_key else no}."]
+        if ready or groq_ready or (enabled and router_key):
+            names = [name for name, ok in (("Groq", groq_ready), ("Gemini", ready),
+                                           ("OpenRouter", enabled and router_key)) if ok]
+            lines.append(f"{' et '.join(names)} prêt(s) à répondre.")
+        elif not enabled:
+            lines.append("Il manque KIRA_CLOUD_AI=1 dans le fichier .env (puis redémarrez KIRA).")
+        else:
+            lines.append("Il manque GEMINI_API_KEY ou GROQ_API_KEY dans le fichier .env (puis redémarrez KIRA).")
+        return " ".join(lines)
+    yes, no = "yes", "no"
+    lines = [f"Chat mode: {provider} · budget {budget} s.",
+             f"Cloud enabled (KIRA_CLOUD_AI): {yes if enabled else no}. "
+             f"Gemini key present: {yes if key_present else no}. Model: {model}. "
+             f"Groq key present: {yes if groq_key else no}. Model: {groq_model}. "
+             f"OpenRouter key present: {yes if router_key else no}."]
+    if ready or groq_ready or (enabled and router_key):
+        names = [name for name, ok in (("Groq", groq_ready), ("Gemini", ready),
+                                       ("OpenRouter", enabled and router_key)) if ok]
+        lines.append(f"{' and '.join(names)} ready to answer.")
+    elif not enabled:
+        lines.append("KIRA_CLOUD_AI=1 is missing from the .env file (then restart KIRA).")
+    else:
+        lines.append("GEMINI_API_KEY or GROQ_API_KEY is missing from the .env file (then restart KIRA).")
+    return " ".join(lines)
+
+
+def _cloud_test_answer(command, language):
+    """'cloud test' performs ONE real Gemini round trip and reports the
+    latency — or the exact (key-scrubbed) error. A present key does not
+    guarantee working calls: quota, network and region failures are silent
+    otherwise."""
+    import re
+    text = str(command or "").strip().rstrip(".!?؟").strip().lower()
+    if not re.fullmatch(r"(?:cloud\s+test|test\s+(?:du\s+)?cloud|teste\s+le\s+cloud"
+                        r"|اختبار\s+السحابة)", text):
+        return None
+    reply = None
+    detail = ""
+    try:
+        import kira_ai
+        kira_ai.ensure_env_loaded()
+        cloud = _preferred_cloud()
+        if not cloud:
+            return _diagnostic_answer("cloud status", language)
+        reply = kira_ai.chat([{"role": "user", "content": "Reply with exactly one word: pong"}],
+                             provider=cloud, timeout=15)
+    except Exception as exc:
+        detail = str(exc)[:200]
+    if reply is not None and getattr(reply, "ok", False):
+        model = getattr(reply, "model", "") or "gemini"
+        ms = getattr(reply, "elapsed_ms", 0)
+        name = "Groq" if getattr(reply, "provider", "") == "groq" else "Gemini"
+        if language == "fr":
+            return f"{name} répond correctement ({model}, {ms} ms). Le chat cloud est opérationnel."
+        return f"{name} answered correctly ({model}, {ms} ms). Cloud chat is operational."
+    if reply is not None:
+        code = getattr(reply, "error_code", "") or "error"
+        detail = (getattr(reply, "error", "") or "")[:200]
+        name = "Groq" if getattr(reply, "provider", "") == "groq" else "Gemini"
+    else:
+        code = "exception"
+        name = "Gemini"
+    if language == "fr":
+        return (f"L'appel {name} a ÉCHOUÉ [{code}] : {detail} — vérifiez la clé, le quota "
+                "(aistudio.google.com ou console.groq.com), la connexion réseau, puis réessayez « cloud test ».")
+    return (f"The {name} call FAILED [{code}]: {detail} — check the key, the quota "
+            "(aistudio.google.com or console.groq.com) and the network, then try 'cloud test' again.")
+
+
+def chat_provider():
+    """KIRA_CHAT_PROVIDER: 'auto' (local first, cloud rescue — default),
+    'groq'/'fast' (fastest cloud first, ~10x Gemini's speed),
+    'gemini'/'cloud' (Gemini first, local pipeline as fallback),
+    'ollama'/'local' (never use the cloud for chat)."""
+    import os
+    try:
+        import kira_ai
+        kira_ai.ensure_env_loaded()  # .env works even without python-dotenv
+    except Exception:
+        pass
+    value = os.environ.get("KIRA_CHAT_PROVIDER", "").strip().lower()
+    if value in {"groq", "fast"}:
+        return "groq"
+    if value in {"gemini", "cloud"}:
+        return "gemini"
+    if value == "openrouter":
+        return "openrouter"
+    if value in {"ollama", "local"}:
+        return "ollama"
+    return "auto"
+
+
+def _role_cloud(language):
+    """(provider, model) chosen by the KIRA_MODEL_* role variables, or None.
+    Arabic questions try the 'arabic' role first (e.g. Gemini for quality),
+    everything else the 'chat' role. Local-only roles are not cloud
+    candidates — KIRA_CHAT_PROVIDER=ollama already keeps chat local."""
+    try:
+        import kira_ai
+    except Exception:
+        return None
+    route = getattr(kira_ai, "role_route", None)
+    if route is None:
+        return None
+    roles = ("arabic", "chat") if language == "ar" else ("chat",)
+    for role in roles:
+        try:
+            provider, model = route(role)
+        except Exception:
+            continue
+        if provider and provider != "ollama":
+            return provider, model
+    return None
+
+
+def _preferred_cloud():
+    """Which cloud provider should answer, or None. Groq wins when ready
+    (LPU speed is the point) unless the user pinned Gemini; each falls
+    back to the other so one missing key never silences the cloud."""
+    try:
+        import kira_ai
+    except Exception:
+        return None
+    ready = getattr(kira_ai, "provider_ready", None)
+    if ready is None:  # older kira_ai: Gemini was the only cloud provider
+        try:
+            return "gemini" if kira_ai.cloud_ready() else None
+        except Exception:
+            return None
+    pinned = chat_provider()
+    if pinned == "gemini":
+        order = ("gemini", "groq", "openrouter")
+    elif pinned == "openrouter":
+        order = ("openrouter", "groq", "gemini")
+    else:
+        order = ("groq", "gemini", "openrouter")
+    for name in order:
+        try:
+            if ready(name):
+                return name
+        except Exception:
+            continue
+    return None
+
+
+def _local_chat_answer(command, language):
+    """The local pipeline answer, or None instead of the 'model offline'
+    apology — a rescue stage must fire, not a dead-end error text."""
+    answer = _ask_chat_response(command, language)
+    text = str(answer or "").strip()
+    if not text:
+        return None
+    offline = {kira_commands.message("model_offline", language),
+               kira_commands.message("model_offline", "en")}
+    return None if text in offline else answer
+
+
 def ask_chat(command: str, language=None):
     """The caller's selected language wins over history and persona examples.
 
@@ -2118,22 +2506,107 @@ def ask_chat(command: str, language=None):
     if language == "auto":
         language = detect_language(command)
     _LAST_REPLY_LANGUAGE = language
-    answer, source = chat_answer_with_web(command, language, _ask_chat_response,
-                                          _web_lookup, _synthesize_web_answer)
+    instant = (direct_answer(command, language) or _name_capture(command, language)
+               or _diagnostic_answer(command, language) or _cloud_test_answer(command, language))
+    if instant:
+        _CHAT_HISTORY.append({"role": "user", "content": command})
+        _CHAT_HISTORY.append({"role": "assistant", "content": instant})
+        try:
+            kira_memory.save_message(_SESSION_ID, "user", command)
+            kira_memory.save_message(_SESSION_ID, "assistant", instant)
+        except Exception:
+            pass
+        return instant
+    budget = chat_budget()
+    provider = chat_provider()
+    personal = _is_personal(command)
+    if provider in {"gemini", "groq", "openrouter"} and not personal:
+        direct = _run_bounded(lambda: _cloud_chat_answer(command, language),
+                              max(2.0, budget - 1.0))
+        if direct:
+            _CHAT_HISTORY.append({"role": "user", "content": command})
+            _CHAT_HISTORY.append({"role": "assistant", "content": direct})
+            try:
+                kira_memory.save_message(_SESSION_ID, "user", command)
+                kira_memory.save_message(_SESSION_ID, "assistant", direct)
+            except Exception:
+                pass
+            return direct
+    answer, source = chat_answer_with_web(command, language, _local_chat_answer,
+                                          _web_lookup, _synthesize_web_answer,
+                                          budget=budget,
+                                          ask_cloud=None if provider == "ollama" or personal else _cloud_chat_answer)
     if not str(answer or "").strip():
+        seconds = int(budget)
         answer = {
-            "fr": ("Je n'ai pas eu de réponse en 5 secondes : le modèle local est lent "
+            "fr": (f"Je n'ai pas eu de réponse en {seconds} secondes : le modèle local est lent "
                    "et le web n'a rien donné. Reformule ou réessaie."),
-            "ar": ("لم أحصل على رد خلال 5 ثوانٍ: النموذج المحلي بطيء والويب لم يعط شيئًا. "
+            "ar": (f"لم أحصل على رد خلال {seconds} ثوانٍ: النموذج المحلي بطيء والويب لم يعط شيئًا. "
                    "أعد الصياغة أو حاول مرة أخرى."),
-            "en": ("I did not get an answer within 5 seconds: the local model is slow "
+            "en": (f"I did not get an answer within {seconds} seconds: the local model is slow "
                    "and the web gave nothing. Rephrase or try again."),
-        }.get(language) or ("I did not get an answer within 5 seconds: the local model is slow "
+        }.get(language) or (f"I did not get an answer within {seconds} seconds: the local model is slow "
                             "and the web gave nothing. Rephrase or try again.")
         return answer
-    if source == "web":
-        return answer  # already readable; translating snippets would waste the budget
+    if source in {"web", "cloud"}:
+        return answer  # already readable/in-language; extra translation would waste the budget
     return kira_language.ensure_reply_language(answer, language, call_ollama)
+
+
+CLOUD_CHAT_PROMPTS = {
+    "fr": "Tu es KIRA, l'assistante de l'utilisateur. Réponds en français, en 2 à 4 phrases claires et directes.",
+    "ar": "أنت KIRA، مساعدة المستخدم. أجب بالعربية في جملتين إلى أربع جمل واضحة ومباشرة.",
+    "en": "You are KIRA, the user's assistant. Answer in English, in 2 to 4 clear, direct sentences.",
+}
+
+
+def _cloud_chat_answer(command, language):
+    """Cloud chat fallback, only when the user opted in (KIRA_CLOUD_AI=1).
+
+    Privacy: ONLY the current question is sent — never local chat history,
+    memories, code or screenshots. Returns text or None (never raises).
+    """
+    try:
+        import kira_ai
+        # Candidates in priority order: the specialist role for this
+        # language, then the preferred cloud, then any other ready cloud.
+        candidates = []
+        role = _role_cloud(language)
+        if role:
+            candidates.append(role)
+        preferred = _preferred_cloud()
+        if preferred:
+            candidates.append((preferred, ""))
+        ready = getattr(kira_ai, "provider_ready", None)
+        if ready is not None:
+            for name in ("groq", "gemini", "openrouter"):
+                try:
+                    if ready(name):
+                        candidates.append((name, ""))
+                except Exception:
+                    continue
+        seen, order = set(), []
+        for provider, model in candidates:
+            if provider and provider not in seen:
+                seen.add(provider)
+                order.append((provider, model))
+        if not order:
+            return None
+        system = CLOUD_CHAT_PROMPTS.get(language) or CLOUD_CHAT_PROMPTS["en"]
+        messages = [{"role": "system", "content": system},
+                    {"role": "user", "content": str(command)}]
+        # Two attempts max keeps latency bounded: quota exhausted or outage
+        # on the first choice never silences a ready second cloud.
+        for provider, model in order[:2]:
+            try:
+                reply = kira_ai.chat(messages, provider=provider, model=model, timeout=8)
+            except Exception:
+                continue
+            if reply.ok and reply.text.strip():
+                return reply.text
+        return None
+    except Exception:
+        return None
 
 
 def _ask_chat_response(command: str, language: str):

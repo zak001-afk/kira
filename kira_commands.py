@@ -42,6 +42,25 @@ _MESSAGES = {
     },
     "auto": {"en": "Automatic language selection is enabled. I’ll follow the language of your questions.", "fr": "La langue automatique est activée. Je suivrai la langue de vos questions.", "ar": "تم تفعيل اختيار اللغة تلقائياً. سأتبع لغة أسئلتك."},
     "action_failed": {"en": "I could not complete that action.", "fr": "Je n’ai pas pu effectuer cette action.", "ar": "لم أتمكن من تنفيذ هذا الإجراء."},
+    "reminder_added": {"en": "Reminder added: {title}.", "fr": "Rappel ajouté : {title}.", "ar": "تمت إضافة التذكير: {title}."},
+    "todo_added": {"en": "Todo added: {title}.", "fr": "Tâche ajoutée : {title}.", "ar": "تمت إضافة المهمة: {title}."},
+    "task_title_missing": {"en": "What should the task say?", "fr": "Que dois-je noter ?", "ar": "ماذا أكتب في المهمة؟"},
+    "tasks_none": {"en": "You have no pending tasks.", "fr": "Vous n’avez aucune tâche en attente.", "ar": "ليست لديك مهام معلقة."},
+    "tasks_pending_one": {"en": "You have 1 pending task:\n{list}", "fr": "Vous avez 1 tâche en attente :\n{list}", "ar": "لديك مهمة واحدة معلقة:\n{list}"},
+    "tasks_pending": {"en": "You have {count} pending tasks:\n{list}", "fr": "Vous avez {count} tâches en attente :\n{list}", "ar": "لديك {count} مهام معلقة:\n{list}"},
+    "tasks_cleared_one": {"en": "Cleared 1 completed task.", "fr": "J’ai supprimé 1 tâche terminée.", "ar": "حذفت مهمة مكتملة واحدة."},
+    "tasks_cleared": {"en": "Cleared {count} completed tasks.", "fr": "J’ai supprimé {count} tâches terminées.", "ar": "حذفت {count} مهام مكتملة."},
+    "tasks_none_cleared": {"en": "No completed tasks to clear.", "fr": "Aucune tâche terminée à supprimer.", "ar": "لا توجد مهام مكتملة لحذفها."},
+    "approval_share": {"en": "⚠️ Sharing “{topic}” to the shared knowledge base needs your confirmation. Reply “confirm” or “cancel”.",
+                       "fr": "⚠️ Le partage de « {topic} » vers la base de connaissances partagée demande votre confirmation. Répondez « confirmer » ou « annuler ».",
+                       "ar": "⚠️ مشاركة «{topic}» في قاعدة المعرفة المشتركة تتطلب تأكيدك. أجب بـ«تأكيد» أو «إلغاء»."},
+    "approval_clear": {"en": "⚠️ This will delete your completed tasks. Reply “confirm” or “cancel”.",
+                       "fr": "⚠️ Cette action supprimera vos tâches terminées. Répondez « confirmer » ou « annuler ».",
+                       "ar": "⚠️ سيؤدي هذا إلى حذف مهامك المكتملة. أجب بـ«تأكيد» أو «إلغاء»."},
+    "approval_generic": {"en": "⚠️ “{tool}” needs your confirmation. Reply “confirm” or “cancel”.",
+                         "fr": "⚠️ « {tool} » demande votre confirmation. Répondez « confirmer » ou « annuler ».",
+                         "ar": "⚠️ «{tool}» يتطلب تأكيدك. أجب بـ«تأكيد» أو «إلغاء»."},
+    "approval_cancelled": {"en": "Cancelled — nothing was changed.", "fr": "Annulé — rien n’a été modifié.", "ar": "أُلغي — لم يتغير شيء."},
     "choose_open": {
         "en": "I found {count} of them. Which one should I open? Reply with its number (1, 2, …), say “all” to open every one, or “cancel”.\n{list}",
         "fr": "J’en ai trouvé {count}. Lequel veux-tu que j’ouvre ? Réponds avec son numéro (1, 2, …), « tous » pour tout ouvrir, ou « annule » pour ne rien faire.\n{list}",
@@ -64,6 +83,25 @@ _MESSAGES = {
         "pt": "Não consegui abrir {target} neste computador. Verifique se existe ou está instalado e tente novamente.",
     },
     "model_offline": {"en": "I cannot reach the local AI model. Start Ollama with ollama serve, then try again.", "fr": "Je ne peux pas joindre le modèle IA local. Démarrez Ollama avec ollama serve, puis réessayez.", "ar": "لا أستطيع الاتصال بنموذج الذكاء الاصطناعي المحلي. شغّل Ollama بالأمر ollama serve ثم حاول مجدداً."},
+    "chat_reset": {"en": "New conversation started. I have cleared this session's chat memory.", "fr": "Nouvelle conversation. J’ai effacé la mémoire de cette session.", "ar": "بدأت محادثة جديدة ومسحت ذاكرة هذه الجلسة."},
+    "weather_city_missing": {"en": "Which city? For example: “weather in Nabeul”. You can set a default city with KIRA_CITY in .env.",
+                             "fr": "Pour quelle ville ? Par exemple : « météo à Nabeul ». Vous pouvez définir une ville par défaut avec KIRA_CITY dans .env.",
+                             "ar": "لأي مدينة؟ مثلاً: «الطقس في نابل». يمكنك تحديد مدينة افتراضية عبر KIRA_CITY في .env."},
+    "weather_now": {"en": "Weather in {city}{country}: {condition}, {temp}°C (feels like {feels}°C), humidity {humidity}%, wind {wind} km/h. Today {tmin}–{tmax}°C, rain chance {rain}%.",
+                    "fr": "Météo à {city}{country} : {condition}, {temp}°C (ressenti {feels}°C), humidité {humidity}%, vent {wind} km/h. Aujourd’hui {tmin}–{tmax}°C, risque de pluie {rain}%.",
+                    "ar": "الطقس في {city}{country}: {condition}، {temp}°م (المحسوسة {feels}°م)، الرطوبة {humidity}%، الرياح {wind} كم/س. اليوم {tmin}–{tmax}°م، احتمال المطر {rain}%."},
+    "holidays_upcoming": {"en": "Upcoming public holidays in {country} ({year}):\n{list}",
+                          "fr": "Prochains jours fériés en {country} ({year}) :\n{list}",
+                          "ar": "العطل الرسمية القادمة في {country} ({year}):\n{list}"},
+    "holidays_none": {"en": "No public holidays left in {country} for {year}.",
+                      "fr": "Plus aucun jour férié en {country} pour {year}.",
+                      "ar": "لا توجد عطل رسمية متبقية في {country} لسنة {year}."},
+    "currency_result": {"en": "{amount} {src} = {result} {dst} (rate {rate}, reference of {date}).",
+                        "fr": "{amount} {src} = {result} {dst} (taux {rate}, référence du {date}).",
+                        "ar": "{amount} {src} = {result} {dst} (السعر {rate}، مرجع {date})."},
+    "wiki_not_found": {"en": "I found nothing on Wikipedia about “{topic}”.",
+                       "fr": "Je n’ai rien trouvé sur Wikipédia à propos de « {topic} ».",
+                       "ar": "لم أجد شيئاً في ويكيبيديا عن «{topic}»."},
     "wrong_language": {"en": "The model could not answer in the requested language. Try a multilingual model or another language.", "fr": "Le modèle n’a pas réussi à répondre dans la langue demandée. Essayez un modèle multilingue ou une autre langue.", "ar": "لم يتمكن النموذج من الإجابة باللغة المطلوبة. جرّب نموذجاً متعدد اللغات أو لغة أخرى."},
 }
 
@@ -172,6 +210,32 @@ def match_open_choice(text, count):
     return None
 
 
+def is_pure_choice(text, count=10):
+    """True only when the message is NOTHING BUT a choice answer ("2",
+    "le 2", "la deuxième", "tous", "annule").
+
+    Regression source: live test on 2026-09-27 where "raconte-moi une blague"
+    was hijacked as a stray pick — 'une' maps to 1 — and answered with
+    "Il n'y a rien à choisir". A French article inside a real sentence must
+    never be mistaken for a pick."""
+    tokens = [token.strip(".,!?;:»«()\"")
+              for token in languages.fold(text).replace("°", "").replace("_", " ").split()]
+    tokens = [token for token in tokens if token]
+    if not tokens:
+        return False
+    for token in tokens:
+        if token in _CANCEL_WORDS or token in _ALL_WORDS or token in _CHOICE_WORDS:
+            continue
+        if token.isdigit() or token in _CHOICE_PREFIXES:
+            continue
+        for prefix in _CHOICE_PREFIXES:
+            if token.startswith(prefix) and len(token) > len(prefix) and token[len(prefix):][:1].isdigit():
+                break
+        else:
+            return False
+    return match_open_choice(text, count) is not None
+
+
 def _shorten_path(path):
     home = str(Path.home()) if Path.home().exists() else ""
     return path.replace(home, "~", 1) if home and path.startswith(home) else path
@@ -208,9 +272,25 @@ def process_command(backend, text, reply_language="auto", previous_language=None
     if choice.language_only:
         reply = message("auto" if choice.preference == "auto" else "language", choice.language)
         return {"action": "language", "response": reply or languages.LANGUAGES[choice.language]["native_name"] + " ✓", **metadata}
+    if _PENDING_APPROVAL and not chat_only:
+        pick = match_approval_choice(text)
+        waiting = _PENDING_APPROVAL
+        clear_pending_approval()  # One question, one answer; anything else expires it.
+        if pick is not None:
+            import kira_agents
+            if pick == "cancel":
+                kira_agents.resolve_approval(waiting["id"], approve=False, source="ui")
+                return {"action": waiting["action"], "success": False, "approval": "rejected",
+                        "response": message("approval_cancelled", choice.language) or message("approval_cancelled", "en"),
+                        **metadata}
+            result = kira_agents.resolve_approval(waiting["id"], approve=True, source="ui")
+            return _format_approved(waiting["action"], result, choice.language, metadata)
+
     pending = pending_open()
     if pending and not chat_only and backend is not None:
-        pick = match_open_choice(text, len(pending["paths"]))
+        # Only a pure answer counts ("le 2", "tous"...): a real sentence that
+        # merely contains 'une'/'deux' is a new request, not a pick.
+        pick = match_open_choice(text, len(pending["paths"])) if is_pure_choice(text, len(pending["paths"])) else None
         if pick == "cancel":
             clear_pending_open()
             return {"action": "none", "response": message("open_cancelled", choice.language) or message("open_cancelled", "en"), **metadata}
@@ -231,8 +311,7 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         clear_pending_open()
 
     if pending is None and not chat_only:
-        stray = match_open_choice(text, 10)
-        if stray is not None and len(text.split()) <= 3 and kira_open.parse_open_command(text) is None:
+        if is_pure_choice(text, 10) and len(text.split()) <= 3 and kira_open.parse_open_command(text) is None:
             return {"action": "none",
                     "response": message("no_pending_choice", choice.language) or message("no_pending_choice", "en"),
                     **metadata}
@@ -244,9 +323,29 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         cleaned = backend.normalize_command(text)
         if not cleaned:
             return {"action": "none", "response": "", **metadata}
-        parsed = None if chat_only else backend.parse_simple_command(cleaned)
+        parsed = None if chat_only else (parse_tool_command(cleaned) or backend.parse_simple_command(cleaned))
         if parsed and parsed.get("action", "none") != "none":
             action = parsed["action"]
+            if action == "chat_reset":
+                # 'clear chat' / 'efface la conversation': the voice loop
+                # handled this, but the UI route fell into execute_action and
+                # answered "I could not complete that action."
+                try:
+                    backend.reset_chat()
+                except Exception:
+                    return {"action": action, "success": False,
+                            "response": message("action_failed", choice.language) or message("action_failed", "en"),
+                            **metadata}
+                return {"action": action, "success": True,
+                        "response": message("chat_reset", choice.language) or message("chat_reset", "en"),
+                        **metadata}
+            if action in DIRECT_TOOL_ACTIONS:
+                # Fast paths: tools return data immediately. The backend voice
+                # handlers speak synchronously and would block this HTTP
+                # response; the UI already displays the text and speaks it on
+                # its own TTS path. No execute_action, no Ollama translation.
+                # The standalone voice loop keeps its own speaking handlers.
+                return _direct_tool_route(action, parsed, metadata, choice.language)
             matches = None
             if action in {"open_file", "open_folder"} and hasattr(backend, "resolve_open_matches"):
                 try:
@@ -291,12 +390,348 @@ def process_command(backend, text, reply_language="auto", previous_language=None
                 return {"action": action, "success": bool(success), "response": message("wrong_language", interface_language) or message("wrong_language", "en"),
                         "language_warning": "action_completed_translation_unavailable" if success else "action_failed_translation_unavailable", **metadata}
             return {"action": action, "success": bool(success), "response": reply, **metadata}
+        if not chat_only:
+            # Optional planner (KIRA_PLANNER=1): the model picks ONE registered
+            # tool or says none. Approval gates and validation stay intact;
+            # any planner failure falls through to normal chat.
+            try:
+                import kira_planner
+                plan = kira_planner.plan_command(cleaned)
+            except Exception:
+                plan = None
+            if plan:
+                plan_tool, plan_args = plan
+                if plan_tool in DIRECT_TOOL_ACTIONS:
+                    return _direct_tool_route(plan_tool, plan_args, metadata, choice.language)
+                import kira_agents
+                result = kira_agents.run(plan_tool, plan_args, source="planner")
+                if result.ok:
+                    return result.to_payload(**metadata)
+                # A failed plan is not an error to the user: fall back to chat.
         answer = call_with_options(backend.ask_chat, cleaned, language=choice.language)
         return {"action": "chat", "response": answer, **metadata}
     except languages.ReplyLanguageError:
         return {"error": message("wrong_language", interface_language) or message("wrong_language", "en"), "error_code": "reply_language_unavailable", **metadata}
     except Exception as error:
         return {"error": str(error), "error_code": "command_failed", **metadata}
+
+
+# ── Approval flow: consequential tools confirm in the conversation ──────────
+
+_PENDING_APPROVAL = None
+
+_CONFIRM_WORDS = {"yes", "y", "confirm", "confirmed", "ok", "okay", "proceed", "go ahead", "do it",
+                  "oui", "confirmer", "je confirme", "d'accord", "vas-y", "نعم", "تأكيد", "أكد"}
+_CANCEL_WORDS = {"no", "n", "cancel", "stop", "abort", "non", "annule", "annuler", "لا", "إلغاء", "ألغ"}
+
+
+def pending_approval():
+    return _PENDING_APPROVAL
+
+
+def clear_pending_approval():
+    global _PENDING_APPROVAL
+    _PENDING_APPROVAL = None
+
+
+def _set_pending_approval(approval_id, action):
+    global _PENDING_APPROVAL
+    _PENDING_APPROVAL = {"id": approval_id, "action": action}
+
+
+def match_approval_choice(text):
+    value = languages.fold(str(text or "")).strip(" .!!؟?,،;:«»\"'")
+    if value in _CONFIRM_WORDS:
+        return "confirm"
+    if value in _CANCEL_WORDS:
+        return "cancel"
+    return None
+
+
+def _format_approved(action, result, language, metadata):
+    """Localize the data of an approved tool run, same shapes as the routes."""
+    def msg(key, **values):
+        return message(key, language, **values) or message(key, "en", **values) or ""
+    if result.ok and action == "clear_completed_tasks":
+        count = int(result.data or 0)
+        if count <= 0:
+            result.response = msg("tasks_none_cleared")
+        else:
+            result.response = msg("tasks_cleared_one" if count == 1 else "tasks_cleared", count=count)
+        result.extra["cleared"] = count
+    return result.to_payload(**metadata)
+
+
+# ── Deterministic tool-command parsing (EN + FR) ────────────────────────────
+# Route clear commands straight to tools without model calls. Tried BEFORE the
+# backend parser, so phrasing tolerance here wins; anything unmatched falls
+# through to the backend grammar and then to chat.
+
+_TODO_PATTERNS = (
+    re.compile(r"^(?:add|create|new)\s+(?:a\s+|another\s+)?(?:todo|to-?do|task|note)\s*[:\-]?\s+(.+)$", re.IGNORECASE),
+    re.compile(r"^(?:ajoute(?:r)?|cr[ée]e(?:r)?|nouvelle?)\s+(?:une\s+|un\s+)?(?:t[âa]che|todo|note)\s*[:\-]?\s+(.+)$", re.IGNORECASE),
+)
+_LIST_TASKS_PATTERNS = (
+    re.compile(r"^(?:list|show|display|what\s+are)\s+(?:me\s+)?(?:my\s+|all\s+|the\s+)?(?:pending\s+)?(?:tasks?|todos?|to-?dos?)\??$", re.IGNORECASE),
+    re.compile(r"^my\s+tasks?\??$", re.IGNORECASE),
+    re.compile(r"^(?:liste|affiche|montre)(?:[- ]moi)?\s+(?:mes\s+|les\s+)?t[âa]ches(?:\s+en\s+attente)?\s*\??$", re.IGNORECASE),
+    re.compile(r"^mes\s+t[âa]ches\s*\??$", re.IGNORECASE),
+)
+_WEATHER_PATTERNS = (
+    re.compile(r"^(?:what(?:'s|\s+is)\s+(?:the\s+)?)?weather(?:\s+like)?(?:\s+(?:today|now|right\s+now))?(?:\s+in\s+(.+))?$", re.IGNORECASE),
+    re.compile(r"^(?:quel\s+temps\s+fait[- ]il|(?:la\s+)?m[ée]t[ée]o)(?:\s+(?:aujourd'hui|maintenant))?(?:\s+(?:[àa]|en|sur)\s+(.+))?\s*$", re.IGNORECASE),
+)
+_HOLIDAYS_PATTERNS = (
+    re.compile(r"^(?:what\s+are\s+the\s+|show\s+(?:me\s+)?|list\s+)?(?:next\s+|upcoming\s+)?(?:public\s+)?holidays(?:\s+in\s+([a-zà-ÿ'\- ]+?))?(?:\s+(?:in\s+|for\s+)?(\d{4}))?$", re.IGNORECASE),
+    re.compile(r"^(?:quels?\s+sont\s+les\s+|liste\s+(?:les\s+)?|affiche\s+(?:les\s+)?)?(?:prochains?\s+)?jours?\s+f[ée]ri[ée]s(?:\s+(?:en|au|aux|[àa])\s+([a-zà-ÿ'\- ]+?))?(?:\s+(?:en\s+|pour\s+)?(\d{4}))?\s*$", re.IGNORECASE),
+)
+_WIKI_PATTERNS = (
+    re.compile(r"^wiki(?:p[ée]dia)?\s*[:\-]?\s+(.+)$", re.IGNORECASE),
+    re.compile(r"^who\s+(?:is|was)\s+(?!my\b|your\b|our\b)(.+)$", re.IGNORECASE),
+    re.compile(r"^qui\s+(?:est|[ée]tait)\s+(?!mon\b|ma\b|mes\b|ton\b|ta\b|tes\b|notre\b|votre\b)(.+)$", re.IGNORECASE),
+    re.compile(r"^من\s+(?:هو|هي)\s+(.+)$"),
+)
+_TRANSLATE_PATTERNS = (
+    re.compile(r"^translate\s+(.+?)\s+(?:to|into)\s+([a-zA-Zà-ÿ]+)$", re.IGNORECASE),
+    re.compile(r"^traduis(?:ez)?(?:[- ]moi)?\s+(.+?)\s+en\s+([a-zà-ÿ]+)$", re.IGNORECASE),
+)
+_CURRENCY_UNIT = r"[a-z]{3}|euros?|dollars?|dinars?|pounds?|livres?|dirhams?|yens?"
+_CURRENCY_PATTERN = re.compile(
+    r"^(?:convert\s+|convertis?\s+|change\s+|combien\s+font\s+)?"
+    r"(\d+(?:[.,]\d+)?)\s*(" + _CURRENCY_UNIT + r")\s+(?:to|into|in|en|vers)\s+(" + _CURRENCY_UNIT + r")\s*$",
+    re.IGNORECASE)
+_CLEAR_TASKS_PATTERNS = (
+    re.compile(r"^(?:clear|delete|remove)\s+(?:my\s+|the\s+|all\s+)?completed(?:\s+tasks?)?$", re.IGNORECASE),
+    re.compile(r"^(?:supprime(?:r)?|efface(?:r)?|nettoie(?:r)?)\s+(?:mes\s+|les\s+)?t[âa]ches\s+termin[ée]es$", re.IGNORECASE),
+)
+_SHARE_PATTERNS = (
+    # share knowledge <topic>: <content>  /  share knowledge: <topic>: <content>
+    re.compile(r"^(?:share|publish|save|store)\s+(?:this\s+|the\s+)?(?:project\s+)?knowledge\s*[:\-]?\s+(.+?)\s*[:\-]\s+?(.+)$", re.IGNORECASE),
+    re.compile(r"^(?:partage(?:r)?|publie(?:r)?|enregistre(?:r)?)\s+(?:la\s+|cette\s+)?connaissance\s*[:\-]?\s+(.+?)\s*[:\-]\s+?(.+)$", re.IGNORECASE),
+)
+_SEARCH_SHARED_PATTERNS = (
+    re.compile(r"^(?:search|find|look\s?up|check|query|show)\s+(?:me\s+)?(?:in\s+|the\s+|our\s+)?shared\s+"
+               r"(?:knowledge(?:\s+base)?|research|memory|notes)\s+(?:for|about|on|regarding)\s+(.+)$", re.IGNORECASE),
+    re.compile(r"^(?:cherche(?:r)?|recherche(?:r)?|montre(?:[- ]moi)?)\s+(?:dans\s+)?(?:la\s+)?"
+               r"(?:connaissance|m[ée]moire|recherche)s?\s+partag[ée]es?\s+(?:pour|sur|à propos de|concernant)?\s*(.+)$", re.IGNORECASE),
+    re.compile(r"^(?:la\s+)?(?:recherche|connaissance|m[ée]moire)s?\s+partag[ée]es?\s*[:\-]?\s+"
+               r"(?:pour|sur|à propos de|concernant)\s+(.+)$", re.IGNORECASE),
+)
+
+
+def parse_tool_command(text):
+    """Deterministic EN/FR grammar for the direct tool routes, or None."""
+    value = str(text or "").strip().rstrip(".!?؟ ").strip()
+    if not value:
+        return None
+    for pattern in _SEARCH_SHARED_PATTERNS:
+        match = pattern.match(value)
+        if match and match.group(1).strip():
+            return {"action": "search_shared_knowledge", "query": match.group(1).strip()}
+    for pattern in _SHARE_PATTERNS:
+        match = pattern.match(value)
+        if match and match.group(1).strip() and match.group(2).strip():
+            return {"action": "share_project_knowledge", "kind": "project_knowledge",
+                    "topic": match.group(1).strip(), "content": match.group(2).strip()}
+    for pattern in _TODO_PATTERNS:
+        match = pattern.match(value)
+        if match and match.group(1).strip():
+            return {"action": "add_todo", "title": match.group(1).strip()}
+    for pattern in _LIST_TASKS_PATTERNS:
+        if pattern.match(value):
+            return {"action": "list_tasks"}
+    for pattern in _CLEAR_TASKS_PATTERNS:
+        if pattern.match(value):
+            return {"action": "clear_completed_tasks"}
+    for pattern in _WEATHER_PATTERNS:
+        match = pattern.match(value)
+        if match:
+            return {"action": "get_weather", "city": (match.group(1) or "").strip()}
+    for pattern in _HOLIDAYS_PATTERNS:
+        match = pattern.match(value)
+        if match:
+            return {"action": "get_holidays", "country": (match.group(1) or "").strip(),
+                    "year": (match.group(2) or "").strip()}
+    match = _CURRENCY_PATTERN.match(value)
+    if match:
+        return {"action": "convert_currency", "amount": match.group(1).replace(",", "."),
+                "from_currency": match.group(2), "to_currency": match.group(3)}
+    for pattern in _TRANSLATE_PATTERNS:
+        match = pattern.match(value)
+        if match and match.group(1).strip():
+            return {"action": "translate_text", "text": match.group(1).strip(),
+                    "target_language": match.group(2).strip()}
+    for pattern in _WIKI_PATTERNS:
+        match = pattern.match(value)
+        if match and match.group(1).strip():
+            return {"action": "wiki_summary", "topic": match.group(1).strip()}
+    return None
+
+
+# Actions answered directly from tools: data out, no backend speech, no model.
+DIRECT_TOOL_ACTIONS = frozenset({
+    "search_shared_knowledge", "share_project_knowledge",
+    "add_reminder", "add_todo", "list_tasks", "clear_completed_tasks",
+    "get_weather", "get_holidays", "convert_currency",
+    "wiki_summary", "translate_text",
+})
+
+
+def _direct_tool_route(action, parsed, metadata, language):
+    """Run one specialist tool via the registry; speech stays in the interface.
+
+    Execution goes through kira_agents (validated arguments, activity feed,
+    structured failures); this function only turns tool DATA into localized
+    response text. The kira_voice_agent handlers for these actions speak every
+    result synchronously, which is right for the microphone loop but blocks
+    HTTP responses and double-speaks in the UI.
+    """
+    import kira_agents
+
+    def msg(key, **values):
+        return message(key, language, **values) or message(key, "en", **values) or ""
+
+    if action == "search_shared_knowledge":
+        result = kira_agents.run(action, {"query": str(parsed.get("query", "")).strip(), "limit": 3})
+        return result.to_payload(**metadata)
+
+    if action == "share_project_knowledge":
+        topic = str(parsed.get("topic", "")).strip()
+        result = kira_agents.run(action, {"topic": topic,
+                                          "content": str(parsed.get("content", "")).strip()})
+        if result.error_code == "approval_required":
+            approval_id = result.extra["approval_id"]
+            _set_pending_approval(approval_id, action)
+            return {"action": action, "success": False, "needs_approval": True,
+                    "approval_id": approval_id,
+                    "response": msg("approval_share", topic=topic) or msg("approval_generic", tool=action),
+                    **metadata}
+        return result.to_payload(**metadata)
+
+    if action in {"add_reminder", "add_todo"}:
+        title = str(parsed.get("title", "")).strip()
+        if not title:
+            return {"action": action, "success": False, "response": msg("task_title_missing"),
+                    "error": msg("task_title_missing"), "error_code": "task_title_missing", **metadata}
+        args = {"title": title}
+        if action == "add_reminder":
+            args["due_at"] = str(parsed.get("due_at", "")).strip()
+        result = kira_agents.run(action, args)
+        if result.ok:
+            result.response = msg("reminder_added" if action == "add_reminder" else "todo_added", title=title)
+            result.extra["task_id"] = result.data
+        return result.to_payload(**metadata)
+
+    if action == "list_tasks":
+        result = kira_agents.run(action, {})
+        if result.ok:
+            tasks = list(result.data or [])
+            if not tasks:
+                result.response = msg("tasks_none")
+            else:
+                listed = "\n".join(f"{index}. {str(task.get('title', '')).strip()}"
+                                   for index, task in enumerate(tasks, 1))
+                key = "tasks_pending_one" if len(tasks) == 1 else "tasks_pending"
+                result.response = msg(key, count=len(tasks), list=listed)
+            result.extra["tasks"] = [{"id": task.get("id"), "title": task.get("title"),
+                                      "type": task.get("type"), "due_at": task.get("due_at")}
+                                     for task in tasks]
+        return result.to_payload(**metadata)
+
+    if action == "clear_completed_tasks":
+        result = kira_agents.run(action, {})
+        if result.error_code == "approval_required":
+            approval_id = result.extra["approval_id"]
+            _set_pending_approval(approval_id, action)
+            return {"action": action, "success": False, "needs_approval": True,
+                    "approval_id": approval_id,
+                    "response": msg("approval_clear") or msg("approval_generic", tool=action),
+                    **metadata}
+        if result.ok:
+            count = int(result.data or 0)
+            if count <= 0:
+                result.response = msg("tasks_none_cleared")
+            else:
+                result.response = msg("tasks_cleared_one" if count == 1 else "tasks_cleared", count=count)
+            result.extra["cleared"] = count
+        return result.to_payload(**metadata)
+
+    def _num(value):  # Missing readings show as "?" instead of "None".
+        return "?" if value is None else value
+
+    if action == "get_weather":
+        import kira_info
+        city = str(parsed.get("city", "")).strip() or kira_info.default_city()
+        if not city:
+            text = msg("weather_city_missing")
+            return {"action": action, "success": False, "response": text,
+                    "error": text, "error_code": "city_missing", **metadata}
+        result = kira_agents.run(action, {"city": city})
+        if result.ok:
+            data = result.data or {}
+            lang = languages.normalize_language(language)
+            condition = (data.get("condition") or {}).get(lang) or (data.get("condition") or {}).get("en", "")
+            country = f" ({data['country']})" if data.get("country") else ""
+            result.response = msg(
+                "weather_now", city=data.get("city", city), country=country,
+                condition=condition, temp=_num(data.get("temperature")),
+                feels=_num(data.get("feels_like")), humidity=_num(data.get("humidity")),
+                wind=_num(data.get("wind_kmh")), tmin=_num(data.get("today_min")),
+                tmax=_num(data.get("today_max")), rain=_num(data.get("rain_chance_today")))
+        return result.to_payload(**metadata)
+
+    if action == "get_holidays":
+        args = {"country": str(parsed.get("country", "")).strip()}
+        year = str(parsed.get("year", "")).strip()
+        if year.isdigit():
+            args["year"] = int(year)
+        result = kira_agents.run(action, args)
+        if result.ok:
+            data = result.data or {}
+            upcoming = list(data.get("upcoming") or [])[:5]
+            if upcoming:
+                listed = "\n".join(f"- {row.get('date')} : {row.get('local_name') or row.get('name')}"
+                                   for row in upcoming)
+                result.response = msg("holidays_upcoming", country=data.get("country", ""),
+                                      year=data.get("year", ""), list=listed)
+            else:
+                result.response = msg("holidays_none", country=data.get("country", ""),
+                                      year=data.get("year", ""))
+        return result.to_payload(**metadata)
+
+    if action == "convert_currency":
+        result = kira_agents.run(action, {"amount": str(parsed.get("amount", "")).strip(),
+                                          "from_currency": str(parsed.get("from_currency", "")).strip(),
+                                          "to_currency": str(parsed.get("to_currency", "")).strip()})
+        if result.ok:
+            data = result.data or {}
+            result.response = msg("currency_result", amount=data.get("amount"),
+                                  src=data.get("from"), dst=data.get("to"),
+                                  result=data.get("result"), rate=data.get("rate"),
+                                  date=data.get("date") or "?")
+        return result.to_payload(**metadata)
+
+    if action == "wiki_summary":
+        topic = str(parsed.get("topic", "")).strip()
+        result = kira_agents.run(action, {"topic": topic,
+                                          "language": languages.normalize_language(language) or "en"})
+        if result.ok:
+            result.response = str((result.data or {}).get("summary", "")).strip()
+        elif result.error_code == "tool_failed":
+            text = msg("wiki_not_found", topic=topic)
+            return {"action": action, "success": False, "response": text, "error": text,
+                    "error_code": "wiki_not_found", **metadata}
+        return result.to_payload(**metadata)
+
+    if action == "translate_text":
+        result = kira_agents.run(action, {"text": str(parsed.get("text", "")).strip(),
+                                          "target_language": str(parsed.get("target_language", "")).strip(),
+                                          "source_language": str(parsed.get("source_language", "")).strip()})
+        if result.ok:
+            result.response = str((result.data or {}).get("translated", "")).strip()
+        return result.to_payload(**metadata)
+
+    raise ValueError(f"Unrouted tool action: {action}")  # Defensive; DIRECT_TOOL_ACTIONS drives this.
 
 
 _LEARN = re.compile(
@@ -318,7 +753,12 @@ def try_web_learning(text):
     if not topic:
         return "What would you like me to learn about?"
     try:
-        import kira_web
-        return kira_web.search_and_learn(topic)
+        # Through the registry: the research agent's activity feed shows the
+        # run, arguments are validated, failures stay structured.
+        import kira_agents
+        result = kira_agents.run("web_learn", {"topic": topic}, source="ui")
+        if result.ok:
+            return result.response or str(result.data or "")
+        return result.error or "I tried to learn about that but encountered an error."
     except Exception as exc:
         return f"I tried to learn about that but encountered an error: {exc}"

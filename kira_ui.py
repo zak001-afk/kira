@@ -102,13 +102,26 @@ class KiraUIHandler(SimpleHTTPRequestHandler):
         else:
             self.send_error(405, "POST is only supported for the API")
 
+    def _send_payload(self, status, content_type, payload):
+        """Write a response; treat a client that closed the window as gone.
+
+        The proxy can wait up to api_timeout seconds for the backend, which is
+        plenty of time to close the native window. The resulting write failure
+        (WinError 10053 / ConnectionAbortedError) is expected: log quietly and
+        drop the payload — never retry, never traceback.
+        """
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass  # Client disconnected; the backend response is discarded.
+
     def _json_error(self, status, message):
         body = json.dumps({"error": message}).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        self._send_payload(status, "application/json; charset=utf-8", body)
 
     def _proxy_api(self):
         try:
@@ -150,6 +163,9 @@ class KiraUIHandler(SimpleHTTPRequestHandler):
         if last_error is not None:
             self._json_error(503, "KIRA backend unavailable. Start the KIRA desktop app or web launcher.")
             return
+        finally:
+            connection.close()
+        self._send_payload(status, content_type, payload)
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
