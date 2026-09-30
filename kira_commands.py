@@ -280,11 +280,21 @@ def process_command(backend, text, reply_language="auto", previous_language=None
             import kira_agents
             if pick == "cancel":
                 kira_agents.resolve_approval(waiting["id"], approve=False, source="ui")
+                drop_pending_plan(waiting["id"])  # a cancelled plan never resumes
                 return {"action": waiting["action"], "success": False, "approval": "rejected",
                         "response": message("approval_cancelled", choice.language) or message("approval_cancelled", "en"),
                         **metadata}
             result = kira_agents.resolve_approval(waiting["id"], approve=True, source="ui")
-            return _format_approved(waiting["action"], result, choice.language, metadata)
+            payload = _format_approved(waiting["action"], result, choice.language, metadata)
+            # A confirmed plan approval continues the REMAINING steps.
+            if pending_plan() and pending_plan().get("approval_id") == waiting["id"]:
+                rest = resume_pending_plan()
+                if rest is not None:
+                    payload["response"] = (payload.get("response", "") + "\n" +
+                                           str(rest.get("response", ""))).strip()
+                    payload["plan"] = rest.get("plan", [])
+                    payload["completed"] = rest.get("completed", [])
+            return payload
 
     pending = pending_open()
     if pending and not chat_only and backend is not None:
@@ -323,6 +333,9 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         cleaned = backend.normalize_command(text)
         if not cleaned:
             return {"action": "none", "response": "", **metadata}
+        special = None if chat_only else parse_special_command(cleaned)
+        if special:
+            return _direct_tool_route(special["action"], special, metadata, choice.language)
         parsed = None if chat_only else (parse_tool_command(cleaned) or backend.parse_simple_command(cleaned))
         if parsed and parsed.get("action", "none") != "none":
             action = parsed["action"]
@@ -391,6 +404,25 @@ def process_command(backend, text, reply_language="auto", previous_language=None
                         "language_warning": "action_completed_translation_unavailable" if success else "action_failed_translation_unavailable", **metadata}
             return {"action": action, "success": bool(success), "response": reply, **metadata}
         if not chat_only:
+            # Programming requests first, BEFORE the planner: the tiny model
+            # picks the right tool but invents arguments (live bug 2026-09-29:
+            # "create a python project ui-demo" planned scaffold_project with
+            # name="python"). The deterministic parser owns the phrasings it
+            # knows; the planner only handles the rest.
+            scaffold_args = parse_scaffold_request(cleaned)
+            if scaffold_args:
+                return _direct_tool_route("scaffold_project", scaffold_args,
+                                          metadata, choice.language)
+            # Multi-step requests first ("puis", "then", "ensuite"...):
+            # an ordered 2-4 step plan runs sequentially; any consequential
+            # step parks the WHOLE plan behind one approval card.
+            try:
+                import kira_planner
+                steps = kira_planner.plan_steps(cleaned)
+            except Exception:
+                steps = None
+            if steps:
+                return _run_planned_steps(steps, metadata)
             # Optional planner (KIRA_PLANNER=1): the model picks ONE registered
             # tool or says none. Approval gates and validation stay intact;
             # any planner failure falls through to normal chat.
@@ -408,6 +440,15 @@ def process_command(backend, text, reply_language="auto", previous_language=None
                 if result.ok:
                     return result.to_payload(**metadata)
                 # A failed plan is not an error to the user: fall back to chat.
+            else:
+                # Programming requests need multi-file arguments (name,
+                # template, code) that the tiny planner cannot synthesize
+                # alone: derive the arguments deterministically instead of
+                # falling through to chat.
+                scaffold_args = parse_scaffold_request(cleaned)
+                if scaffold_args:
+                    return _direct_tool_route("scaffold_project", scaffold_args,
+                                              metadata, choice.language)
         answer = call_with_options(backend.ask_chat, cleaned, language=choice.language)
         return {"action": "chat", "response": answer, **metadata}
     except languages.ReplyLanguageError:
@@ -437,6 +478,82 @@ def clear_pending_approval():
 def _set_pending_approval(approval_id, action):
     global _PENDING_APPROVAL
     _PENDING_APPROVAL = {"id": approval_id, "action": action}
+
+
+def _run_planned_steps(steps, metadata):
+    """Execute a 2-4 step plan sequentially; one approval parks the rest.
+
+    Read-only steps run immediately. At the FIRST consequential step, a single
+    approval is parked for the remaining plan (_PENDING_PLAN); "confirm"
+    resumes it, "cancel" drops it. Steps run through the registry exactly
+    like single calls — activity, validation, structured failures.
+    """
+    import kira_agents
+    results = []
+    for index, step in enumerate(steps):
+        result = kira_agents.run(step["tool"], step.get("args", {}), source="planner",
+                                 approved=bool(step.get("__approved")))
+        if result.ok:
+            results.append({"tool": step["tool"], "ok": True,
+                            "response": (result.response or "")[:200]})
+            continue
+        if result.error_code == "approval_required":
+            approval_id = result.extra["approval_id"]
+            _set_pending_approval(approval_id, step["tool"])
+            global _PENDING_PLAN
+            _PENDING_PLAN = {"approval_id": approval_id,
+                             "steps": [{"__approved": True, **s} for s in steps[index:]],
+                             "done": results}
+            names = " → ".join(s["tool"] for s in steps[index:])
+            text = (f"⚠️ The plan needs your confirmation for: {names}. "
+                    f'Reply "confirm" or "cancel".'
+                    if (metadata.get("language") or "en") == "en" else
+                    f"⚠️ Le plan demande votre confirmation pour : {names}. "
+                    f"Répondez « confirmer » ou « annuler ».")
+            return {"action": "plan", "success": False, "needs_approval": True,
+                    "approval_id": approval_id, "plan": [s["tool"] for s in steps],
+                    "completed": results, "response": text, **metadata}
+        results.append({"tool": step["tool"], "ok": False,
+                        "error": (result.error or "")[:200]})
+        break  # one failed step stops the plan (later steps may depend on it)
+    ok_count = sum(1 for row in results if row["ok"])
+    lines = "\n".join(f"{'✓' if row['ok'] else '✗'} {row['tool']}: "
+                      f"{(row.get('response') or row.get('error') or '')[:120]}"
+                      for row in results)
+    return {"action": "plan", "success": ok_count == len(results) and bool(results),
+            "plan": [s["tool"] for s in steps], "completed": results,
+            "response": f"Plan ({ok_count}/{len(results)}) :\n{lines}", **metadata}
+
+
+_PENDING_PLAN = None
+
+
+def pending_plan():
+    return _PENDING_PLAN
+
+
+def clear_pending_plan():
+    global _PENDING_PLAN
+    _PENDING_PLAN = None
+
+
+def drop_pending_plan(approval_id):
+    """Forget a parked plan whose approval was cancelled/expired."""
+    plan = pending_plan()
+    if plan and plan.get("approval_id") == str(approval_id or ""):
+        clear_pending_plan()
+        return True
+    return False
+
+
+def resume_pending_plan():
+    """Run the remaining steps after the approval was confirmed."""
+    global _PENDING_PLAN
+    plan = _PENDING_PLAN
+    _PENDING_PLAN = None
+    if not plan:
+        return None
+    return _run_planned_steps(plan["steps"], {})
 
 
 def match_approval_choice(text):
@@ -518,6 +635,37 @@ _SEARCH_SHARED_PATTERNS = (
                r"(?:pour|sur|à propos de|concernant)\s+(.+)$", re.IGNORECASE),
 )
 
+# Programming agent: "create a python project X" / "crée un projet web X".
+# "new project X" alone stays planner-only to avoid false routes on mundane
+# requests like "new project ideas".
+_TPL = r"(?P<template>python|web|node|empty|vide)"
+_PROJ = r"(?:programming\s+)?(?:projects?|projets?)"
+_SCAFFOLD_PATTERNS = (
+    # create a project X using python template / avec un template web
+    re.compile(r"^(?:create|make|build|start|scaffold|cr[ée]e(?:r|z)?)\s+"
+               r"(?:me\s+|moi\s+)?(?:a\s+|an\s+|the\s+|un\s+|une\s+|le\s+|la\s+)?"
+               + _PROJ + r"\s*[:\-]?\s+(?P<name>.+?)\s+"
+               r"(?:with|using|qui utilise|avec)\s+(?:a\s+|un\s+)?(?:template\s+)?"
+               + _TPL + r"\s+template$", re.IGNORECASE),
+    # create a python project X / build a node project X (template first, EN)
+    re.compile(r"^(?:create|make|build|start|scaffold)\s+"
+               r"(?:me\s+|a\s+|an\s+|the\s+)*"
+               + _TPL + r"\s+" + _PROJ + r"\s*[:\-]?\s+(?P<name>.+)$", re.IGNORECASE),
+    # crée un projet web X / génère un projet vide X (template after, FR)
+    re.compile(r"^(?:cr[ée]e(?:r|z)?|g[ée]n[ée]re(?:r)?|construis)\s+"
+               r"(?:moi\s+)?(?:un\s+|une\s+|le\s+|la\s+)?"
+               + _PROJ + r"\s+" + _TPL + r"\s+(?:nomm[ée]\s+|appel[ée]\s+)?(?P<name>.+)$", re.IGNORECASE),
+    # create a project X / scaffold project X / crée un projet X
+    re.compile(r"^(?:create|make|build|start|scaffold|cr[ée]e(?:r|z)?|g[ée]n[ée]re(?:r)?|construis)\s+"
+               r"(?:me\s+|moi\s+)?(?:a\s+|an\s+|the\s+|un\s+|une\s+|le\s+|la\s+)?"
+               + _PROJ + r"\s*[:\-]?\s+(?P<name>.+)$", re.IGNORECASE),
+)
+
+_TEMPLATE_WORDS = {"python": "python", "web": "web", "node": "node", "empty": "empty",
+                   "vide": "empty"}
+_SCAFFOLD_NAME_BLOCKLIST = {"ideas", "idea", "name", "names", "template", "templates",
+                            "plan", "plans", "management"}
+
 
 def parse_tool_command(text):
     """Deterministic EN/FR grammar for the direct tool routes, or None."""
@@ -568,12 +716,37 @@ def parse_tool_command(text):
     return None
 
 
+def parse_scaffold_request(text):
+    """{'name', 'template'} for "create a python project X", else None.
+
+    Kept out of parse_tool_command: "scaffold_project" runs with approval, so
+    this only feeds the planner-fallback branch, never the fast path.
+    """
+    value = str(text or "").strip().rstrip(".!?؟ ").strip()
+    for pattern in _SCAFFOLD_PATTERNS:
+        match = pattern.match(value)
+        if not match:
+            continue
+        name = str(match.group("name") or "").strip().strip("\"'")
+        # Drop a trailing language tag: "create a project X in python".
+        name = re.sub(r"\s+(?:in|en)\s+(?:python|web|node)$", "", name,
+                      flags=re.IGNORECASE).strip()
+        template = _TEMPLATE_WORDS.get(str(match.groupdict().get("template") or "").lower(), "")
+        if not name or name.lower() in _SCAFFOLD_NAME_BLOCKLIST:
+            continue
+        if not re.match(r"^[^/:\\?*<>|\"]{1,64}$", name) or name in {".", ".."}:
+            continue
+        return {"name": name, "template": template}
+    return None
+
+
 # Actions answered directly from tools: data out, no backend speech, no model.
 DIRECT_TOOL_ACTIONS = frozenset({
     "search_shared_knowledge", "share_project_knowledge",
     "add_reminder", "add_todo", "list_tasks", "clear_completed_tasks",
     "get_weather", "get_holidays", "convert_currency",
-    "wiki_summary", "translate_text",
+    "wiki_summary", "translate_text", "scaffold_project",
+    "morning_briefing", "run_diagnostic", "code_build",
 })
 
 
@@ -659,6 +832,57 @@ def _direct_tool_route(action, parsed, metadata, language):
     def _num(value):  # Missing readings show as "?" instead of "None".
         return "?" if value is None else value
 
+    if action == "morning_briefing":
+        started = _time.perf_counter()
+        import kira_scheduler
+        text, data = kira_scheduler.briefing(language)
+        elapsed = int((_time.perf_counter() - started) * 1000)
+        return {"action": action, "success": True, "response": text,
+                "data": {"tasks": data.get("tasks", [])}, "elapsed_ms": elapsed,
+                **metadata}
+
+    if action == "run_diagnostic":
+        started = _time.perf_counter()
+        import kira_health
+        report = kira_health.run_health_check()
+        elapsed = int((_time.perf_counter() - started) * 1000)
+        return {"action": action, "success": report["ok"],
+                "response": report["response"], "checks": report["checks"],
+                "elapsed_ms": elapsed, **metadata}
+
+    if action == "code_build":
+        started = _time.perf_counter()
+        import kira_build
+        result = kira_build.code_build(str(parsed.get("request", "")).strip(),
+                                       str(parsed.get("project", "")).strip())
+        elapsed = int((_time.perf_counter() - started) * 1000)
+        return {"action": action, "success": bool(result.get("ok")),
+                "response": result.get("response", "") or result.get("error", ""),
+                "report": result, "elapsed_ms": elapsed, **metadata}
+
+    if action == "scaffold_project":
+        name = str(parsed.get("name", "")).strip()
+        # Guard against planner-invented arguments (name="python" or empty):
+        # never park an approval for a junk project name.
+        if not name or name.lower() in _TEMPLATE_WORDS:
+            text = ("Which project name should I use? For example: “create a python project todo-app”."
+                    if language == "en" else
+                    "Quel nom de projet dois-je utiliser ? Par exemple : « crée un projet python todo-app ».")
+            return {"action": action, "success": False, "error_code": "invalid_name",
+                    "response": text, **metadata}
+        result = kira_agents.run(action, {"name": name,
+                                          "template": str(parsed.get("template", "")).strip()})
+        if result.error_code == "approval_required":
+            approval_id = result.extra["approval_id"]
+            _set_pending_approval(approval_id, action)
+            text = ("⚠️ " + (f"Creating project '{name}' in the code workspace needs your confirmation. "
+                             f"Reply \"confirm\" or \"cancel\"." if language == "en" else
+                             f"La création du projet « {name} » dans l'espace de code demande votre confirmation. "
+                             f"Répondez « confirmer » ou « annuler »."))
+            return {"action": action, "success": False, "needs_approval": True,
+                    "approval_id": approval_id, "response": text, **metadata}
+        return result.to_payload(**metadata)
+
     if action == "get_weather":
         import kira_info
         city = str(parsed.get("city", "")).strip() or kira_info.default_city()
@@ -738,6 +962,49 @@ _LEARN = re.compile(
     r"^(?:learn about|research|study|teach yourself(?: about)?)(?:\s+(.*))?$",
     re.IGNORECASE,
 )
+
+_BRIEFING_PATTERNS = (
+    re.compile(r"^(?:briefing|point du matin|r[ée]sum[ée] du matin|morning briefing|good morning)\s*[!.?]*$", re.IGNORECASE),
+)
+_DIAGNOSTIC_PATTERNS = (
+    re.compile(r"^(?:diagnostic|auto[- ]?diagnostic|self[- ]?test|health check|test de sant[ée])\s*[!.?]*$", re.IGNORECASE),
+)
+_BUILD_PATTERNS = (
+    re.compile(r"^(?:code[- ])?build\s+(?:a\s+|an\s+|the\s+|un\s+|une\s+|le\s+|la\s+)?(.+?)(?:\s+(?:in|dans|dans le)\s+(?:project\s+|projet\s+)?(\S+))?\s*$", re.IGNORECASE),
+    re.compile(r"^(?:g[ée]n[ée]re|d[ée]veloppe|impl[ée]mente|cr[ée]e le code)\s+(?:moi\s+)?(?:un\s+|une\s+)?(.+?)(?:\s+(?:dans|pour)\s+(?:le\s+)?(?:projet\s+)?(\S+))?\s*$", re.IGNORECASE),
+)
+
+
+def parse_special_command(text):
+    """Deterministic route for briefing / diagnostic / code-build, or None.
+
+    These are sentence-shaped commands the tiny planner mangles, so they get
+    their own grammar like weather and tasks.
+    """
+    value = str(text or "").strip().rstrip(".!?؟ ").strip()
+    for pattern in _BRIEFING_PATTERNS:
+        if pattern.match(value):
+            return {"action": "morning_briefing"}
+    for pattern in _DIAGNOSTIC_PATTERNS:
+        if pattern.match(value):
+            return {"action": "run_diagnostic"}
+    for pattern in _BUILD_PATTERNS:
+        match = pattern.match(value)
+        if match and (match.group(1) or "").strip():
+            request = match.group(1).strip()
+            project = (match.group(2) or "").strip()
+            # 'build a todo app in python' is NOT 'project python' — keep the
+            # project only when it names an existing workspace folder.
+            if project:
+                try:
+                    import kira_code
+                    folder = kira_code.workspace_root() / project
+                    if not folder.is_dir():
+                        project = ""
+                except Exception:
+                    project = ""
+            return {"action": "code_build", "request": request, "project": project}
+    return None
 
 
 def try_web_learning(text):

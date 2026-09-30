@@ -10,9 +10,29 @@ import glob
 from pathlib import Path
 
 PLUGIN_NAME = "File Manager"
-PLUGIN_VERSION = "1.0"
+PLUGIN_VERSION = "1.1"
 PLUGIN_DESCRIPTION = "Create, read, search, and manage files and folders."
 PLUGIN_AUTHOR = "KIRA"
+
+# Managed-registry metadata: where the tools live, their schemas, and which
+# ones change the outside world (delete_file requires the user's approval).
+PLUGIN_AGENT = "windows"
+PLUGIN_DESCRIPTIONS = {
+    "create_file": "Create a new text file (optionally with content) in the KIRA files directory.",
+    "read_file": "Read a file from the KIRA files directory.",
+    "search_files": "Search files by glob pattern in the KIRA files directory.",
+    "list_files": "List files in the KIRA files directory.",
+    "delete_file": "Delete a file or folder from the KIRA files directory.",
+}
+PLUGIN_ARGS = {
+    "create_file": {"target": {"type": str, "required": True},
+                    "text": {"type": str, "required": False}},
+    "read_file": {"target": {"type": str, "required": True}},
+    "search_files": {"query": {"type": str, "required": False}},
+    "list_files": {},
+    "delete_file": {"target": {"type": str, "required": True}},
+}
+PLUGIN_CONSEQUENTIAL = ("delete_file",)
 
 # Home directory for KIRA-managed files
 KIRA_FILES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "kira_files")

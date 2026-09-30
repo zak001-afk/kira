@@ -5,7 +5,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KIRA // AI Command Center</title>
-    <link rel="stylesheet" href="./style.css?v=stop-1" />
+    <link rel="stylesheet" href="./style.css?v=final-1" />
+    <link rel="stylesheet" href="./theme.css" />
     <script type="importmap">
       {
         "imports": {
@@ -180,7 +181,7 @@
             <div class="corner tl"></div><div class="corner tr"></div>
             <div class="corner bl"></div><div class="corner br"></div>
             <div class="panel-head">
-              <span class="panel-title">Activité des agents</span>
+              <span class="panel-title">Télémétrie</span>
             </div>
             <div class="panel-line"></div>
             <div class="act-rows">
@@ -209,6 +210,20 @@
                 <span class="act-bar"><span id="bar-net"></span></span>
                 <strong id="val-net-act">--</strong>
               </div>
+            </div>
+          </section>
+
+          <!-- ACTIVITÉ DES AGENTS (flux réel du registre) -->
+          <section class="hud-panel feed-panel">
+            <div class="corner tl"></div><div class="corner tr"></div>
+            <div class="corner bl"></div><div class="corner br"></div>
+            <div class="panel-head">
+              <span class="panel-title">Activité des agents</span>
+              <span class="panel-note" id="feed-count"></span>
+            </div>
+            <div class="panel-line"></div>
+            <div class="feed-list" id="agent-feed">
+              <div class="task-empty">Aucune activité — demandez une action à KIRA</div>
             </div>
           </section>
 
@@ -286,6 +301,42 @@
         </div>
 
         <!-- PARAMÈTRES -->
+        <!-- SANTÉ (diagnostic par agent) -->
+        <div class="view-body hidden" id="view-sante">
+          <p class="view-intro">Une sonde inoffensive par agent : vert = système prêt. Lance « diagnostic » dans la conversation pour le même rapport en texte.</p>
+          <div id="health-rows"><div class="task-empty">Lancement du diagnostic…</div></div>
+          <div class="view-actions">
+            <button class="mini-btn" onclick="loadHealth(true)">↻ Relancer</button>
+          </div>
+        </div>
+
+        <!-- DOCUMENTS (mémoire locale de fichiers) -->
+        <div class="view-body hidden" id="view-documents">
+          <p class="view-intro">Déposez vos notes (.md, .txt, .py…) dans <code>kira_docs/</code> — « cherche dans mes documents … » les interroge. Tout reste local.</p>
+          <div id="docs-rows"><div class="task-empty">Chargement…</div></div>
+          <div class="view-actions">
+            <button class="mini-btn" onclick="loadDocuments()">↻ Actualiser</button>
+          </div>
+        </div>
+
+        <!-- RÉGLAGES MOTEUR (.env éditable) -->
+        <div class="view-body hidden" id="view-reglages">
+          <p class="view-intro">Ces réglages sont enregistrés dans <code>.env</code>. Modèle : format <code>fournisseur:modèle</code> (ex. <code>groq:llama-3.1-8b-instant</code>) — vide = valeur par défaut.</p>
+          <div class="settings-grid" id="settings-grid">
+            <div class="setting-row"><label for="set-chat">Modèle conversation</label><input id="set-chat" type="text" placeholder="gemini ou gemini:gemini-flash-latest"></div>
+            <div class="setting-row"><label for="set-arabic">Modèle arabe</label><input id="set-arabic" type="text" placeholder="gemini"></div>
+            <div class="setting-row"><label for="set-planner-model">Modèle planificateur</label><input id="set-planner-model" type="text" placeholder="groq:llama-3.1-8b-instant"></div>
+            <div class="setting-row"><label for="set-code">Modèle code (agent de programmation)</label><input id="set-code" type="text" placeholder="gemini:gemini-flash-latest"></div>
+            <div class="setting-row"><label for="set-city">Ville par défaut (météo)</label><input id="set-city" type="text" placeholder="Nabeul"></div>
+            <div class="setting-row"><label for="set-approval">Approbation des actions sensibles</label><select id="set-approval"><option value="1">Activée (recommandé)</option><option value="0">Désactivée</option></select></div>
+            <div class="setting-row"><label for="set-planner">Planificateur</label><select id="set-planner"><option value="1">Activé</option><option value="0">Désactivé</option></select></div>
+          </div>
+          <div class="view-actions">
+            <button class="mini-btn" onclick="saveSettings()">💾 Enregistrer</button>
+            <span class="settings-saved" id="settings-saved"></span>
+          </div>
+        </div>
+
         <div class="view-body hidden" id="view-parametres">
           <div class="param-grid">
             <div class="param-block">

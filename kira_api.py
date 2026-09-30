@@ -9,6 +9,7 @@ http.server with minimal overhead.
 import json
 import logging
 import os
+import socket
 import sys
 import threading
 import base64
@@ -82,6 +83,15 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as error:
             logger.debug("Client disconnected before the response was sent: %s", error)
 
+    def _guard_remote(self):
+        """401 for unauthorized LAN callers when KIRA_REMOTE_TOKEN is set."""
+        from kira_api import _remote_guard
+        denial = _remote_guard(self)
+        if denial is not None:
+            self._send_json(denial, 401)
+            return True
+        return False
+
     def _send_cors_headers(self):
         """Allow CORS for local development."""
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -120,6 +130,16 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._handle_ai_providers()
         elif path == "/api/agents":
             self._handle_agents()
+        elif path == "/api/health":
+            self._handle_health()
+        elif path == "/api/settings":
+            self._handle_settings_get()
+        elif path == "/api/documents":
+            self._handle_documents()
+        elif path == "/api/backups":
+            self._handle_backups()
+        elif path == "/api/events":
+            self._handle_events(params)
         elif path == "/health":
             self._send_json({"status": "ok"})
         else:
@@ -139,6 +159,8 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             data = {}
 
+        if self._guard_remote():
+            return
         if path == "/api/command":
             self._handle_command(data)
         elif path == "/api/chat":
@@ -161,6 +183,18 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._handle_web_learn(data)
         elif path == "/api/web/search-learn":
             self._handle_web_search_learn(data)
+        elif path == "/api/approval":
+            self._handle_approval(data)
+        elif path == "/api/plugins/load":
+            self._handle_plugin_load(data)
+        elif path == "/api/plugins/unload":
+            self._handle_plugin_unload(data)
+        elif path == "/api/plugins/reload":
+            self._handle_plugin_reload(data)
+        elif path == "/api/settings":
+            self._handle_settings_post(data)
+        elif path == "/api/backup":
+            self._handle_backup(data)
         else:
             self._send_json({"error": "Not found"}, 404)
 
@@ -302,13 +336,23 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
     def _handle_plugins(self):
-        """Return loaded plugins."""
+        """Return loaded plugins (with their contributed tools) and the
+        plugins available on disk that are not loaded. Passive: loading
+        happens at startup or through the load/reload routes, never as a
+        side effect of a read (otherwise an unload could not stick)."""
         try:
             import kira_plugins
             plugins = kira_plugins.list_plugins()
-            self._send_json({"plugins": plugins})
         except Exception:
-            self._send_json({"plugins": []})
+            plugins = []
+        try:
+            import kira_plugins
+            loaded_ids = {p["id"] for p in plugins}
+            available = [n for n in kira_plugins.discover_plugins()
+                         if n not in loaded_ids]
+        except Exception:
+            available = []
+        self._send_json({"plugins": plugins, "available": available})
 
     # ─────────────────────────────────────────
     # POST Handlers
@@ -346,6 +390,169 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
 
     def _handle_chat(self, data):
         self._handle_command(data, chat_only=True)
+
+    # ── New capabilities: health, events, settings, backups, docs ──────────
+
+    def _handle_health(self):
+        """One harmless probe per agent: green/red visibility."""
+        try:
+            import kira_health
+            self._send_json(kira_health.run_health_check())
+        except Exception as e:
+            self._send_json({"ok": False, "error": str(e), "checks": []}, 500)
+
+    def _handle_events(self, params):
+        """Long-poll proactive events (reminders), or ?recent=1 snapshot."""
+        import kira_scheduler
+        try:
+            if str((params.get("recent") or [""])[0]).strip() in {"1", "true"}:
+                self._send_json({"events": kira_scheduler.pending_events(0)})
+                return
+            after = int((params.get("after") or ["0"])[0] or 0)
+            events = kira_scheduler.wait_for_events(after, timeout=25.0)
+            self._send_json({"events": events})
+        except Exception as e:
+            self._send_json({"events": [], "error": str(e)}, 500)
+
+    _SETTINGS_KEYS = {
+        "KIRA_MODEL_CHAT": str, "KIRA_MODEL_ARABIC": str,
+        "KIRA_MODEL_PLANNER": str, "KIRA_MODEL_CODE": str,
+        "KIRA_CLOUD_AI": str, "KIRA_PLANNER": str,
+        "KIRA_REQUIRE_APPROVAL": str, "KIRA_CITY": str,
+        "KIRA_INSTANCE_NAME": str, "KIRA_PERSONA": str,
+    }
+
+    def _handle_settings_get(self):
+        """Current editable settings (values only for known keys)."""
+        import kira_ai
+        kira_ai.ensure_env_loaded()
+        values = {key: os.environ.get(key, "") for key in self._SETTINGS_KEYS}
+        self._send_json({"settings": values})
+
+    def _handle_settings_post(self, data):
+        """Persist KIRA_* settings into .env (creates the file if missing).
+
+        Only whitelisted keys are touched; other lines keep their order and
+        comments. A restart is recommended for deep settings — the response
+        says so.
+        """
+        import kira_ai
+        updates = {key: str(data.get(key, "")).strip()
+                   for key in self._SETTINGS_KEYS if key in data}
+        if not updates:
+            self._send_json({"error": "No recognized setting in the request."}, 400)
+            return
+        env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        lines = []
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, encoding="utf-8-sig") as handle:
+                    lines = handle.read().splitlines()
+            except OSError:
+                lines = []
+        for key, value in updates.items():
+            pattern = None
+            replaced = False
+            for index, line in enumerate(lines):
+                if line.strip().startswith(f"{key}="):
+                    lines[index] = f"{key}={value}"
+                    replaced = True
+                    break
+            if not replaced:
+                lines.append(f"{key}={value}")
+            os.environ[key] = value  # live effect for the fast settings
+        try:
+            with open(env_path, "w", encoding="utf-8") as handle:
+                handle.write("\n".join(lines) + "\n")
+        except OSError as e:
+            self._send_json({"error": str(e)}, 500)
+            return
+        self._send_json({"ok": True, "saved": sorted(updates),
+                         "response": "Réglages enregistrés dans .env — certains "
+                                     "prennent effet au prochain démarrage."})
+
+    def _handle_documents(self):
+        try:
+            import kira_docs
+            self._send_json(kira_docs.list_documents())
+        except Exception as e:
+            self._send_json({"ok": False, "error": str(e), "documents": []}, 500)
+
+    def _handle_backups(self):
+        try:
+            import kira_ops
+            self._send_json(kira_ops.list_backups())
+        except Exception as e:
+            self._send_json({"ok": False, "error": str(e), "backups": []}, 500)
+
+    def _handle_backup(self, data):
+        try:
+            import kira_ops
+            self._send_json(kira_ops.backup_memory(keep=int(data.get("keep", 5) or 5)))
+        except Exception as e:
+            self._send_json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_approval(self, data):
+        """Resolve a pending consequential-tool approval from the UI."""
+        approval_id = str(data.get("approval_id", "")).strip()
+        approve = bool(data.get("approve"))
+        if not approval_id:
+            self._send_json({"error": "Approval id required",
+                             "error_code": "invalid_approval"}, 400)
+            return
+        try:
+            import kira_agents
+            import kira_commands
+            pending = kira_commands.pending_approval()
+            if pending and pending.get("id") == approval_id:
+                kira_commands.clear_pending_approval()
+            result = kira_agents.resolve_approval(approval_id, approve=approve,
+                                                  source="ui")
+            self._send_json(result.to_payload())
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_plugin_load(self, data):
+        """Load one plugin by id (must exist in plugins/)."""
+        name = str(data.get("id", data.get("name", ""))).strip()
+        if not name or "/" in name or "\\" in name or ".." in name:
+            self._send_json({"error": "Plugin id required", "error_code": "invalid_plugin_id"}, 400)
+            return
+        try:
+            import kira_plugins
+            ok = kira_plugins.load_plugin(name)
+            self._send_json({"success": ok, "id": name,
+                             "error" if not ok else "loaded": name},
+                            404 if not ok else 200)
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_plugin_unload(self, data):
+        """Unload one plugin: its tools, parsers and middleware are removed."""
+        name = str(data.get("id", data.get("name", ""))).strip()
+        if not name:
+            self._send_json({"error": "Plugin id required", "error_code": "invalid_plugin_id"}, 400)
+            return
+        try:
+            import kira_plugins
+            ok = kira_plugins.unload_plugin(name)
+            self._send_json({"success": ok, "id": name}, 404 if not ok else 200)
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_plugin_reload(self, data):
+        """Reload one plugin (id in body) or all plugins (empty body)."""
+        name = str(data.get("id", data.get("name", ""))).strip()
+        try:
+            import kira_plugins
+            if name:
+                ok = kira_plugins.reload_plugin(name)
+                self._send_json({"success": ok, "id": name}, 404 if not ok else 200)
+            else:
+                kira_plugins.reload_all_plugins()
+                self._send_json({"success": True, "plugins": kira_plugins.list_plugins()})
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
 
     def _handle_add_task(self, data):
         """Add a new task."""
@@ -530,8 +737,57 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
 
+def _remote_guard(handler):
+    """Bearer-token check for non-localhost callers (phone remote).
+
+    When the API listens on 0.0.0.0 (KIRA_API_HOST) every LAN device can
+    reach it; a KIRA_REMOTE_TOKEN in .env makes remote callers authenticate
+    with 'Authorization: Bearer <token>' while localhost stays token-free.
+    """
+    client = getattr(handler, "client_address", ("",))[0] or ""
+    if client.startswith("127.") or client == "::1" or client == "localhost":
+        return None
+    expected = (os.environ.get("KIRA_REMOTE_TOKEN") or "").strip()
+    if not expected:
+        return None  # no token configured: LAN stays open (local network)
+    provided = str(getattr(handler, "headers", {}).get("Authorization", "")).strip()
+    if provided == f"Bearer {expected}":
+        return None
+    return {"error": "Unauthorized remote caller.", "error_code": "unauthorized"}
+
+
 def start_server(host=DEFAULT_HOST, port=DEFAULT_PORT, daemon=True):
-    """Start the API server in a background thread."""
+    """Start the API server in a background thread.
+
+    Threaded on purpose: the single-threaded HTTPServer froze every other
+    request whenever one handler blocked (stuck tool call, cloud retry), and
+    on Windows that let a SECOND KIRA launch bind the same port — split-brain
+    state where approvals ran in one process while /api/agents answered from
+    another (empty activity feed, expiring confirmations). If the port is
+    already taken by a live KIRA, this startup refuses and says so.
+    """
+    # Plugins load here, independently of the voice/model init chain: the
+    # UI must see its extensions even when the model is offline at boot.
+    try:
+        import kira_plugins
+        kira_plugins.load_all_plugins()
+    except Exception:
+        pass
+    # Proactive KIRA: the reminder poller lives with the server process.
+    try:
+        import kira_scheduler
+        kira_scheduler.start_polling()
+    except Exception:
+        pass
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.settimeout(1.0)
+        if probe.connect_ex(("127.0.0.1" if host in ("0.0.0.0", "::") else host, port)) == 0:
+            raise OSError(
+                f"port {port} already served by another KIRA instance "
+                f"({host}:{port}) — close it or set a different API_PORT")
+    finally:
+        probe.close()
     # Threading : une commande lente ne bloque plus les autres requêtes.
     server = ThreadingHTTPServer((host, port), KiraAPIHandler)
     server.daemon_threads = True
