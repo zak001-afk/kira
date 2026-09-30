@@ -190,6 +190,15 @@ def briefing(language="fr"):
                             else f"Upcoming holidays: {names}.")
     except Exception:
         pass
+    try:
+        import kira_info
+        quote = kira_info.daily_quote()
+        data["quote"] = quote
+        sections.append(f"Citation du jour : « {quote.get('quote', '')} » — {quote.get('author', '')}"
+                        if language == "fr"
+                        else f"Quote of the day: “{quote.get('quote', '')}” — {quote.get('author', '')}")
+    except Exception:
+        pass  # never block the briefing on a decorative quote
     header = "Bonjour ! Voici votre point du matin." if language == "fr" \
         else "Good morning! Here is your briefing."
     return "\n\n".join([header] + sections), data

@@ -316,6 +316,26 @@ def _translate_text(text, target_language, source_language=""):
     return kira_info.translate_text(text, target_language, source_language)
 
 
+def _crypto_price(coin, currency="usd"):
+    import kira_info
+    return kira_info.crypto_price(coin, currency)
+
+
+def _prayer_times(city=""):
+    import kira_info
+    return kira_info.prayer_times(city)
+
+
+def _song_search(query, limit=3):
+    import kira_info
+    return kira_info.song_search(query, limit)
+
+
+def _daily_quote():
+    import kira_info
+    return kira_info.daily_quote()
+
+
 def _share_project_knowledge(topic, content):
     import kira_web
     return kira_web.share_project_knowledge(topic, content)
@@ -500,6 +520,23 @@ def ensure_builtins():
     register_tool("fun_fact", "research",
                   "One random true fun fact (English) from a keyless service.",
                   {}, _fun_fact)
+    register_tool("crypto_price", "research",
+                  "Live crypto price in usd/eur/tnd (CoinGecko, keyless).",
+                  {"coin": {"type": str, "required": True},
+                   "currency": {"type": str, "required": False}},
+                  _crypto_price)
+    register_tool("prayer_times", "research",
+                  "Today's prayer times + Hijri date for a city (Aladhan, keyless).",
+                  {"city": {"type": str, "required": False}},
+                  _prayer_times)
+    register_tool("song_search", "research",
+                  "Find songs on iTunes (keyless): title, artist, album, 30s preview.",
+                  {"query": {"type": str, "required": True},
+                   "limit": {"type": int, "required": False}},
+                  _song_search)
+    register_tool("daily_quote", "research",
+                  "One inspirational quote (ZenQuotes, keyless).",
+                  {}, _daily_quote)
     register_tool("wiki_summary", "research",
                   "Lead summary of the best-matching Wikipedia article (keyless, EN/FR/AR editions).",
                   {"topic": {"type": str, "required": True},

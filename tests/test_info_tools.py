@@ -262,3 +262,98 @@ class GrammarTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+CRYPTO = {"bitcoin": {"eur": 73953.2, "eur_24h_change": 0.3}}
+COINGECKO_META = {"results": [{"name": "Nabeul", "latitude": 36.45, "longitude": 10.73}]}
+ALADHAN = {"data": {"timings": {"Fajr": "04:46", "Sunrise": "06:11", "Dhuhr": "12:07",
+                                "Asr": "15:29", "Maghrib": "18:02", "Isha": "19:23"},
+                    "date": {"hijri": {"date": "19-04-1448", "year": "1448",
+                                       "month": {"en": "Rabi al-thani"}}}}}
+ITUNES = {"resultCount": 1, "results": [{"trackName": "One More Time", "artistName": "Daft Punk",
+                                         "collectionName": "Discovery", "previewUrl": "http://x/1.m4a"}]}
+ZEN = [{"q": "Stay hungry.", "a": "Steve Jobs"}]
+
+
+class CryptoTests(unittest.TestCase):
+    def test_price_with_currency_word(self):
+        with patch.object(kira_info, "_get_json", return_value=CRYPTO) as get:
+            data = kira_info.crypto_price("bitcoin", "eur")
+        self.assertEqual(data["price"], 73953.2)
+        self.assertEqual(data["change_24h"], 0.3)
+
+    def test_unknown_coin_raises(self):
+        with self.assertRaises(ValueError):
+            kira_info.crypto_price("mooncoin")
+
+    def test_route_formats_sentence(self):
+        with patch.object(kira_info, "_get_json", return_value=CRYPTO):
+            result = kira_commands.process_command(backend(), "what is the bitcoin price in eur",
+                                                   reply_language="en")
+        self.assertEqual(result["action"], "crypto_price")
+        self.assertTrue(result["success"])
+        self.assertIn("Bitcoin", result["response"])
+
+
+class PrayerTests(unittest.TestCase):
+    def test_geocodes_then_timings(self):
+        with patch.object(kira_info, "_get_json", side_effect=[COINGECKO_META, ALADHAN]) as get:
+            data = kira_info.prayer_times("Nabeul")
+        self.assertEqual(data["times"]["Fajr"], "04:46")
+        self.assertEqual(data["hijri_year"], "1448")
+
+    def test_route_lists_times(self):
+        with patch.object(kira_info, "_get_json", side_effect=[COINGECKO_META, ALADHAN]):
+            result = kira_commands.process_command(backend(), "heures de prière à Nabeul",
+                                                   reply_language="fr")
+        self.assertEqual(result["action"], "prayer_times")
+        self.assertTrue(result["success"])
+        self.assertIn("Fajr 04:46", result["response"])
+        self.assertIn("1448", result["response"])
+
+
+class SongTests(unittest.TestCase):
+    def test_search_parses_tracks(self):
+        with patch.object(kira_info, "_get_json", return_value=ITUNES):
+            data = kira_info.song_search("daft punk")
+        self.assertEqual(data["songs"][0]["title"], "One More Time")
+        self.assertEqual(data["songs"][0]["artist"], "Daft Punk")
+
+    def test_route_lists_tracks(self):
+        with patch.object(kira_info, "_get_json", return_value=ITUNES):
+            result = kira_commands.process_command(backend(), "cherche la chanson one more time",
+                                                   reply_language="fr")
+        self.assertEqual(result["action"], "song_search")
+        self.assertTrue(result["success"])
+        self.assertIn("One More Time — Daft Punk", result["response"])
+
+
+class QuoteTests(unittest.TestCase):
+    def test_quote_parsed(self):
+        with patch.object(kira_info, "_get_json", return_value=ZEN):
+            data = kira_info.daily_quote()
+        self.assertEqual(data["author"], "Steve Jobs")
+
+    def test_route_quotes_with_author(self):
+        with patch.object(kira_info, "_get_json", return_value=ZEN):
+            result = kira_commands.process_command(backend(), "donne-moi une citation",
+                                                   reply_language="fr")
+        self.assertEqual(result["action"], "daily_quote")
+        self.assertIn("Steve Jobs", result["response"])
+
+    def test_briefing_includes_quote(self):
+        import kira_scheduler
+        with patch.object(kira_info, "daily_quote", return_value={"quote": "Test.", "author": "X"}), \
+             patch.object(kira_info, "get_weather", side_effect=Exception("offline")), \
+             patch("kira_tasks.list_tasks", return_value=[]), \
+             patch.object(kira_info, "get_holidays", return_value={"upcoming": []}):
+            text, data = kira_scheduler.briefing("fr")
+        self.assertIn("Test.", text)
+        self.assertEqual(data["quote"]["author"], "X")
+
+
+class NewToolRegistrationTests(unittest.TestCase):
+    def test_four_new_tools_registered(self):
+        kira_agents.ensure_builtins()
+        for name in ("crypto_price", "prayer_times", "song_search", "daily_quote"):
+            self.assertIn(name, kira_agents._REGISTRY, f"{name} not registered")
