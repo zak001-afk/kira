@@ -562,6 +562,12 @@
   intact (glyphes, anneau, orbites, machinerie) sur le fond sombre de la
   scène (0x020101). Les assets temporaires (`circuit-bg.png`,
   `avatar-natural-clean.webp`) sont supprimés et retirés du bundle.
+- **Thème vert restauré après la fusion** (`ui/index.html`, `ui/style.css`) :
+  la couche `theme.css` « Neon Obsidian » (cyan/or) n'est plus chargée —
+  l'interface retrouve le thème vert KIRA d'origine ; les styles utiles aux
+  nouvelles vues (réglages, documents, toasts d'évènements, scrollbars) sont
+  repris dans `style.css` aux couleurs du thème. Les fonctionnalités
+  fusionnées (télémétrie, activité des agents, plugins) sont conservées.
 - **Bouton STOP à la place du haut-parleur** (`ui/index.html`, `ui/app.js`) :
   quand KIRA parle, réfléchit ou exécute une action et que l'utilisateur
   change d'avis, un clic sur ⏹ l'arrête net — la parole en cours est
