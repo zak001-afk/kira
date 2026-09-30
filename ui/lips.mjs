@@ -1,3 +1,9 @@
+// Fade d'attaque et de relâchement du gain de lecture : un flux TTS neural
+// n'est jamais muet à son premier échantillon, un pause() immédiat coupe une
+// forme d'onde encore sonore — deux sources certaines de clic audible.
+export const AUDIO_ATTACK_SECONDS = 0.015;
+export const AUDIO_RELEASE_SECONDS = 0.04;
+
 // KIRA - Animation labiale naturelle et humaine
 // Visèmes calibrés pour un avatar réaliste, pas une photo qui s'étire.
 // Le mouvement suit la mâchoire (ouverture) + lèvres (arrondi/étirement) séparément.

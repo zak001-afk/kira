@@ -91,6 +91,35 @@ test("mute cancels a pending voice catalog and no stale catalog can speak", asyn
   assert.equal(rig.utterances.length, 0);
 });
 
+test("playback fades in and schedules its end fade so no click is audible", async () => {
+  const rig = playerRig();
+  await rig.player.speak("Bonjour", { language: "fr" });
+  const gain = rig.player.session?.gain;
+  assert.ok(gain, "a running Web Audio graph must expose the anti-click gain");
+  assert.deepEqual(gain.schedule, ["set", "ramp"], "playback must fade in, never start at full amplitude");
+  rig.audios[0].duration = 2;
+  rig.audios[0].onplaying();
+  assert.deepEqual(gain.schedule, ["set", "ramp", "set", "ramp"], "the clip's final milliseconds must fade out on the audio clock");
+  rig.audios[0].onended();
+  assert.ok(rig.audios[0].loaded, "ending still releases the media immediately");
+  assert.equal(rig.player.session, null);
+  assert.deepEqual(rig.states.at(-1), "READY");
+  assert.equal(rig.timers.size, 0, "no deferred teardown timer may outlive the reply");
+});
+
+test("a replaced session tears down instantly and cannot replay stale audio", async () => {
+  const rig = playerRig();
+  await rig.player.speak("Une phrase", { language: "fr" });
+  const gain = rig.player.session.gain;
+  await rig.player.speak("Une autre phrase", { language: "fr" });
+  assert.ok(rig.audios[0].loaded, "an aborted session releases its media immediately");
+  assert.equal(gain.schedule.includes("ramp"), true, "the old gain had its fade-in envelope");
+  assert.equal(rig.player.session === null, false, "the new session keeps playing");
+  rig.audios[1].onended();
+  rig.fireTimers();
+  assert.equal(rig.player.session, null);
+});
+
 test("missing voices have a deadline and do not leave the avatar talking", async () => {
   const rig = playerRig({ voices: [], delayedVoices: true, fetchAudio: async () => ({ error: "offline" }) });
   await rig.player.speak("Bonjour", { language: "fr" });

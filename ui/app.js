@@ -3,8 +3,8 @@ import { SpeechPlayer, cleanForSpeech } from "./speech.mjs?v=speech-sync-3";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { HoloMouth } from "./holo-mouth.mjs?v=lipsync-fix-1";
-import { AVATAR_PORTRAIT, AVATAR_BRIGHTNESS_DEFAULT, createPortraitMaterial } from "./avatar.mjs?v=lipsync-fix-1";
+import { HoloMouth } from "./holo-mouth.mjs?v=anticlick-1";
+import { AVATAR_PORTRAIT, AVATAR_BRIGHTNESS_DEFAULT, createPortraitMaterial } from "./avatar.mjs?v=orig-1";
 import { lipDemoPose } from "./lips.mjs?v=command-center-45";
 
 /* =========================================================
@@ -636,40 +636,19 @@ function stopSpeaking() {
 
 window.addEventListener("pagehide", () => { speech.destroy(); holoMouth?.destroy?.(); });
 
-// Bouton muet
-const muteButton = document.getElementById("mute");
-if (muteButton) {
-  muteButton.addEventListener("click", () => {
-    speechEnabled = !speechEnabled;
-    speech.setEnabled(speechEnabled);
-    if (speechEnabled) speech.unlock();
-
-    if (speechEnabled) {
-      muteButton.innerHTML = `
-        <svg viewBox="0 0 24 24">
-          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-        </svg>
-      `;
-      muteButton.title = "Couper la voix";
-      muteButton.classList.remove("off");
-    } else {
-      muteButton.innerHTML = `
-        <svg viewBox="0 0 24 24">
-          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-          <line x1="23" y1="9" x2="17" y2="15"></line>
-          <line x1="17" y1="9" x2="23" y2="15"></line>
-        </svg>
-      `;
-      muteButton.title = "Activer la voix";
-      muteButton.classList.add("off");
+// Bouton STOP : arrête KIRA net — la voix en cours ET la commande/action
+// en attente (changement d'avis). La voix reste activée pour la prochaine fois.
+const stopButton = document.getElementById("stop");
+if (stopButton) {
+  stopButton.addEventListener("click", () => {
+    if (pendingCommand) {
+      pendingCommand.abort();
+      pendingCommand = null;
     }
-
-    if (!speechEnabled) {
-      stopSpeaking();
-    }
-
-    console.log(`[KIRA] Voix ${speechEnabled ? "activée" : "coupée"}`);
+    stopSpeaking();
+    stopButton.classList.add("stopping");
+    setTimeout(() => stopButton.classList.remove("stopping"), 350);
+    console.log("[KIRA] Stop demandé : parole et commande interrompues");
   });
 }
 
@@ -677,20 +656,36 @@ if (muteButton) {
 // Envoi des commandes (app native et navigateur)
 // ─────────────────────────────────────────────
 
+// Commande en vol : annulable par le bouton STOP (ou remplacée par une nouvelle).
+let pendingCommand = null;
+
 async function sendCommand(text) {
   if (!text.trim()) return;
+  if (pendingCommand) {
+    pendingCommand.abort(); // une nouvelle demande remplace l'ancienne
+    pendingCommand = null;
+  }
   stopSpeaking();
   speech.unlock(); // geste utilisateur : débloque Web Audio
 
   addMessage("Vous", text, true);
   setActivity("THINKING");
+  const controller = new AbortController();
+  pendingCommand = controller;
 
   try {
     const response = await fetch(`${API_BASE}/api/command`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
+      signal: controller.signal,
     });
+
+    if (controller.signal.aborted) {
+      addMessage("Système", "⏹ Demande annulée (Stop) — KIRA s'est arrêtée.");
+      setActivity("READY");
+      return;
+    }
 
     if (!response.ok) {
       // 503 : le serveur d'interface répond mais le moteur KIRA (API locale) est
@@ -721,7 +716,17 @@ async function sendCommand(text) {
 
     setActivity("READY");
     updateTasks();
+    if (pendingCommand === controller) pendingCommand = null;
   } catch (error) {
+    if (pendingCommand === controller) pendingCommand = null;
+
+    if (error.name === "AbortError") {
+      console.log("[KIRA] Commande annulée (Stop)");
+      addMessage("Système", "⏹ Demande annulée (Stop) — KIRA s'est arrêtée.");
+      setActivity("READY");
+      return;
+    }
+
     console.error("Commande échouée :", error);
 
     if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError") || error.message.includes("fetch")) {

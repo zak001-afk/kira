@@ -115,16 +115,25 @@ test("the command handler's READY cannot overwrite active speech", async () => {
   assert.equal(rig.element("activity").textContent, "SPEAKING");
 });
 
-test("the mute button stops speech-driven motion and releases the audio", async () => {
+test("the stop button halts speech-driven motion and releases the audio", async () => {
   const rig = appRig();
   await rig.probe.speak("hello");
   rig.step();
-  rig.element("mute").click();
-  assert.equal(rig.probe.speech.enabled, false);
+  rig.element("stop").click();
+  assert.equal(rig.probe.speech.enabled, true); // la voix reste activée pour la suite
   assert.ok(rig.audios[0].paused);
   assert.equal(rig.revoked.length, 1);
   for (let i = 0; i < 25; i++) rig.step();
   assert.equal(rig.probe.voiceUniforms.voiceEnergy.value, 0);
+});
+
+test("the stop button cancels a command in flight without speaking", async () => {
+  const rig = appRig();
+  const pending = rig.probe.sendCommand("hello");
+  rig.element("stop").click(); // annule pendant que le moteur réfléchit (fetch en vol)
+  await pending;
+  assert.equal(rig.element("activity").textContent, "READY");
+  assert.equal(rig.audios.length, 0); // aucune voix lancée après l'annulation
 });
 
 test("reduced motion removes speech deformation and displacement", async () => {

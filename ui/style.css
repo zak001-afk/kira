@@ -486,7 +486,12 @@ body { position: relative; }
   animation: pulse 1.2s ease-in-out infinite;
 }
 
-.mute-btn.off { color: var(--danger); border-color: rgba(255, 107, 87, 0.5); }
+.stop-btn:hover { color: var(--danger); border-color: rgba(255, 107, 87, 0.5); }
+.stop-btn.stopping {
+  color: var(--danger);
+  border-color: rgba(255, 107, 87, 0.6);
+  box-shadow: 0 0 18px rgba(255, 107, 87, 0.35);
+}
 
 @keyframes pulse {
   0%, 100% { box-shadow: 0 0 6px var(--gold-glow); }
@@ -1330,42 +1335,6 @@ body { position: relative; }
 }
 
 .hud-center { position: relative; }
-.core-chips { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
-.core-chip {
-  pointer-events: auto;
-  position: absolute;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--text);
-  font-family: 'Orbitron', sans-serif;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
-  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s, color 0.2s;
-}
-.core-chip i { font-style: normal; color: var(--gold); font-size: 14px; }
-.core-chip:hover {
-  transform: translateY(-2px);
-  border-color: var(--border-bright);
-  box-shadow: 0 0 18px var(--gold-glow);
-  color: var(--gold-bright);
-}
-/* Pastilles alignées sur les bords du module central : le visage de KIRA
-   reste entièrement dégagé, aucune n'est posée sur la photo. */
-.cc1 { top: 2.5%; left: 0; }
-.cc5 { top: 2.5%; right: 0; }
-.cc2 { top: 12%; left: 0; }
-.cc6 { top: 12%; right: 0; }
-.cc3 { bottom: 12.5%; left: 0; }
-.cc4 { bottom: 12.5%; right: 0; }
 
 /* ─── RESPONSIVE ─── */
 @media (max-width: 1280px) {
@@ -1385,7 +1354,7 @@ body { position: relative; }
   .hud-panel { max-height: none; }
   .conversation { max-height: 44vh; }
   .hud-center { min-height: 54vh; order: -1; }
-  .core-chips, .header-nav { display: none; }
+  .header-nav { display: none; }
   .top-bar { flex-wrap: wrap; gap: 10px; }
   .dock { overflow-x: auto; }
 }

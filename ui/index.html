@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="fr">
   <head>
-  <meta name="kira-ui-build" content="med-lipsync-fix-01">
+  <meta name="kira-ui-build" content="med-anticlick-01">
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KIRA // AI Command Center</title>
-    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./style.css?v=stop-1" />
     <script type="importmap">
       {
         "imports": {
@@ -94,10 +94,9 @@
                   <line x1="8" y1="23" x2="16" y2="23"></line>
                 </svg>
               </button>
-              <button id="mute" class="mute-btn" title="Couper / activer la voix">
+              <button id="stop" class="stop-btn" title="Arrêter KIRA (voix et action en cours)">
                 <svg viewBox="0 0 24 24">
-                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                  <rect x="6" y="6" width="12" height="12" rx="2"></rect>
                 </svg>
               </button>
             </div>
@@ -118,14 +117,6 @@
 
         <!-- ─────── CENTRE : avatar 3D + état ─────── -->
         <div class="hud-center">
-          <div class="core-chips">
-            <button class="core-chip cc1" onclick="openView('agents')"><i>📊</i><span>Data Analyst</span></button>
-            <button class="core-chip cc2" onclick="openView('agents')"><i>&lt;/&gt;</i><span>Web Developer</span></button>
-            <button class="core-chip cc3" onclick="openView('agents')"><i>▶</i><span>Content Creator</span></button>
-            <button class="core-chip cc4" onclick="openView('agents')"><i>⚙</i><span>System Manager</span></button>
-            <button class="core-chip cc5" onclick="openView('agents')"><i>🔍</i><span>Research Agent</span></button>
-            <button class="core-chip cc6" onclick="openView('agents')"><i>⚡</i><span>Automation Agent</span></button>
-          </div>
           <div class="status-chip">
             <span class="activity-dot" id="activity-dot"></span>
             <span id="activity" class="sr-only">READY</span>
@@ -414,6 +405,6 @@
       <div id="toast" class="toast"></div>
     </main>
 
-    <script type="module" src="./app.js?v=lipsync-fix-1"></script>
+    <script type="module" src="./app.js?v=final-1"></script>
   </body>
 </html>

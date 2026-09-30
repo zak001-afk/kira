@@ -1,5 +1,5 @@
 import { speechLocale, matchingVoice } from "./locale.mjs";
-import { VisemeTimeline, wordTimeline, REST_MOUTH } from "./lips.mjs";
+import { AUDIO_ATTACK_SECONDS, AUDIO_RELEASE_SECONDS, VisemeTimeline, wordTimeline, REST_MOUTH } from "./lips.mjs";
 
 // Audio-driven field and mouth timing. Only playback, never the microphone.
 const clamp = (value, low = 0, high = 1) => Math.min(high, Math.max(low, value));
@@ -236,9 +236,54 @@ export class SpeechPlayer {
       audio.load();
     }
     session.source?.disconnect();
+    session.gain?.disconnect();
     session.analyser?.disconnect();
     if (session.url) this.env.URL.revokeObjectURL(session.url);
-    session.audio = session.url = session.source = session.analyser = null;
+    session.audio = session.url = session.source = session.gain = session.analyser = null;
+  }
+
+  // Clic audible à l'attaque : un flux TTS neural commence rarement par du
+  // silence, donc une lecture qui démarre à pleine amplitude claque. La
+  // lecture passe par un GainNode avec micro-fondu d'entrée ; le toucher au
+  // volume reste bref (<20 ms) et n'influence ni la vitesse ni la bouche.
+  _connectAudio(session, audio) {
+    if (this.context?.state !== "running") return;
+    try {
+      session.analyser = this.context.createAnalyser();
+      session.analyser.fftSize = 1024;
+      session.analyser.smoothingTimeConstant = 0.55;
+      session.source = this.context.createMediaElementSource(audio);
+      session.gain = this.context.createGain();
+      session.gain.gain.setValueAtTime(0, this.context.currentTime);
+      session.gain.gain.linearRampToValueAtTime(1, this.context.currentTime + AUDIO_ATTACK_SECONDS);
+      session.source.connect(session.analyser);
+      session.analyser.connect(session.gain);
+      session.gain.connect(this.context.destination);
+    } catch {
+      // Si le routage a partiellement réussi, on restaure un chemin direct audible.
+      session.source?.disconnect();
+      session.gain?.disconnect();
+      session.analyser?.disconnect();
+      session.source?.connect(this.context.destination);
+      session.gain = session.analyser = null;
+    }
+  }
+
+  // Relâche le gain en douceur avant le pause() : couper un flux encore
+  // sonore produit le même claquement qu'un mauvais splice audio. On ne
+  // ré-ancre PAS la valeur : le ramp s'enchaîne sur la courbe en cours, donc
+  // aucune discontinuité même au cœur du fondu d'entrée.
+  _scheduleEndFade(session, audio) {
+    if (!session.gain || session.endFade) return;
+    if (!Number.isFinite(audio?.duration) || audio.duration <= 0) return;
+    try {
+      const now = this.context.currentTime;
+      // Le fondu final démarre après l'attaque, jamais au milieu d'elle.
+      const start = Math.max(now + AUDIO_ATTACK_SECONDS, now + audio.duration - audio.currentTime - AUDIO_RELEASE_SECONDS);
+      session.gain.gain.setValueAtTime(1, start);
+      session.gain.gain.linearRampToValueAtTime(0, start + AUDIO_RELEASE_SECONDS);
+      session.endFade = true;
+    } catch { /* non critique : la fin du clip reste dans son état d'origine. */ }
   }
 
   finish(session) {
@@ -288,24 +333,10 @@ export class SpeechPlayer {
       session.url = this.env.URL.createObjectURL(new this.env.Blob([bytes], { type: mime }));
       const audio = session.audio = new this.env.Audio(session.url);
       // Do not route audio into a suspended context: that would mute it.
-      if (this.context?.state === "running") {
-        try {
-          session.analyser = this.context.createAnalyser();
-          session.analyser.fftSize = 1024;
-          session.analyser.smoothingTimeConstant = 0.55;
-          session.source = this.context.createMediaElementSource(audio);
-          session.source.connect(session.analyser);
-          session.analyser.connect(this.context.destination);
-        } catch {
-          // If routing partially succeeded, restore an audible direct path.
-          session.source?.disconnect();
-          session.analyser?.disconnect();
-          session.source?.connect(this.context.destination);
-          session.analyser = null;
-        }
-      }
+      this._connectAudio(session, audio);
       audio.onplaying = () => {
         if (!this.isCurrent(session) || session.fallback) return;
+        this._scheduleEndFade(session, audio);
         if (this.motion.mode === "audio" && this.motion.media === audio) this.motion.resume();
         else this.motion.startAudio(session.analyser, audio, cleanText, data.word_timings);
         this.motion.onProgress = session.onProgress;

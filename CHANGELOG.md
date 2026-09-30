@@ -409,6 +409,65 @@
 - **Tests** : `tests/test_shared_search_route.py` (13 tests) — la route rapide
   échoue sur l'ancien code et passe sur le nouveau ; suite complète 220 tests
   Python + 64 tests JS au vert. Aucun fichier `ui/` modifié.
+## Unreleased — Lecture vocale sans clic (anticlick-gain-01)
+
+- **Fini le « clic » audible quand KIRA parle** (`ui/speech.mjs`, `ui/lips.mjs`) :
+  la lecture passe désormais par un GainNode Web Audio avec micro-fondu
+  d'entrée (15 ms) — un flux neural edge-tts ne commence jamais par du
+  silence, donc démarrer à pleine amplitude claquait — et un fondu final
+  programmé sur les 40 dernières millisecondes du clip, ancré sur l'horloge
+  audio (`onplaying`), pour ne jamais couper une forme d'onde encore sonore.
+- Zéro régression audio : le fondu d'entrée se termine bien avant la parole
+  perçue, le volume de régime reste à 1.0 (vérifié sur l'analyseur réel), et
+  si Web Audio est indisponible/suspendu, l'audio reste sur son chemin normal
+  (comportement inchangé, déjà testé).
+- Interruptions (mute, nouvelle réponse, pagehide) toujours instantanées :
+  aucune temporisation de libération, les suites existantes (mute, abort,
+  pagehide, timers vides) passent telles quelles.
+- **Fini le « blanc » dans la bouche pendant la parole** (`ui/holo-mouth.mjs`) :
+  l'arc des dents supérieures — un dégradé quasi blanc (`#f6efe2`, jusqu'à
+  12 px) tracé dès une petite ouverture — remplissait la moitié de l'écart
+  labial sur les voyelles légères (EE, SS) et clignotait en bandeau clair à
+  chaque syllabe. Désormais : seuil d'apparition relevé (0,2), profondeur
+  plafonnée à ~1/4 de la cavité, émail atténué (`#d9cdb8` → ombre), alpha
+  proportionnel à l'ouverture et base de l'arc fondue dans la cavité sombre.
+- Bundle UI `med-anticlick-01` (méta index.html + versions de cache `?v=…`
+  de app.js/holo-mouth.mjs/avatar.mjs/style.css). Validé sous
+  Chromium réel en gelant l'horloge sur les poses AH (pleine ouverture) et
+  EE (ouverture légère) : intérieur buccal sombre et naturel, aucun bandeau
+  clair, dents suggérées en discrétion.
+- **Décor final** : après essais (fond circuit radial, avatar détouré
+  transparent), retour au look d'origine — portrait `avatar-natural.webp`
+  intact (glyphes, anneau, orbites, machinerie) sur le fond sombre de la
+  scène (0x020101). Les assets temporaires (`circuit-bg.png`,
+  `avatar-natural-clean.webp`) sont supprimés et retirés du bundle.
+- **Bouton STOP à la place du haut-parleur** (`ui/index.html`, `ui/app.js`) :
+  quand KIRA parle, réfléchit ou exécute une action et que l'utilisateur
+  change d'avis, un clic sur ⏹ l'arrête net — la parole en cours est
+  interrompue immédiatement et la commande en attente est annulée
+  (AbortController sur le fetch `/api/command`, message « Demande annulée »).
+  La voix reste activée pour les échanges suivants (l'ancien bouton coupait
+  le son définitivement) ; une nouvelle demande remplace automatiquement
+  l'ancienne. Tests mis à jour (`tests/reactor.test.mjs`).
+- **La pluie Matrix animée est supprimée partout** (`ui/app.js`,
+  `ui/index.html`, `ui/style.css`) : canvas HTML, code d'animation, règle
+  CSS et plan 3D expérimental retirés ; l'interface retrouve son décor
+  d'origine (fond sombre + réacteur doré), avec les fonds de panneaux et
+  les flous d'origine (66 % / 92 %). Le portrait `avatar-natural.webp`
+  reste inchangé — la « pluie » verte visible autour de l'avatar fait
+  partie du portrait lui-même, elle est conservée tel quelle. Les six
+  pastilles d'agents qui chevauchaient le module central (core chips :
+  Data Analyst, Web Developer, etc.) sont supprimées (HTML + CSS) — le
+  panorama central n'affiche plus que l'avatar et l'indicateur « Prête ».
+- **Tests** : fake `AudioContext.createGain` dans `tests/support/speech-fakes.mjs`
+  (paramètre `gain` avec journal des automatisations) ; 2 nouveaux tests dans
+  `tests/locale.test.mjs` — fondu d'attaque + fondu final planifié + libération
+  immédiate sans timer résiduel, et remplacement de session sans double fondu.
+  Vérifié aussi sous Chromium réel : graphe source→analyser→gain→destination,
+  crête 0,4→1,0 après attaque, `endFade` planifié, session libérée, bouche au
+  repos. Suite Python : 425 tests, 2 échecs préexistants (`test_languages`,
+  `test_open`) inchangés avec ou sans ce correctif.
+
 ## Unreleased — Synchronisation labiale douce (med-lipsync-fix-01)
 
 - **Fini le « glitch » quand l'avatar parle** (`ui/holo-mouth.mjs`) : la bande

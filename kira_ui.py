@@ -20,8 +20,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 UI_DIRECTORY = Path(__file__).resolve().parent / "ui"
-UI_BUILD_ID = "med-lipsync-fix-01"
-UI_BUILD_LABEL = "AI COMMAND CENTER MED / LIPSYNC FIX 01"
+UI_BUILD_ID = "med-anticlick-01"
+UI_BUILD_LABEL = "AI COMMAND CENTER MED / ANTICLICK 01"
 UI_REQUIRED_FILES = (
     "index.html", "style.css", "app.js", "speech.mjs", "locale.mjs", "lips.mjs",
     "avatar.mjs", "holo-mouth.mjs", "assets/avatar-natural.webp",

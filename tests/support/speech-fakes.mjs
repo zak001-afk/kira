@@ -43,6 +43,21 @@ export function playerRig(options = {}) {
       this.nodes.push(node);
       return node;
     }
+    createGain() {
+      if (options.graphFail) throw new Error("gain unavailable");
+      let level = 1;
+      const schedule = [];
+      const param = {
+        get value() { return level; },
+        set value(next) { level = next; },
+        setValueAtTime(next, _when) { level = next; schedule.push("set"); },
+        linearRampToValueAtTime(next, _when) { level = next; schedule.push("ramp"); },
+        cancelScheduledValues(_when) { schedule.push("cancel"); },
+      };
+      const node = { gain: param, schedule, ...this.node() };
+      this.nodes.push(node);
+      return node;
+    }
     node() { return { disconnected: false, connect() {}, disconnect() { this.disconnected = true; } }; }
     createMediaElementSource() { const node = this.node(); this.nodes.push(node); return node; }
     close() { this.state = "closed"; return Promise.resolve(); }

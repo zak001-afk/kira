@@ -1,7 +1,7 @@
 // KIRA — articulation du portrait naturel (avatar-natural.webp).
 // Les pixels des lèvres/peau viennent du portrait, sans recoloration verte.
 import { LipMotion, REST_MOUTH } from "./lips.mjs";
-import { AVATAR_PORTRAIT, createPortraitMaterial } from "./avatar.mjs?v=lipsync-fix-1";
+import { AVATAR_PORTRAIT, createPortraitMaterial } from "./avatar.mjs?v=orig-1";
 
 const PORTRAIT_W = AVATAR_PORTRAIT.width;
 const PORTRAIT_H = AVATAR_PORTRAIT.height;
@@ -304,9 +304,11 @@ export class HoloMouth {
     }
 
     // 3. Arc des dents supérieures : échantillonné sur le contour labial
-    // déformé de ce frame, il s'amincit vers les coins et disparaît quand
-    // l'ouverture est petite (aucune ligne dure, aucun bord rectiligne).
-    if (this.pose.open > 0.12 && height > 7) {
+    // déformé de ce frame. Rendu naturel : émail atténué par l'ombre de la
+    // cavité, profondeur proportionnelle à l'ouverture réelle, apparition
+    // progressive — plus jamais de bandeau blanc clignotant sur les voyelles
+    // légères (EE, SS) où l'écart labial est minuscule.
+    if (this.pose.open > 0.2 && height > 12) {
       const upper = [], lower = [];
       for (let i = 0; i < COUNT; i++) {
         const x = this.destination[i * 2], y = this.destination[i * 2 + 1];
@@ -322,43 +324,55 @@ export class HoloMouth {
           }
           return best[1];
         };
-        const maxDepth = Math.min(12, height * 0.36);
+        // L'arc plafonne à ~1/4 de la hauteur de la cavité : les dents
+        // suggèrent la rangée, elles ne remplissent jamais l'ouverture.
+        const maxDepth = Math.min(8, height * 0.24);
         const tops = [], bottoms = [];
         const step = Math.max(1, Math.floor(upper.length / 14));
         for (let k = 0; k < upper.length; k += step) {
           const [x, y] = upper[k];
           const u = Math.min(1, Math.max(0, (x - left) / width));
           const opening = Math.max(0, lowerAt(x) - y);
-          const depth = Math.min(maxDepth, opening * 0.5) * (0.35 + 0.65 * Math.sqrt(Math.sin(Math.PI * u)));
-          tops.push([x, y + 1.4]);
-          bottoms.push([x, y + 1.4 + depth]);
+          const depth = Math.min(maxDepth, opening * 0.42) * (0.3 + 0.7 * Math.sqrt(Math.sin(Math.PI * u)));
+          tops.push([x, y + 1.2]);
+          bottoms.push([x, y + 1.2 + depth]);
         }
         if (tops.length > 2) {
+          ctx.save();
           ctx.beginPath();
           ctx.moveTo(tops[0][0], tops[0][1]);
           for (const [x, y] of tops) ctx.lineTo(x, y);
           for (let k = bottoms.length - 1; k >= 0; k--) ctx.lineTo(bottoms[k][0], bottoms[k][1]);
           ctx.closePath();
+          // Apparition douce avec l'ouverture : rien de blanc en articulation
+          // légère, émail discret en pleine ouverture.
+          ctx.globalAlpha = 0.35 + 0.45 * Math.min(1, (this.pose.open - 0.2) / 0.5);
           const teeth = ctx.createLinearGradient(0, top, 0, top + maxDepth + 4);
-          teeth.addColorStop(0, "#f6efe2");
-          teeth.addColorStop(0.55, "#e2d3b8");
-          teeth.addColorStop(1, "#b09471");
+          teeth.addColorStop(0, "#d9cdb8");
+          teeth.addColorStop(0.5, "#b7a687");
+          teeth.addColorStop(1, "#7d6849");
           ctx.fillStyle = teeth;
           ctx.fill();
-          // Séparations douces entre les dents, fondues dans l'arc.
-          ctx.save();
+          // La base de l'arc fond dans la cavité sombre : aucune limite basse
+          // dur, la rangée s'estompe au lieu de se terminer net.
           ctx.clip();
-          ctx.fillStyle = "rgba(96, 74, 52, 0.3)";
+          const melt = ctx.createLinearGradient(0, top + maxDepth * 0.45, 0, top + maxDepth + 3);
+          melt.addColorStop(0, "rgba(6, 3, 2, 0)");
+          melt.addColorStop(1, "rgba(6, 3, 2, 0.85)");
+          ctx.fillStyle = melt;
+          ctx.fillRect(left, top, width, maxDepth + 6);
+          // Séparations discrètes entre les dents, estompées vers la base.
+          ctx.fillStyle = "rgba(58, 42, 28, 0.22)";
           for (let k = 1; k < 8; k++) {
             const x = left + (width * k) / 8;
-            ctx.fillRect(x - 0.5, top, 1, maxDepth + 3);
+            ctx.fillRect(x - 0.5, top, 1, maxDepth * 0.7);
           }
           // Ombre portée de la lèvre supérieure : détache les dents du visage.
-          ctx.fillStyle = "rgba(8, 3, 2, 0.55)";
+          ctx.fillStyle = "rgba(8, 3, 2, 0.4)";
           ctx.beginPath();
           ctx.moveTo(tops[0][0], tops[0][1]);
           for (const [x, y] of tops) ctx.lineTo(x, y);
-          for (let k = tops.length - 1; k >= 0; k--) ctx.lineTo(tops[k][0], tops[k][1] + 2.6);
+          for (let k = tops.length - 1; k >= 0; k--) ctx.lineTo(tops[k][0], tops[k][1] + 2.2);
           ctx.closePath();
           ctx.fill();
           ctx.restore();
