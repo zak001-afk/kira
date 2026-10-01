@@ -169,6 +169,10 @@ class RouteBoundaryTests(unittest.TestCase):
             "run_diagnostic": {"action": "run_diagnostic"},
             "code_build": {"action": "code_build", "request": "nothing real",
                            "project": ""},
+            "crypto_price": {"action": "crypto_price", "coin": "bitcoin", "currency": "eur"},
+            "prayer_times": {"action": "prayer_times", "city": ""},
+            "song_search": {"action": "song_search", "query": "one more time"},
+            "daily_quote": {"action": "daily_quote"},
         }
         self.assertEqual(set(samples), set(commands.DIRECT_TOOL_ACTIONS))
         web = types.SimpleNamespace(search_shared_knowledge=Mock(return_value="found"),

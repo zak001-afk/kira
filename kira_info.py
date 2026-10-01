@@ -188,6 +188,86 @@ def fun_fact() -> str:
     return str(data.get("text", "")).strip()
 
 
+def crypto_price(coin: str, currency: str = "usd") -> dict:
+    """Live crypto price via CoinGecko (keyless). Spoken names accepted."""
+    coins = {"bitcoin": "bitcoin", "btc": "bitcoin", "ethereum": "ethereum",
+             "eth": "ethereum", "dogecoin": "dogecoin", "doge": "dogecoin",
+             "cardano": "cardano", "ada": "cardano", "solana": "solana",
+             "sol": "solana", "litecoin": "litecoin", "xrp": "ripple"}
+    currencies = {"usd": "usd", "eur": "eur", "tnd": "tnd", "dollar": "usd",
+                  "dinars": "tnd", "dinar": "tnd", "euro": "eur", "euros": "eur"}
+    coin_id = coins.get(str(coin or "").strip().lower())
+    if not coin_id:
+        raise ValueError(f"Unknown crypto coin: {coin}")
+    vs = currencies.get(str(currency or "usd").strip().lower(), "usd")
+    data = _get_json("https://api.coingecko.com/api/v3/simple/price",
+                     {"ids": coin_id, "vs_currencies": vs,
+                      "include_24hr_change": "true"})
+    entry = (data.get(coin_id) or {})
+    price = entry.get(vs)
+    if price is None:
+        raise RuntimeError(f"No price found for {coin} in {vs}.")
+    return {"coin": coin_id, "currency": vs, "price": price,
+            "change_24h": entry.get(f"{vs}_24h_change")}
+
+
+_PRAYER_METHOD = 3  # Union Organization Islamic de France — widely used in TN/Maghreb
+
+
+def prayer_times(city: str = "") -> dict:
+    """Today's prayer times + Hijri date for a city (Aladhan, keyless)."""
+    city = str(city or default_city() or "Nabeul").strip()
+    geo = _get_json("https://geocoding-api.open-meteo.com/v1/search",
+                    {"name": city, "count": 1, "language": "en", "format": "json"})
+    places = geo.get("results") or []
+    if not places:
+        raise ValueError(f"Unknown city: {city}")
+    place = places[0]
+    data = _get_json("https://api.aladhan.com/v1/timings",
+                     {"latitude": place["latitude"], "longitude": place["longitude"],
+                      "method": _PRAYER_METHOD})
+    timings = ((data.get("data") or {}).get("timings") or {})
+    hijri = (((data.get("data") or {}).get("date") or {}).get("hijri") or {})
+    wanted = ("Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha")
+    times = {name: timings.get(name, "") for name in wanted}
+    if not any(times.values()):
+        raise RuntimeError("Prayer service returned no timings.")
+    return {"city": place.get("name", city), "times": times,
+            "hijri_date": hijri.get("date", ""),
+            "hijri_month": (hijri.get("month") or {}).get("en", ""),
+            "hijri_year": hijri.get("year", "")}
+
+
+def song_search(query: str, limit: int = 3) -> dict:
+    """Search a song on iTunes (keyless): title, artist, album, 30s preview."""
+    query = str(query or "").strip()
+    if not query:
+        raise ValueError("No song to search.")
+    data = _get_json("https://itunes.apple.com/search",
+                     {"term": query, "entity": "song", "limit": max(1, min(int(limit or 3), 5))},
+                     timeout=10)
+    songs = []
+    for row in (data.get("results") or [])[:max(1, min(int(limit or 3), 5))]:
+        songs.append({"title": row.get("trackName", ""),
+                      "artist": row.get("artistName", ""),
+                      "album": row.get("collectionName", ""),
+                      "preview_url": row.get("previewUrl", ""),
+                      "artwork": row.get("artworkUrl100", "")})
+    if not songs:
+        raise ValueError(f"No song found for: {query}")
+    return {"query": query, "count": len(songs), "songs": songs}
+
+
+def daily_quote() -> dict:
+    """Random quote (ZenQuotes, keyless) — also injected in the morning briefing."""
+    data = _get_json("https://zenquotes.io/api/random", timeout=10)
+    rows = data if isinstance(data, list) else []
+    if not rows or not isinstance(rows[0], dict):
+        raise RuntimeError("Quote service error.")
+    return {"quote": str(rows[0].get("q", "")).strip(),
+            "author": str(rows[0].get("a", "")).strip()}
+
+
 _WIKI_LANGUAGES = {"en", "fr", "ar", "es", "de", "it", "pt"}
 
 # Spoken language names (EN/FR) -> ISO codes, for translation targets.

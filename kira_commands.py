@@ -602,6 +602,27 @@ _HOLIDAYS_PATTERNS = (
     re.compile(r"^(?:what\s+are\s+the\s+|show\s+(?:me\s+)?|list\s+)?(?:next\s+|upcoming\s+)?(?:public\s+)?holidays(?:\s+in\s+([a-zà-ÿ'\- ]+?))?(?:\s+(?:in\s+|for\s+)?(\d{4}))?$", re.IGNORECASE),
     re.compile(r"^(?:quels?\s+sont\s+les\s+|liste\s+(?:les\s+)?|affiche\s+(?:les\s+)?)?(?:prochains?\s+)?jours?\s+f[ée]ri[ée]s(?:\s+(?:en|au|aux|[àa])\s+([a-zà-ÿ'\- ]+?))?(?:\s+(?:en\s+|pour\s+)?(\d{4}))?\s*$", re.IGNORECASE),
 )
+_CRYPTO_COIN = r"bitcoin|btc|ethereum|eth|dogecoin|doge|cardano|ada|solana|sol|litecoin|xrp"
+_CRYPTO_CURRENCY = r"usd|eur|tnd|dollars?|euros?|dinars?"
+_CRYPTO_PATTERNS = (
+    re.compile(r"^(?:what(?:'s|\s+is)\s+(?:the\s+)?)?(?:price\s+of\s+)?(" + _CRYPTO_COIN + r")"
+               r"(?:\s+price)?(?:\s+in\s+|\s+en\s+)?(" + _CRYPTO_CURRENCY + r")?\s*$", re.IGNORECASE),
+    re.compile(r"^(?:combien\s+vaut\s+|prix\s+du\s+|cours\s+du\s+)(" + _CRYPTO_COIN + r")"
+               r"(?:\s+(?:en|in)\s+(" + _CRYPTO_CURRENCY + r"))?\s*$", re.IGNORECASE),
+)
+_PRAYER_PATTERNS = (
+    re.compile(r"^prayer\s+times?(?:\s+(?:in|for)\s+(.+))?$", re.IGNORECASE),
+    re.compile(r"^(?:heures?\s+de\s+)?pri[èe]re(?:s)?(?:\s+(?:[àa]|de|pour)\s+(.+))?\s*$", re.IGNORECASE),
+    re.compile(r"^مواعيد\s+الصلاة(?:\s+في\s+(.+))?$"),
+)
+_SONG_PATTERNS = (
+    re.compile(r"^(?:find|search(?:\s+for)?|look\s+up)\s+(?:the\s+)?(?:song|music|track)\s+(.+)$", re.IGNORECASE),
+    re.compile(r"^(?:cherche|trouve|recherche)(?:[- ]moi)?\s+(?:la\s+)?(?:chanson|musique|titre)\s+(.+)$", re.IGNORECASE),
+)
+_QUOTE_PATTERNS = (
+    re.compile(r"^(?:give\s+me\s+)?(?:a\s+)?(?:daily\s+)?quote(?:\s+of\s+the\s+day)?[.!]*$", re.IGNORECASE),
+    re.compile(r"^(?:donne(?:[- ]moi)?|cite(?:[- ]moi)?)\s+(?:une\s+)?(?:citation|phrase)(?:\s+du\s+jour)?[.!]*$", re.IGNORECASE),
+)
 _WIKI_PATTERNS = (
     re.compile(r"^wiki(?:p[ée]dia)?\s*[:\-]?\s+(.+)$", re.IGNORECASE),
     re.compile(r"^who\s+(?:is|was)\s+(?!my\b|your\b|our\b)(.+)$", re.IGNORECASE),
@@ -713,6 +734,22 @@ def parse_tool_command(text):
         match = pattern.match(value)
         if match and match.group(1).strip():
             return {"action": "wiki_summary", "topic": match.group(1).strip()}
+    for pattern in _CRYPTO_PATTERNS:
+        match = pattern.match(value)
+        if match:
+            return {"action": "crypto_price", "coin": match.group(1).strip(),
+                    "currency": (match.group(2) or "usd").strip()}
+    for pattern in _PRAYER_PATTERNS:
+        match = pattern.match(value)
+        if match:
+            return {"action": "prayer_times", "city": (match.group(1) or "").strip()}
+    for pattern in _SONG_PATTERNS:
+        match = pattern.match(value)
+        if match and match.group(1).strip():
+            return {"action": "song_search", "query": match.group(1).strip()}
+    for pattern in _QUOTE_PATTERNS:
+        if pattern.match(value):
+            return {"action": "daily_quote"}
     return None
 
 
@@ -747,6 +784,7 @@ DIRECT_TOOL_ACTIONS = frozenset({
     "get_weather", "get_holidays", "convert_currency",
     "wiki_summary", "translate_text", "scaffold_project",
     "morning_briefing", "run_diagnostic", "code_build",
+    "crypto_price", "prayer_times", "song_search", "daily_quote",
 })
 
 
@@ -840,6 +878,59 @@ def _direct_tool_route(action, parsed, metadata, language):
         return {"action": action, "success": True, "response": text,
                 "data": {"tasks": data.get("tasks", [])}, "elapsed_ms": elapsed,
                 **metadata}
+
+    if action == "crypto_price":
+        started = _time.perf_counter()
+        result = kira_agents.run(action, {"coin": str(parsed.get("coin", "")).strip(),
+                                          "currency": str(parsed.get("currency", "usd")).strip()})
+        elapsed = int((_time.perf_counter() - started) * 1000)
+        if result.ok:
+            data = result.data or {}
+            price = data.get("price")
+            change = data.get("change_24h")
+            trend = ("up" if (change or 0) >= 0 else "down")
+            if language == "fr":
+                text = f"{data.get('coin', '').capitalize()} : {price} {data.get('currency', '').upper()} « {trend == 'up' and '+' or '-'}{abs(change or 0):.1f}% sur 24 h »."
+            else:
+                text = f"{data.get('coin', '').capitalize()}: {price} {str(data.get('currency', '')).upper()} ({trend} {abs(change or 0):.1f}% in 24h)."
+            result.response = text
+        return result.to_payload(**metadata, elapsed_ms=elapsed)
+
+    if action == "prayer_times":
+        started = _time.perf_counter()
+        import kira_info
+        result = kira_agents.run(action, {"city": str(parsed.get("city", "")).strip() or kira_info.default_city()})
+        elapsed = int((_time.perf_counter() - started) * 1000)
+        if result.ok:
+            data = result.data or {}
+            times = data.get("times") or {}
+            listed = ", ".join(f"{name} {hour}" for name, hour in times.items() if hour)
+            hijri = f" ({data.get('hijri_date', '')} {data.get('hijri_month', '')} {data.get('hijri_year', '')})" if data.get("hijri_date") else ""
+            result.response = (f"Prières à {data.get('city')} {hijri} : {listed}." if language == "fr"
+                               else f"Prayer times in {data.get('city')} {hijri}: {listed}.")
+        return result.to_payload(**metadata, elapsed_ms=elapsed)
+
+    if action == "song_search":
+        started = _time.perf_counter()
+        result = kira_agents.run(action, {"query": str(parsed.get("query", "")).strip()})
+        elapsed = int((_time.perf_counter() - started) * 1000)
+        if result.ok:
+            songs = (result.data or {}).get("songs") or []
+            listed = "\n".join(f"{index}. {song.get('title')} — {song.get('artist')} ({song.get('album')})"
+                               for index, song in enumerate(songs, 1))
+            result.response = (f"Trouvé {len(songs)} titre(s) :\n{listed}" if language == "fr"
+                               else f"Found {len(songs)} track(s):\n{listed}")
+            result.extra["songs"] = songs
+        return result.to_payload(**metadata, elapsed_ms=elapsed)
+
+    if action == "daily_quote":
+        started = _time.perf_counter()
+        result = kira_agents.run(action, {})
+        elapsed = int((_time.perf_counter() - started) * 1000)
+        if result.ok:
+            data = result.data or {}
+            result.response = f"« {data.get('quote', '')} » — {data.get('author', '')}"
+        return result.to_payload(**metadata, elapsed_ms=elapsed)
 
     if action == "run_diagnostic":
         started = _time.perf_counter()

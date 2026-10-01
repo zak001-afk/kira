@@ -30,21 +30,23 @@ def _now():
     return datetime.now()
 
 
-def _parse_due(due_at):
+def _parse_due(due_at, now=None):
     """datetime from the stored formats ('HH:MM' or ISO), else None."""
     value = str(due_at or "").strip()
     if not value:
         return None
+    now = now or _now()
     for fmt in ("%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M",
                 "%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M"):
         try:
             parsed = datetime.strptime(value, fmt)
             if fmt == "%H:%M":
-                # '14:30' means TODAY at 14:30. A time already passed (KIRA
-                # was off, or the poller was busy) still fires — late beats
-                # never for a proactive assistant.
-                return _now().replace(hour=parsed.hour, minute=parsed.minute,
-                                      second=0, microsecond=0)
+                # '14:30' means TODAY at 14:30 (the `now` reference passed by
+                # the caller, so tests can simulate a clock). A time already
+                # passed (KIRA was off, or the poller was busy) still fires —
+                # late beats never for a proactive assistant.
+                return now.replace(hour=parsed.hour, minute=parsed.minute,
+                                   second=0, microsecond=0)
             return parsed
         except ValueError:
             continue
@@ -66,7 +68,7 @@ def scan_due_tasks(tasks=None, now=None):
         for task in tasks:
             if str(task.get("type")) != "reminder" or task.get("id") in _FIRED:
                 continue
-            due = _parse_due(task.get("due_at"))
+            due = _parse_due(task.get("due_at"), now)
             if due is None:
                 continue
             if due <= now:
@@ -188,6 +190,15 @@ def briefing(language="fr"):
                             else f"Upcoming holidays: {names}.")
     except Exception:
         pass
+    try:
+        import kira_info
+        quote = kira_info.daily_quote()
+        data["quote"] = quote
+        sections.append(f"Citation du jour : « {quote.get('quote', '')} » — {quote.get('author', '')}"
+                        if language == "fr"
+                        else f"Quote of the day: “{quote.get('quote', '')}” — {quote.get('author', '')}")
+    except Exception:
+        pass  # never block the briefing on a decorative quote
     header = "Bonjour ! Voici votre point du matin." if language == "fr" \
         else "Good morning! Here is your briefing."
     return "\n\n".join([header] + sections), data

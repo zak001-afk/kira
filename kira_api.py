@@ -106,7 +106,12 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         """Handle GET requests."""
+        # Same bearer check as POST: history, memories and settings are
+        # private even though they are read-only. Static UI files stay open
+        # so a phone browser can still load the page before authenticating.
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/") and self._guard_remote():
+            return
         path = parsed.path.rstrip("/")
         params = parse_qs(parsed.query)
 
