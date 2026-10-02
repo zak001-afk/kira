@@ -203,6 +203,32 @@ listening test.
 
 ## 🏗️ Architecture
 
+### Source layout (refactored 2026-10)
+
+The code lives in the **`src/kira/` package**, organised by responsibility —
+presentation is fully separated from logic:
+
+```
+src/kira/
+├── core/           kira_language, kira_speech, kira_cache
+├── services/       kira_ai, kira_planner, kira_tts, kira_voice_agent
+├── data/           kira_memory, kira_tasks, kira_shared_memory
+├── api/            kira_api (same-origin REST bridge)
+├── presentation/   kira_ui, kira_theme, main_window, main_window_tk, launch_web
+├── tools/          kira_commands, kira_open, kira_code, kira_docs, kira_ops,
+│                   kira_agents, kira_info, kira_web, kira_scheduler,
+│                   kira_plugins, kira_tools, kira_health, kira_build
+├── bin/            tools_add_provider_keys
+└── paths.py        PROJECT_ROOT anchor (.env, ui/, assets/, plugins/, db…)
+```
+
+The root-level names (`kira_ai.py`, `main_window.py`, …) are thin
+**compatibility shims**: every historical import, launch command, test and
+the PyInstaller build keep working unchanged; `python main_window.py`,
+`python launch_web.py` and `python main_window_tk.py` behave exactly as
+before. Data and resources stay at the repository root (`.env`,
+`kira_memory.db`, `ui/`, `assets/`, `plugins/`, `kira_workspace/`…).
+
 ### Core Modules
 
 - **kira_voice_agent.py** — Voice recognition, TTS, command parsing, action execution

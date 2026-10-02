@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 
 def load_names(names, extra=None):
-    tree = ast.parse((ROOT / "kira_voice_agent.py").read_text())
+    tree = ast.parse((ROOT / "src/kira/services/kira_voice_agent.py").read_text())
     nodes = [node for node in tree.body
              if (isinstance(node, ast.FunctionDef) and node.name in names)
              or (isinstance(node, ast.Assign)
@@ -107,7 +107,7 @@ class PersonalGuardTests(unittest.TestCase):
 
 class IdentityTests(unittest.TestCase):
     def test_the_persona_never_claims_to_be_jarvis(self):
-        source = (ROOT / "kira_voice_agent.py").read_text()
+        source = (ROOT / "src/kira/services/kira_voice_agent.py").read_text()
         start = source.index('CHAT_SYSTEM_PROMPT = """')
         prompt = source[start:source.index('"""', start + 30)]
         self.assertNotIn("modeled after JARVIS", prompt)

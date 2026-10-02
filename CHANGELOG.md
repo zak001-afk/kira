@@ -1,5 +1,32 @@
 # KIRA Changelog
 
+## Unreleased — Refactoring de l'architecture (code uniquement, zéro changement de comportement)
+
+- **Nouvelle structure `src/kira/`** : le code est organisé en package par
+  responsabilité — `core` (langue, parole, cache), `services` (cerveau IA,
+  planificateur, voix/TTS, agent vocal), `data` (mémoire SQLite, tâches,
+  savoir partagé Supabase), `api` (pont REST), `presentation` (serveur UI,
+  HUD tkinter, fenêtres), `tools` (commandes, ouvertures, code, documents,
+  agents, scheduler, plugins) et `bin` (outils CLI). `kira/paths.py`
+  centralise la racine du projet (`PROJECT_ROOT`).
+- **Compatibilité totale** : des shims à la racine (`kira_ai.py`, …)
+  s'installent à la place du vrai module dans `sys.modules` — chaque
+  `import kira_*`, tous les tests (`patch.object` inclus), PyInstaller et
+  les lanceurs historiques fonctionnent à l'identique. Commandes de
+  lancement inchangées : `python main_window.py`, `python launch_web.py`,
+  `python main_window_tk.py`, `python dev.py`, `python kira_ui.py
+  --preview`.
+- **Chemins recentrés** : toutes les ancres `__file__` (.env,
+  `kira_memory.db`, `kira_config.json`, `ui/`, `assets/`, `plugins/`,
+  `kira_workspace/`, `kira_docs/`, `kira_backups/`, `kira.log`) pointent
+  désormais vers la racine via `kira.paths` — mêmes emplacements qu'avant,
+  données et `.env` non déplacés.
+- **Vérifié** : 525 tests = baseline d'avant refactoring (mêmes 2 échecs
+  préexistants), `ui/` et `assets/` strictement intouchés, smoke test de
+  démarrage UI+API OK (thème vert, build `med-anticlick-01`).
+  `scripts/make_shims.py` régénère les shims ; `scripts/smoke_start.py`
+  teste le démarrage réel.
+
 ## Unreleased — Planificateur proactif, documents, diagnostic, réglages et thème « Neon Obsidian »
 
 - **Rappels proactifs (`kira_scheduler.py`)** : un poller (20 s) scanne les

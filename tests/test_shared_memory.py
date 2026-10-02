@@ -20,7 +20,7 @@ import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = ROOT / "kira_shared_memory.py"
+MODULE_PATH = ROOT / "src/kira/data/kira_shared_memory.py"
 
 
 def make_key(role):

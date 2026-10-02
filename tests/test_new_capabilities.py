@@ -302,8 +302,7 @@ class SettingsAndRemoteTests(unittest.TestCase):
         env_path.write_text(existing, encoding="utf-8")
         previous = os.environ.get("KIRA_CITY")
         try:
-            with patch("kira_api.os.path.abspath", return_value=str(env_path.parent / "kira_api.py")), \
-                    patch("kira_api.os.path.dirname", return_value=str(env_path.parent)):
+            with patch("kira_api.paths.root_path", side_effect=lambda *parts: env_path.parent.joinpath(*parts)):
                 handler._handle_settings_post({"KIRA_CITY": "Nabeul"})
             self.assertTrue(sent["payload"]["ok"])
             content = env_path.read_text(encoding="utf-8")

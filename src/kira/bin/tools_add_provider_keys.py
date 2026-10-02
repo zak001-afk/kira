@@ -15,7 +15,9 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+from kira import paths
+
+ROOT = paths.PROJECT_ROOT
 ENV_PATH = ROOT / ".env"
 
 TARGETS = (
@@ -63,7 +65,7 @@ def ask_and_store(text, key, label):
 def verify():
     """Live ping of both providers through KIRA's own chain."""
     import os
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / "src"))
     import kira_ai
     kira_ai._ENV_LOADED = True  # we just wrote the file; re-read manually
     for line in load_env_text().splitlines():

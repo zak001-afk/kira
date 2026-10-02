@@ -47,10 +47,10 @@ class StaticUiTests(unittest.TestCase):
                     self.assertIn(b"export const", response.read())
 
     def test_native_window_serves_uncached_javascript_modules(self):
-        self.check_handler("main_window.py")
+        self.check_handler("src/kira/presentation/main_window.py")
 
     def test_browser_launcher_serves_uncached_javascript_modules(self):
-        self.check_handler("launch_web.py")
+        self.check_handler("src/kira/presentation/launch_web.py")
 
     def test_local_assets_have_correct_types_and_support_preview_hosts(self):
         with running_server(partial(KiraUIHandler, directory=str(ROOT / "ui"))) as server:

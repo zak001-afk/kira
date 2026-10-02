@@ -250,7 +250,7 @@ class VoiceAgentIntegrationTests(unittest.TestCase):
     from its AST with stub neighbours, like the language prompt tests."""
 
     def parse_with_stubs(self):
-        tree = ast.parse((ROOT / "kira_voice_agent.py").read_text())
+        tree = ast.parse((ROOT / "src/kira/services/kira_voice_agent.py").read_text())
         node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "parse_simple_command")
 
         class Stub:
@@ -314,7 +314,7 @@ class VoiceAgentIntegrationTests(unittest.TestCase):
 
 class ReplyAndDescriptionTests(unittest.TestCase):
     def namespace(self, names):
-        tree = ast.parse((ROOT / "kira_voice_agent.py").read_text())
+        tree = ast.parse((ROOT / "src/kira/services/kira_voice_agent.py").read_text())
         nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in names | {"preferred_address"}]
         nodes += [n for n in tree.body if isinstance(n, ast.Assign)
                   and any(isinstance(t, ast.Name) and t.id in {"ADDRESS_OPTIONS"} for t in n.targets)]
@@ -1040,7 +1040,7 @@ class FindOpenExecutionTests(unittest.TestCase):
         self.assertEqual(self.opened, self.folders_c)
 
     def test_voice_agent_reuses_the_candidates(self):
-        source = (ROOT / "kira_voice_agent.py").read_text()
+        source = (ROOT / "src/kira/services/kira_voice_agent.py").read_text()
         self.assertIn('action_data.get("candidates")', source,
                       "the voice agent must reuse the single search result")
 
@@ -1086,7 +1086,7 @@ class BreadthFirstSearchTests(unittest.TestCase):
         self.assertEqual(sorted(found), sorted(expected))
 
     def test_drive_root_budgets_cover_system_folders(self):
-        source = (ROOT / "kira_open.py").read_text()
+        source = (ROOT / "src/kira/tools/kira_open.py").read_text()
         self.assertIn("SEARCH_TIME_BUDGET = 5.0", source,
                       "every search operation is capped at 5 seconds")
         self.assertIn("max_entries=300000 if is_root else 150000", source)
@@ -1113,7 +1113,7 @@ class BreadthFirstSearchTests(unittest.TestCase):
         self.assertLess(elapsed, 3.0, "the deadline must stop the walk early")
 
     def test_open_all_cap_is_twenty(self):
-        source = (ROOT / "kira_voice_agent.py").read_text()
+        source = (ROOT / "src/kira/services/kira_voice_agent.py").read_text()
         self.assertIn("for path in matches[:20]:", source)
         self.assertIn("kira_open.folder_matches(target, parent=parent, limit=20,\n"
                       "                                            direct_only=not full_list)", source)
@@ -1125,7 +1125,7 @@ class ScopeOrderTests(unittest.TestCase):
 
     def test_real_pipeline_understands_place_first(self):
         import os as _os
-        tree = ast.parse((ROOT / "kira_voice_agent.py").read_text())
+        tree = ast.parse((ROOT / "src/kira/services/kira_voice_agent.py").read_text())
         node = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
                     and n.name == "parse_simple_command")
 

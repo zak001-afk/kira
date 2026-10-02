@@ -28,14 +28,14 @@ class RoutingTests(unittest.TestCase):
         with patch.dict("sys.modules", kira_web=web):
             self.assertEqual(try_web_learning("Learn About Python"), "Learned")
             for filename, name, args in [
-                ("main_window.py", "process_command", ("learn about Python",)),
-                ("main_window_tk.py", "_route", (object(), "learn about Python")),
-                ("kira_voice_agent.py", "ask_chat", ("learn about Python",)),
+                ("src/kira/presentation/main_window.py", "process_command", ("learn about Python",)),
+                ("src/kira/presentation/main_window_tk.py", "_route", (object(), "learn about Python")),
+                ("src/kira/services/kira_voice_agent.py", "ask_chat", ("learn about Python",)),
             ]:
                 reply = load_function(filename, name, {"kira_commands": kira_commands, "backend": None})(*args)
                 self.assertEqual(reply.get("response") if isinstance(reply, dict) else reply, "Learned")
             handler = Mock()
-            load_function("kira_api.py", "_handle_command", {"_command_handler": None, "kira_commands": kira_commands, "kira_language": kira_language})(handler, {"text": "learn about Python"})
+            load_function("src/kira/api/kira_api.py", "_handle_command", {"_command_handler": None, "kira_commands": kira_commands, "kira_language": kira_language})(handler, {"text": "learn about Python"})
             handler._send_json.assert_called_once_with({"response": "Learned", "action": "web_learn"})
 
     def test_topic_required_and_private_commands_not_routed(self):
@@ -47,7 +47,7 @@ class RoutingTests(unittest.TestCase):
 class SearchTests(unittest.TestCase):
     def test_empty_and_error_results(self):
         for results, expected in [([], "no web results"), ([{"error": "offline"}], "offline")]:
-            fn = load_function("kira_web.py", "search_and_summarize", {"search_web": Mock(return_value=results)})
+            fn = load_function("src/kira/tools/kira_web.py", "search_and_summarize", {"search_web": Mock(return_value=results)})
             self.assertIn(expected, fn("Python", store_memory=True))
 
     def test_empty_cache_is_retried_and_not_written(self):
@@ -58,7 +58,7 @@ class SearchTests(unittest.TestCase):
         client = ddgs.return_value.__enter__ = Mock(return_value=Mock())
         ddgs.return_value.__exit__ = Mock(return_value=False)
         client.return_value.text.return_value = []
-        fn = load_function("kira_web.py", "search_web", {
+        fn = load_function("src/kira/tools/kira_web.py", "search_web", {
             "DUCKDUCKGO_AVAILABLE": True, "CACHE_ENABLED": True,
             "web_cache": cache, "hashlib": hashlib, "DDGS": ddgs,
         })
@@ -76,7 +76,7 @@ class SpeechTests(unittest.TestCase):
         engine = Mock()
         subprocess = Mock()
         subprocess.run.side_effect = OSError("not Windows")
-        fn = load_function("kira_voice_agent.py", "speak", {
+        fn = load_function("src/kira/services/kira_voice_agent.py", "speak", {
             "personalize_address": lambda text: text, "base64": base64,
             "kira_language": kira_language, "select_voice": lambda engine, language: True,
             "subprocess": subprocess, "SAPI_VOICE": "test",

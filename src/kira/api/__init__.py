@@ -1,0 +1,1 @@
+"""Pont REST same-origin entre l'interface et le backend."""

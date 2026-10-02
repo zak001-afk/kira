@@ -30,6 +30,7 @@ rmdir /s /q dist 2>nul
 
 python -m PyInstaller --noconfirm --clean --windowed ^
  --name "KIRA" ^
+ --paths "src" ^
  --icon "assets\kira_app.ico" ^
  --add-data "kira_config.json;." ^
  --add-data "assets;assets" ^

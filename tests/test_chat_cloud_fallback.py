@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def load_names(names, extra=None):
-    tree = ast.parse((ROOT / "kira_voice_agent.py").read_text(encoding="utf-8"))
+    tree = ast.parse((ROOT / "src/kira/services/kira_voice_agent.py").read_text(encoding="utf-8"))
     wanted = []
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names:

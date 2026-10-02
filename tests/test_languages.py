@@ -178,14 +178,14 @@ class VoiceLanguageTests(unittest.TestCase):
     def test_native_preferences_have_a_persistent_profile_outside_the_checkout(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"LOCALAPPDATA": tmp}):
             self.assertEqual(webview_profile_directory(), Path(tmp) / "KIRA" / "WebViewProfile")
-        source = (ROOT / "main_window.py").read_text()
+        source = (ROOT / "src/kira/presentation/main_window.py").read_text()
         self.assertIn("private_mode=False", source)
         self.assertIn("storage_path=str(profile)", source)
 
 
 class ModelPromptTests(unittest.TestCase):
     def namespace(self, model):
-        tree = ast.parse((ROOT / "kira_voice_agent.py").read_text())
+        tree = ast.parse((ROOT / "src/kira/services/kira_voice_agent.py").read_text())
         names = {"build_chat_system_prompt", "clean_chat_response", "ask_chat", "_ask_chat_response", "preferred_address", "address_for_language", "detect_language", "chat_answer_with_web", "_web_answer", "_run_bounded", "_web_lookup", "_web_results", "_format_web_results", "_synthesize_web_answer", "WEB_SYNTHESIS_PROMPTS", "chat_budget", "_cloud_chat_answer", "CLOUD_CHAT_PROMPTS", "chat_provider", "_preferred_cloud", "_role_cloud", "_local_chat_answer", "direct_answer", "_is_personal", "_safe_math", "_FR_DAYS", "_FR_MONTHS", "_EN_DAYS", "_EN_MONTHS", "_AR_DAYS", "_AR_MONTHS", "_TIME_QUESTIONS", "_DATE_QUESTIONS", "_MATH_LEADINS", "_MATH_WORDS", "_name_capture", "_NAME_STATEMENTS", "_diagnostic_answer", "_cloud_test_answer"}
         nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
         nodes += [node for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id in (names | {"CHAT_SYSTEM_PROMPT", "ADDRESS_OPTIONS", "CHAT_ANSWER_BUDGET"}) for target in node.targets)]
