@@ -37,10 +37,19 @@ def planner_enabled():
 
 
 def planner_provider():
-    """'ollama' unless the user explicitly opted the planner into Gemini
-    (KIRA_PLANNER_PROVIDER=gemini) AND the cloud is ready."""
+    """'gemini' whenever the cloud is ready — the planner asks the linked
+    agents (Atlas…) for the facts, and a local model that never answers must
+    not sit on that path. KIRA_PLANNER_PROVIDER=ollama/local forces the old
+    local behavior back; 'gemini'/'cloud' mean the same as leaving it unset."""
+    try:
+        import kira_ai
+        kira_ai.ensure_env_loaded()  # KIRA_PLANNER_PROVIDER from .env
+    except Exception:
+        pass
     value = os.environ.get("KIRA_PLANNER_PROVIDER", "").strip().lower()
-    if value in {"gemini", "cloud"}:
+    if value in {"ollama", "local"}:
+        return "ollama"
+    if value in {"gemini", "cloud", ""}:
         try:
             import kira_ai
             if kira_ai.cloud_ready():

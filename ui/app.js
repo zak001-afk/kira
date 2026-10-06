@@ -1149,12 +1149,6 @@ let pluginData = [];       // full plugin payloads (id, tools, actions, version.
 let availablePlugins = []; // discovered on disk but not loaded
 
 const CORE_MODULES = [
-  { id: "voix", name: "Voix & Commande", desc: "Commandes vocales et réponses parlées", icon: "mic", view: "parametres" },
-  { id: "memoire", name: "Mémoire persistante", desc: "Conversations et faits enregistrés localement", icon: "memory", view: "historique" },
-  { id: "taches", name: "Gestion de tâches", desc: "Rappels, minuteurs et notes", icon: "clock", view: "taches" },
-  { id: "plugins", name: "Plugins", desc: "0 extension chargée", icon: "plugin", view: "agents" },
-  { id: "vision", name: "Vision écran", desc: "Analyse d'écran via le modèle local", icon: "eye", action: "analyze screen" },
-  { id: "web", name: "Recherche web", desc: "Recherche et apprentissage en ligne", icon: "globe", action: "__web" },
   { id: "programmation", name: "Agent de programmation", desc: "Crée des projets complets et modifie le code sur demande", icon: "code", view: "agents" },
 ];
 

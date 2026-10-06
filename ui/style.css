@@ -219,7 +219,7 @@ body { position: relative; }
   left: 26px;
   right: 26px;
   display: grid;
-  grid-template-columns: 330px 1fr 356px;
+  grid-template-columns: 430px 1fr 356px;
   gap: 18px;
   animation: fadeUp 0.7s ease both;
 }
@@ -340,7 +340,7 @@ body { position: relative; }
    CONVERSATION
    ========================================================= */
 
-.conversation-panel { flex: 1.35; }
+.conversation-panel { flex: 1; }
 
 .conversation {
   flex: 1;
@@ -373,7 +373,7 @@ body { position: relative; }
 }
 
 .message {
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.45;
   color: var(--text);
   border-left: 2px solid var(--gold-dark);
@@ -428,13 +428,13 @@ body { position: relative; }
 .command-box input {
   flex: 1;
   min-width: 0;
-  height: 42px;
+  height: 48px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: rgba(8, 6, 2, 0.75);
   color: var(--gold-bright);
   font-family: 'Rajdhani', sans-serif;
-  font-size: 15.5px;
+  font-size: 16.5px;
   font-weight: 500;
   letter-spacing: 0.5px;
   padding: 0 14px;
@@ -450,8 +450,8 @@ body { position: relative; }
 }
 
 .command-box button {
-  width: 42px;
-  height: 42px;
+  width: 48px;
+  height: 48px;
   flex: 0 0 auto;
   border: 1px solid var(--border);
   border-radius: 9px;
@@ -502,7 +502,7 @@ body { position: relative; }
    AGENTS (colonne gauche)
    ========================================================= */
 
-.agents-panel { flex: 1; }
+.agents-panel { flex: 0 0 auto; }
 
 .agents-list {
   flex: 1;
@@ -1067,7 +1067,7 @@ body { position: relative; }
   position: absolute;
   top: 92px;
   bottom: 122px;
-  left: 372px;
+  left: 462px;
   right: 398px;
   min-width: 320px;
   display: flex;
@@ -1340,13 +1340,14 @@ body { position: relative; }
    ========================================================= */
 
 @media (max-width: 1420px) {
-  .hud-grid { grid-template-columns: 300px 1fr 330px; }
-  .view-overlay { left: 340px; right: 368px; }
+  .hud-grid { grid-template-columns: 400px 1fr 330px; }
+  .view-overlay { left: 440px; right: 368px; }
   .gauges { grid-template-columns: repeat(2, 1fr); gap: 12px; }
 }
 
 @media (max-width: 1240px) {
-  .hud-grid { grid-template-columns: 280px 1fr 300px; }
+  .hud-grid { grid-template-columns: 340px 1fr 300px; }
+  .view-overlay { left: 380px; }
   .act-row { grid-template-columns: 96px 1fr 40px; }
   .dock-btn span { display: none; }
 }

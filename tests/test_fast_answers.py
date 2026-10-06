@@ -6,12 +6,14 @@ Windows desktop dependencies), so the helpers are executed from their AST,
 like the other voice-agent tests.
 """
 import ast
+import os
 import sys
 import threading
 import time
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -147,7 +149,8 @@ class WebAnswerTests(unittest.TestCase):
             return str(text or "").strip()
 
         ns = load_names({"_web_answer", "_web_results", "_format_web_results", "_web_lookup",
-                         "_synthesize_web_answer", "WEB_SYNTHESIS_PROMPTS"},
+                         "_synthesize_web_answer", "_synthesis_uses_cloud",
+                         "WEB_SYNTHESIS_PROMPTS"},
                         extra={"call_ollama": fake_call_ollama, "clean_chat_response": clean})
         self.web_answer = ns["_web_answer"]
         self.web_lookup = ns["_web_lookup"]
@@ -202,13 +205,32 @@ class WebAnswerTests(unittest.TestCase):
     def test_synthesis_reformulates_with_a_strict_prompt(self):
         self.model_answer = "  Dell est une entreprise américaine fondée par Michael Dell.  "
         results = [{"title": "Dell", "body": "Entreprise américaine.", "href": "https://dell.com"}]
-        answer = self.synthesize("c'est quoi dell", "fr", results)
+        # Local synthesis is the 'auto'/ollama path; the cloud pin has its own test.
+        with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": ""}):
+            answer = self.synthesize("c'est quoi dell", "fr", results)
         self.assertEqual(answer, "Dell est une entreprise américaine fondée par Michael Dell.")
         system_prompt, user_prompt = self.last_prompt
         self.assertIn("Reformule", system_prompt)
         self.assertIn("c'est quoi dell", user_prompt)
         self.assertIn("- Dell: Entreprise américaine.", user_prompt)
         self.assertNotIn("https://dell.com", user_prompt)
+
+    def test_cloud_pin_synthesises_in_the_cloud_and_never_in_ollama(self):
+        """KIRA_CHAT_PROVIDER=gemini: even the web reformulation is written by
+        the cloud — the local model that never answers is out of the loop."""
+        fake_ai = types.SimpleNamespace(
+            ensure_env_loaded=lambda path=None: None,
+            provider_ready=Mock(return_value=True),
+            cloud_ready=Mock(return_value=True),
+            chat=Mock(return_value=types.SimpleNamespace(ok=True, text="  Reformulation cloud.  ")))
+        results = [{"title": "Dell", "body": "Entreprise américaine.", "href": "https://dell.com"}]
+        with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": "gemini"}), \
+                patch.dict(sys.modules, kira_ai=fake_ai):
+            answer = self.synthesize("c'est quoi dell", "fr", results)
+        self.assertEqual(answer, "Reformulation cloud.")
+        self.assertIsNone(self.last_prompt)      # call_ollama never ran
+        fake_ai.chat.assert_called_once()
+        self.assertEqual(fake_ai.chat.call_args.kwargs["provider"], "gemini")
 
     def test_synthesis_without_usable_results_returns_none(self):
         self.assertIsNone(self.synthesize("question", "fr", [{"title": "x", "body": ""}]))

@@ -348,14 +348,20 @@ class OpenActionRoutingTests(unittest.TestCase):
         )
 
     def test_open_file_action_executes_once_in_french(self):
-        result = commands.process_command(self.backend(), "ouvre mon rapport.pdf", reply_language="fr")
+        backend = self.backend()
+        asked = commands.process_command(backend, "ouvre mon rapport.pdf", reply_language="fr")
+        self.assertEqual(asked["action"], "intent")          # annonce d'abord
+        self.assertTrue(asked["needs_confirmation"])
+        result = commands.process_command(backend, "oui", reply_language="fr")
         self.assertEqual(result["action"], "open_file")
         self.assertTrue(result["success"])
         self.assertEqual(result["response"], "open_file:rapport.pdf:fr")
         self.assertEqual(result["language"], "fr")
 
     def test_failed_open_is_admitted_in_the_interface_language(self):
-        result = commands.process_command(self.backend(target="ghost.pdf", success=False), "ouvre ghost.pdf", reply_language="fr", interface_language="fr")
+        backend = self.backend(target="ghost.pdf", success=False)
+        commands.process_command(backend, "ouvre ghost.pdf", reply_language="fr", interface_language="fr")
+        result = commands.process_command(backend, "oui", reply_language="fr", interface_language="fr")
         self.assertFalse(result["success"])
         self.assertIn("ghost.pdf", result["response"])
 
@@ -660,6 +666,7 @@ class AskWhichOneTests(unittest.TestCase):
 
     def setUp(self):
         commands.clear_pending_open()
+        commands.clear_pending_intent()
         self.drive_c = tempfile.mkdtemp()
         self.drive_d = tempfile.mkdtemp()
         for index in (4, 3, 2, 1):
@@ -708,8 +715,18 @@ class AskWhichOneTests(unittest.TestCase):
     def tearDown(self):
         commands.clear_pending_open()
 
+    def ask(self, text="ouvre le fichier rapport"):
+        """La secrétaire annonce OÙ elle applique l'ordre (« je vais ouvrir… »)
+        AVANT de le faire : « oui » l'exécute, puis la question/le résultat
+        arrive comme avant."""
+        asked = commands.process_command(self.backend, text, reply_language="fr")
+        self.assertEqual(asked["action"], "intent")
+        self.assertTrue(asked["needs_confirmation"])
+        self.assertIn("ouvrir", asked["response"])
+        return commands.process_command(self.backend, "oui", reply_language="fr")
+
     def test_multiple_matches_ask_which_one(self):
-        result = commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        result = self.ask()
         self.assertTrue(result["needs_choice"])
         self.assertIn("Lequel", result["response"])
         self.assertEqual(len(result["candidates"]), 5)
@@ -717,7 +734,7 @@ class AskWhichOneTests(unittest.TestCase):
         self.assertEqual(names, sorted(names), "candidates must be listed in a stable order")
 
     def test_the_question_explains_how_to_answer(self):
-        result = commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        result = self.ask()
         self.assertIn("numéro", result["response"])
         self.assertIn("tous", result["response"])
         self.assertIn("annule", result["response"])
@@ -725,7 +742,7 @@ class AskWhichOneTests(unittest.TestCase):
     def test_answers_are_understood_in_many_forms(self):
         for answer in ["le 2", "n°2", "n2", "numero 2", "le deuxième", "2"]:
             commands.clear_pending_open()
-            commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+            self.ask()
             self.opened.clear()
             result = commands.process_command(self.backend, answer, reply_language="fr")
             self.assertEqual(len(self.opened), 1, answer)
@@ -739,7 +756,7 @@ class AskWhichOneTests(unittest.TestCase):
         self.assertEqual(self.opened, [])
 
     def test_the_choice_stays_available_for_ten_minutes(self):
-        commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        self.ask()
         import time as time_module
         stale = commands._PENDING_OPEN["time"] - 400  # 6-7 minutes old
         commands._PENDING_OPEN["time"] = stale
@@ -747,39 +764,39 @@ class AskWhichOneTests(unittest.TestCase):
         self.assertEqual(len(self.opened), 1)
 
     def test_the_answer_opens_the_chosen_one(self):
-        commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        self.ask()
         result = commands.process_command(self.backend, "2", reply_language="fr")
         self.assertEqual(len(self.opened), 1)
         self.assertTrue(self.opened[0].endswith(".pdf"))
         self.assertIsNone(commands.pending_open())
 
     def test_all_answer_opens_every_candidate(self):
-        commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        self.ask()
         result = commands.process_command(self.backend, "tous", reply_language="fr")
         self.assertEqual(len(self.opened), 5)
         self.assertTrue(result["success"])
 
     def test_cancel_answer_closes_the_question(self):
-        commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        self.ask()
         result = commands.process_command(self.backend, "annule", reply_language="fr")
         self.assertIn("annule", result["response"])
         self.assertIsNone(commands.pending_open())
         self.assertEqual(self.opened, [])
 
     def test_ordinal_words_pick_too(self):
-        commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        self.ask()
         commands.process_command(self.backend, "le premier", reply_language="fr")
         self.assertEqual(len(self.opened), 1)
         self.assertTrue(self.opened[0].endswith("rapport1.pdf"))
 
     def test_all_request_opens_everything_at_once(self):
-        result = commands.process_command(self.backend, "ouvre tous les fichiers rapport", reply_language="fr")
+        result = self.ask("ouvre tous les fichiers rapport")
         self.assertTrue(result["success"])
         self.assertEqual(result["response"], commands.message("opened_all", "fr", count=5))
         self.assertEqual(len(self.opened), 5)
 
     def test_aliases_and_drives_are_never_disambiguated(self):
-        result = commands.process_command(self.backend, "ouvre téléchargements", reply_language="fr")
+        result = self.ask("ouvre téléchargements")
         self.assertFalse(result.get("needs_choice"))
         self.assertEqual(len(self.opened), 1)
 
@@ -795,7 +812,7 @@ class AskWhichOneTests(unittest.TestCase):
         deep = Path(self.drive_c) / "divers" / "2025"
         deep.mkdir(parents=True)
         (deep / "bilan.pdf").write_text("x", encoding="utf-8")
-        result = commands.process_command(self.backend, "ouvre le fichier bilan", reply_language="fr")
+        result = self.ask("ouvre le fichier bilan")
         self.assertTrue(result["needs_choice"], "one local match plus others must ask")
         self.assertEqual(len(result["candidates"]), 3)
         self.assertEqual(self.opened, [])
@@ -804,7 +821,7 @@ class AskWhichOneTests(unittest.TestCase):
         deep = Path(self.drive_d) / "secret" / "tres" / "profond"
         deep.mkdir(parents=True)
         (deep / "unique.txt").write_text("x", encoding="utf-8")
-        result = commands.process_command(self.backend, "ouvre le fichier unique.txt", reply_language="fr")
+        result = self.ask("ouvre le fichier unique.txt")
         self.assertFalse(result.get("needs_choice"))
         self.assertEqual(len(self.opened), 1)
         self.assertTrue(self.opened[0].endswith("unique.txt"))
@@ -815,7 +832,7 @@ class AskWhichOneTests(unittest.TestCase):
         elsewhere = Path(self.drive_c) / "somewhere"
         elsewhere.mkdir(parents=True)
         (elsewhere / "special.pdf").write_text("x", encoding="utf-8")
-        result = commands.process_command(self.backend, "ouvre le fichier special dans le dossier archives", reply_language="fr")
+        result = self.ask("ouvre le fichier special dans le dossier archives")
         self.assertFalse(result.get("needs_choice"))
         self.assertEqual(len(self.opened), 1)
         self.assertTrue(self.opened[0].endswith("special.pdf"))
@@ -824,7 +841,7 @@ class AskWhichOneTests(unittest.TestCase):
         for index in (2, 3, 4):
             (Path(self.drive_c) / f"doc{index}" / "notes" / f"rapport{index}.pdf").unlink()
         (Path(self.drive_d) / "archives" / "rapport5.pdf").unlink()
-        result = commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
+        result = self.ask("ouvre le fichier rapport")
         self.assertFalse(result.get("needs_choice"))
         self.assertEqual(len(self.opened), 1)
 
@@ -992,6 +1009,14 @@ class FindOpenExecutionTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(commands.clear_pending_open)
+        self.addCleanup(commands.clear_pending_intent)
+
+    def ask(self, text):
+        """La secrétaire annonce OÙ elle applique l'ordre ; « oui » l'exécute."""
+        asked = commands.process_command(self.backend, text, reply_language="fr")
+        self.assertEqual(asked["action"], "intent")
+        self.assertTrue(asked["needs_confirmation"])
+        return commands.process_command(self.backend, "oui", reply_language="fr")
 
     def _execute(self, data):
         if data.get("all"):
@@ -1008,10 +1033,8 @@ class FindOpenExecutionTests(unittest.TestCase):
         return True
 
     def test_dell_sentence_opens_every_folder_on_c_once(self):
-        result = commands.process_command(
-            self.backend,
-            "cherche moi les dossier dell sur le c et ouvre chaque dossier qui porte le nom dell",
-            reply_language="fr")
+        result = self.ask(
+            "cherche moi les dossier dell sur le c et ouvre chaque dossier qui porte le nom dell")
         self.assertTrue(result["success"])
         self.assertIn("4", result["response"])
         self.assertEqual(self.searches, [{"name": "dell", "parent": "c"}],
@@ -1020,20 +1043,14 @@ class FindOpenExecutionTests(unittest.TestCase):
         self.assertTrue(all(path.startswith("C:\\") for path in self.opened))
 
     def test_bare_find_singular_asks_with_the_list(self):
-        result = commands.process_command(
-            self.backend,
-            "cherche le dossier dell dans tous le local c",
-            reply_language="fr")
+        result = self.ask("cherche le dossier dell dans tous le local c")
         self.assertTrue(result["needs_choice"])
         self.assertNotEqual(result.get("action"), "chat")
         self.assertEqual(self.searches, [{"name": "dell", "parent": "c"}])
         self.assertEqual(result["candidates"], self.folders_c)
 
     def test_bare_find_plural_opens_all_once(self):
-        result = commands.process_command(
-            self.backend,
-            "cherche les dossiers dell dans tout le local c",
-            reply_language="fr")
+        result = self.ask("cherche les dossiers dell dans tout le local c")
         self.assertTrue(result["success"])
         self.assertIn("4", result["response"])
         self.assertEqual(self.searches, [{"name": "dell", "parent": "c"}])
@@ -1157,6 +1174,7 @@ class ContainsSearchTests(unittest.TestCase):
 
     def setUp(self):
         commands.clear_pending_open()
+        commands.clear_pending_intent()
         self.drive_c = tempfile.mkdtemp()
         for sub in ["dell", "programme/dell", "mm/dell", "dell sauvegarde"]:
             Path(self.drive_c, sub).mkdir(parents=True)
@@ -1207,8 +1225,15 @@ class ContainsSearchTests(unittest.TestCase):
     def tearDown(self):
         commands.clear_pending_open()
 
+    def ask(self, text="cherche dell dans le c"):
+        """La secrétaire annonce OÙ elle cherche/ouvre ; « oui » l'exécute."""
+        asked = commands.process_command(self.backend, text, reply_language="fr")
+        self.assertEqual(asked["action"], "intent")
+        self.assertTrue(asked["needs_confirmation"])
+        return commands.process_command(self.backend, "oui", reply_language="fr")
+
     def test_bare_search_lists_everything_then_opens_the_choice(self):
-        result = commands.process_command(self.backend, "cherche dell dans le c", reply_language="fr")
+        result = self.ask("cherche dell dans le c")
         self.assertTrue(result["needs_choice"])
         self.assertNotEqual(result.get("action"), "chat")
         # Windows candidates use backslashes; compare drive-relative, "/" form.
@@ -1221,10 +1246,7 @@ class ContainsSearchTests(unittest.TestCase):
         self.assertEqual(self.opened, [str(Path(self.drive_c, "programme/dell"))])
 
     def test_plural_contains_opens_all_folders_without_the_file(self):
-        result = commands.process_command(
-            self.backend,
-            "cherche tous les dossiers qui contiennent le mot dell dans le c",
-            reply_language="fr")
+        result = self.ask("cherche tous les dossiers qui contiennent le mot dell dans le c")
         self.assertTrue(result["success"])
         self.assertEqual(sorted(self.opened),
                          sorted([str(Path(self.drive_c, "dell")),
@@ -1233,12 +1255,12 @@ class ContainsSearchTests(unittest.TestCase):
                                  str(Path(self.drive_c, "dell sauvegarde"))]))
 
     def test_a_typo_in_the_name_still_finds(self):
-        result = commands.process_command(self.backend, "cherche le dossier delll dans le c", reply_language="fr")
+        result = self.ask("cherche le dossier delll dans le c")
         self.assertTrue(result["needs_choice"])
         self.assertGreaterEqual(len(result["candidates"]), 3)
 
     def test_named_noun_direct_child_still_opens_fast(self):
-        result = commands.process_command(self.backend, "cherche le dossier dell dans le c", reply_language="fr")
+        result = self.ask("cherche le dossier dell dans le c")
         self.assertFalse(result.get("needs_choice", False))
         self.assertEqual(self.opened, [str(Path(self.drive_c, "dell"))])
 

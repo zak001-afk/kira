@@ -279,7 +279,111 @@ def _web_search(query, num_results=5):
     return kira_web.search_web(query, num_results=max(1, min(int(num_results or 5), 10)))
 
 
+def _atlas_research(query, max_wait=240, language=""):
+    """Deep research delegated to the Atlas agent (E:\\research-agent).
+
+    Runs ``atlas_cli.py`` with Atlas' own venv in a subprocess: the Atlas
+    server does NOT need to be running, and KIRA's environment stays
+    untouched. Returns the synthesis (+ sources footer) as ``response``.
+
+    ``language`` (fr, en, ar…) is forced on the synthesis: Atlas must answer
+    in the language the user asked in, even when every source is English.
+    """
+    import json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from kira import paths
+
+    query = str(query or "").strip()
+    if not query:
+        return {"ok": False, "error": "Requête de recherche vide.",
+                "error_code": "bad_request"}
+    lang = str(language or "").strip().lower()[:2]
+
+    atlas_dir = Path(os.environ.get("ATLAS_DIR")
+                     or paths.PROJECT_ROOT.parent / "research-agent")
+    cli = atlas_dir / "atlas_cli.py"
+    if not cli.is_file():
+        return {"ok": False, "error": f"Agent Atlas introuvable : {cli}",
+                "error_code": "atlas_missing"}
+    python = atlas_dir / ".venv" / "Scripts" / "python.exe"
+    if not python.is_file():
+        python = Path(sys.executable)  # secours : interpréteur courant
+
+    command = [str(python), str(cli), query]
+    if lang:
+        command += ["--lang", lang]
+
+    proc = subprocess.run(
+        command,
+        cwd=str(atlas_dir), capture_output=True,
+        encoding="utf-8", errors="replace",
+        timeout=max(30, int(max_wait)))
+
+    # La dernière ligne « { ... } » est le payload (les journaux précèdent).
+    payload = {}
+    for line in reversed((proc.stdout or "").splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                payload = json.loads(line)
+            except ValueError:
+                payload = {}
+            break
+
+    if proc.returncode != 0 or not payload.get("ok"):
+        error = str(payload.get("error") or "").strip()
+        if not error:
+            error = ((proc.stderr or "").strip()[-400:]
+                     or "Atlas n'a pas pu mener la recherche.")
+        return {"ok": False, "error": error, "error_code": "atlas_failed"}
+
+    answer = str(payload.get("answer") or "").strip()
+    if not answer:
+        return {"ok": False, "error": "Atlas n'a renvoyé aucune réponse.",
+                "error_code": "atlas_empty"}
+
+    answer = _ensure_atlas_language(answer, lang)
+
+    sources = list(payload.get("sources") or [])
+    # Réponse propre type ChatGPT : ni crochets [1], ni liste de liens —
+    # les sources restent disponibles dans les données du résultat.
+    return {"ok": True, "response": answer,
+            "sources": sources,
+            "interpretation": str(payload.get("interpretation") or ""),
+            "atlas_elapsed": payload.get("elapsed")}
+
+
 # Keyless public information tools (kira_info): no API keys anywhere.
+
+
+def _ensure_atlas_language(text, language):
+    """Garde-fou final : la synthèse Atlas doit être dans la langue demandée.
+
+    Détection locale (aucun coût, ~0 ms) ; une traduction UNE seule fois n'est
+    lancée que si la réponse est franchement dans la mauvaise langue. Si la
+    traduction échoue, on garde la réponse d'origine plutôt que de perdre la
+    recherche.
+    """
+    if not language:
+        return text
+    try:
+        from kira.core import kira_language
+
+        def model_call(messages=(), options=None):
+            import kira_ai
+            reply = kira_ai.chat(list(messages), timeout=20,
+                                 options=options or {})
+            if not getattr(reply, "ok", False):
+                raise RuntimeError(getattr(reply, "error", None) or "translation failed")
+            return {"message": {"content": reply.text}}
+
+        return kira_language.ensure_reply_language(text, language, model_call)
+    except Exception:
+        return text
 
 def _get_weather(city):
     import kira_info
@@ -498,6 +602,14 @@ def ensure_builtins():
                   {"query": {"type": str, "required": True},
                    "num_results": {"type": int, "required": False}},
                   _web_search)
+    register_tool("atlas_research", "research",
+                  "Deep web research with the Atlas agent: multi-source search, "
+                  "reads the best pages, then a full sourced synthesis with a clear "
+                  "conclusion. Use for any 'research on X' / 'fais une recherche "
+                  "sur X' request instead of a plain web_search.",
+                  {"query": {"type": str, "required": True},
+                   "language": {"type": str, "required": False}},
+                  _atlas_research)
     register_tool("get_weather", "research",
                   "Current weather and today/tomorrow forecast for a city (keyless Open-Meteo).",
                   {"city": {"type": str, "required": True}},

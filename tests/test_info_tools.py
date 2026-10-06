@@ -34,6 +34,15 @@ def backend():
                            ask_chat=Mock(return_value="chat answer"))
 
 
+def route(text, **options):
+    """La secrétaire annonce OÙ elle va chercher/agir avant chaque action :
+    « oui » exécute. L'annonce est obligatoire sur ce chemin."""
+    asked = kira_commands.process_command(backend(), text, **options)
+    assert asked.get("needs_confirmation"), f"pas d'annonce d'intention: {asked}"
+    assert asked["action"] == "intent", asked
+    return kira_commands.process_command(backend(), "yes", **options)
+
+
 class WeatherTests(unittest.TestCase):
     def test_geocodes_then_forecasts(self):
         with patch.object(kira_info, "_get_json", side_effect=[GEO, FORECAST]) as get:
@@ -51,7 +60,7 @@ class WeatherTests(unittest.TestCase):
 
     def test_route_localizes_french_response(self):
         with patch.object(kira_info, "_get_json", side_effect=[GEO, FORECAST]):
-            result = kira_commands.process_command(backend(), "météo à Nabeul", reply_language="fr")
+            result = route("météo à Nabeul", reply_language="fr")
         self.assertEqual(result["action"], "get_weather")
         self.assertTrue(result["success"])
         self.assertIn("Météo à Nabeul", result["response"])
@@ -59,14 +68,14 @@ class WeatherTests(unittest.TestCase):
 
     def test_no_city_no_default_asks_for_one(self):
         with patch.dict(os.environ, {"KIRA_CITY": ""}):
-            result = kira_commands.process_command(backend(), "weather", reply_language="en")
+            result = route("weather", reply_language="en")
         self.assertEqual(result["error_code"], "city_missing")
         self.assertIn("KIRA_CITY", result["response"])
 
     def test_kira_city_default_is_used(self):
         with patch.dict(os.environ, {"KIRA_CITY": "Nabeul"}), \
                 patch.object(kira_info, "_get_json", side_effect=[GEO, FORECAST]):
-            result = kira_commands.process_command(backend(), "what's the weather", reply_language="en")
+            result = route("what's the weather", reply_language="en")
         self.assertTrue(result["success"])
         self.assertIn("Weather in Nabeul", result["response"])
 
@@ -85,7 +94,7 @@ class HolidaysTests(unittest.TestCase):
 
     def test_route_lists_upcoming(self):
         with patch.object(kira_info, "_get_json", return_value=HOLIDAYS):
-            result = kira_commands.process_command(backend(), "holidays in France", reply_language="en")
+            result = route("holidays in France", reply_language="en")
         self.assertTrue(result["success"])
         self.assertIn("FR", result["response"])
         self.assertIn("2099-12-31", result["response"])
@@ -110,7 +119,7 @@ class CurrencyTests(unittest.TestCase):
 
     def test_route_formats_sentence(self):
         with patch.object(kira_info, "_get_json", return_value=self.RATES):
-            result = kira_commands.process_command(backend(), "convert 100 eur to tnd", reply_language="en")
+            result = route("convert 100 eur to tnd", reply_language="en")
         self.assertTrue(result["success"])
         self.assertIn("100.0 EUR = 342.0 TND", result["response"])
 
@@ -169,13 +178,13 @@ class WikiTests(unittest.TestCase):
 
     def test_route_answers_with_the_summary(self):
         with patch.object(kira_info, "_get_json", side_effect=[WIKI_SEARCH, WIKI_PAGE]):
-            result = kira_commands.process_command(backend(), "qui est Tunis", reply_language="fr")
+            result = route("qui est Tunis", reply_language="fr")
         self.assertEqual(result["action"], "wiki_summary")
         self.assertEqual(result["response"], "Tunis est la capitale de la Tunisie.")
 
     def test_route_not_found_is_a_localized_sentence(self):
         with patch.object(kira_info, "_get_json", return_value={"pages": []}):
-            result = kira_commands.process_command(backend(), "wikipedia xyzzy", reply_language="fr")
+            result = route("wikipedia xyzzy", reply_language="fr")
         self.assertEqual(result["error_code"], "wiki_not_found")
         self.assertIn("xyzzy", result["response"])
 
@@ -208,7 +217,7 @@ class TranslateTests(unittest.TestCase):
 
     def test_route_returns_translation_as_response(self):
         with patch.object(kira_info, "_get_json", return_value=self.REPLY):
-            result = kira_commands.process_command(backend(), "translate hello everyone to french",
+            result = route("translate hello everyone to french",
                                                    reply_language="en")
         self.assertEqual(result["action"], "translate_text")
         self.assertEqual(result["response"], "Bonjour tout le monde")
@@ -255,7 +264,7 @@ class GrammarTests(unittest.TestCase):
 
     def test_network_failure_is_structured_never_raised(self):
         with patch.object(kira_info, "_get_json", side_effect=RuntimeError("offline")):
-            result = kira_commands.process_command(backend(), "météo à Nabeul", reply_language="fr")
+            result = route("météo à Nabeul", reply_language="fr")
         self.assertFalse(result.get("success", False))
         self.assertEqual(result.get("error_code"), "tool_failed")
 
@@ -288,7 +297,7 @@ class CryptoTests(unittest.TestCase):
 
     def test_route_formats_sentence(self):
         with patch.object(kira_info, "_get_json", return_value=CRYPTO):
-            result = kira_commands.process_command(backend(), "what is the bitcoin price in eur",
+            result = route("what is the bitcoin price in eur",
                                                    reply_language="en")
         self.assertEqual(result["action"], "crypto_price")
         self.assertTrue(result["success"])
@@ -304,7 +313,7 @@ class PrayerTests(unittest.TestCase):
 
     def test_route_lists_times(self):
         with patch.object(kira_info, "_get_json", side_effect=[COINGECKO_META, ALADHAN]):
-            result = kira_commands.process_command(backend(), "heures de prière à Nabeul",
+            result = route("heures de prière à Nabeul",
                                                    reply_language="fr")
         self.assertEqual(result["action"], "prayer_times")
         self.assertTrue(result["success"])
@@ -321,7 +330,7 @@ class SongTests(unittest.TestCase):
 
     def test_route_lists_tracks(self):
         with patch.object(kira_info, "_get_json", return_value=ITUNES):
-            result = kira_commands.process_command(backend(), "cherche la chanson one more time",
+            result = route("cherche la chanson one more time",
                                                    reply_language="fr")
         self.assertEqual(result["action"], "song_search")
         self.assertTrue(result["success"])
@@ -336,7 +345,7 @@ class QuoteTests(unittest.TestCase):
 
     def test_route_quotes_with_author(self):
         with patch.object(kira_info, "_get_json", return_value=ZEN):
-            result = kira_commands.process_command(backend(), "donne-moi une citation",
+            result = route("donne-moi une citation",
                                                    reply_language="fr")
         self.assertEqual(result["action"], "daily_quote")
         self.assertIn("Steve Jobs", result["response"])
