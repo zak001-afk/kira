@@ -289,14 +289,14 @@ class AskChatWiringTests(unittest.TestCase):
         from types import SimpleNamespace
         extra = {
             "kira_commands": kira_commands,
-            "kira_language": SimpleNamespace(normalize_language=lambda l, d=None: l or d,
-                                             ensure_reply_language=lambda a, l, m: a),
+            "kira_language": SimpleNamespace(normalize_language=lambda value, default=None: value or default,
+                                             ensure_reply_language=lambda answer, _language, _mode: answer),
             "kira_memory": SimpleNamespace(save_message=lambda *a, **k: None,
                                            save_memory=lambda **kw: None),
             "call_ollama": Mock(),
             "detect_language": lambda text: "en",
-            "_web_lookup": lambda c, l: None,
-            "_synthesize_web_answer": lambda c, l, p: None,
+            "_web_lookup": lambda _command, _language: None,
+            "_synthesize_web_answer": lambda _command, _language, _prompt: None,
             "_ask_chat_response": local or Mock(return_value="local answer"),
             "refresh_shared_private_terms": lambda: None,
             "logging": __import__("logging"),

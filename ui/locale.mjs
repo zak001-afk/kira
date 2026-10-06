@@ -17,13 +17,17 @@ export function speechLocale(value, fallback = "en-US") {
   if (!locale.includes("-")) locale = DEFAULTS[locale.toLowerCase()] || locale;
   try { return Intl.getCanonicalLocales(locale)[0] || fallback; } catch { return fallback; }
 }
+// KIRA speaks with a female voice: a male browser/OS voice (David, Guy, Henri…)
+// must never win over a neutral female one for the same language.
+const MALE_VOICE = /\bmale\b|david|mark|george|richard|ryan|guy|christopher|steffan|henri|thomas|pierre|antoine|julien/i;
 export function matchingVoice(voices, language) {
   const locale = speechLocale(language).toLowerCase();
   return (voices || []).filter(voice => baseLanguage(voice.lang) === baseLanguage(locale))
     .map((voice, index) => ({ voice, score:
       (String(voice.lang).replace(/_/g, "-").toLowerCase() === locale ? 20 : 0)
       + (/female|denise|hortense|samantha|zira|jenny|katja|elvira|nanami|xiaoxiao|zariyah/i.test(voice.name || "") ? 5 : 0)
-      + (voice.default ? 1 : 0), index }))
+      + (voice.default ? 1 : 0)
+      - (MALE_VOICE.test(String(voice.name || "")) ? 10 : 0), index }))
     .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.voice || null;
 }
 export const FALLBACK_LANGUAGES = [

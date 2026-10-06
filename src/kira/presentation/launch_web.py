@@ -10,13 +10,11 @@ The API server starts on port 8765 and the browser opens automatically.
 """
 
 import http.server
-import os
 import sys
 import threading
 import time
 import webbrowser
 from functools import partial
-from pathlib import Path
 
 # Racine du projet : donnees et ui/ restent a la racine du depot
 from kira import paths
@@ -74,13 +72,13 @@ def main():
     ui_server = start_ui_server()
 
     # 4. Open the browser
-    print(f"[4/4] Opening KIRA interface...")
+    print("[4/4] Opening KIRA interface...")
     time.sleep(0.5)
     webbrowser.open(f"http://localhost:{UI_PORT}")
 
     print()
     print("=" * 60)
-    print(f"  KIRA is running!")
+    print("  KIRA is running!")
     print(f"  UI:  http://localhost:{UI_PORT}")
     print(f"  API: http://localhost:{API_PORT}")
     print()

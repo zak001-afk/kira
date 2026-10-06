@@ -8,8 +8,6 @@
   args, consequential), then it loads hot via kira_plugins.
 """
 from datetime import datetime
-from pathlib import Path
-import os
 import re
 import shutil
 import sqlite3

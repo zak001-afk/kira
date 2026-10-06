@@ -8,7 +8,6 @@ browser-based TTS. Uses edge-tts library.
 from kira.core.kira_speech import clean_for_speech
 
 import asyncio
-import os
 import tempfile
 import hashlib
 import html
@@ -43,7 +42,16 @@ FEMALE_VOICES = {
     "denise": "fr-FR-DeniseNeural",     # Chaleureuse, naturelle (FR)
     "eloise": "fr-FR-EloiseNeural",     # Jeune, expressive (FR)
     "vivienne": "fr-FR-VivienneNeural", # Posée, élégante (FR)
+}
+
+# Male voices that a legacy caller may still name. KIRA speaks with a female
+# voice only: these are never advertised by ``get_voices()`` and never returned
+# by :func:`select_neural_voice`, which falls back to the female voice of the
+# requested language instead.
+MALE_VOICES = {
     "henri": "fr-FR-HenriNeural",       # Masculine, grave (FR)
+    "guy": "en-US-GuyNeural",           # Masculine (EN)
+    "ryan": "en-GB-RyanNeural",         # Masculine (EN, UK)
 }
 
 
@@ -153,8 +161,15 @@ def get_word_timings(audio_path):
 
 
 def select_neural_voice(text, voice=None, language=None):
-    """A requested language wins over an incompatible legacy 'jenny' default."""
-    named = FEMALE_VOICES.get(str(voice or "").lower(), voice)
+    """A requested language wins over an incompatible legacy 'jenny' default.
+
+    KIRA only speaks with female voices: a male voice name is treated as "no
+    voice requested" so the female voice of the reply's language is used.
+    """
+    name = str(voice or "").lower()
+    if name in MALE_VOICES:
+        voice = None
+    named = FEMALE_VOICES.get(name, voice)
     if language is None and named:
         return named  # Preserve the explicit-voice Python API.
     code = kira_language.speech_language(text, language or "auto")
@@ -174,12 +189,12 @@ def select_neural_voice(text, voice=None, language=None):
 def generate_speech(text: str, voice: str = None, language: str = None) -> str | None:
     """
     Generate speech audio from text.
-    
+
     Args:
         text: Text to speak
         voice: Optional explicit voice name
         language: Reply language; when supplied, overrides an incompatible voice
-    
+
     Returns:
         Path to generated audio file, or None if failed
     """
@@ -187,10 +202,10 @@ def generate_speech(text: str, voice: str = None, language: str = None) -> str |
     if not EDGE_TTS_AVAILABLE:
         print("[KIRA TTS] edge-tts not available")
         return None
-    
+
     if not text or not text.strip():
         return None
-    
+
     voice = select_neural_voice(text, voice, language)
     if not voice:
         print("[KIRA TTS] No matching voice for the requested language")
@@ -199,16 +214,16 @@ def generate_speech(text: str, voice: str = None, language: str = None) -> str |
     # Generate cache key based on text and voice
     cache_key = hashlib.md5(f"word-timings-v1:{voice}:{text}".encode()).hexdigest()
     audio_path = CACHE_DIR / f"{cache_key}.mp3"
-    
+
     # Return cached file if it exists
     if audio_path.is_file() and audio_path.stat().st_size > 0:
         print(f"[KIRA TTS] Using cached audio: {cache_key[:8]}...")
         return str(audio_path)
-    
+
     # Generate new audio
     print(f"[KIRA TTS] Generating speech with voice: {voice}")
     print(f"[KIRA TTS] Text: {text[:60]}...")
-    
+
     try:
         # Run async function in sync context
         loop = asyncio.new_event_loop()
@@ -218,14 +233,14 @@ def generate_speech(text: str, voice: str = None, language: str = None) -> str |
         finally:
             loop.close()
             asyncio.set_event_loop(None)
-        
+
         if success and audio_path.exists():
             print(f"[KIRA TTS] Generated: {audio_path.name}")
             return str(audio_path)
         else:
             print("[KIRA TTS] Failed to generate audio")
             return None
-            
+
     except Exception as e:
         print(f"[KIRA TTS] Error: {e}")
         return None
@@ -235,7 +250,7 @@ def list_voices():
     """List available voices."""
     if not EDGE_TTS_AVAILABLE:
         return []
-    
+
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -251,7 +266,7 @@ def cleanup_cache(max_age_hours: int = 24):
     """Clean up old cached audio files."""
     import time
     cutoff = time.time() - (max_age_hours * 3600)
-    
+
     for audio_file in CACHE_DIR.glob("*.mp3"):
         if audio_file.stat().st_mtime < cutoff:
             try:

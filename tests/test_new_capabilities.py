@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import kira_commands as commands
-import kira_code
 import kira_docs
 import kira_health
 import kira_ops
@@ -113,8 +112,14 @@ class HealthTests(unittest.TestCase):
         self.assertIn("Tâches", report["response"])
 
     def test_brain_probe_never_raises(self):
-        result = kira_health._probe_brain()
-        self.assertEqual(len(result), 2)
+        # No live model here: the probe must survive any backend answer.
+        reply = Mock(ok=False, text="")
+        with patch("kira_ai.chat", side_effect=RuntimeError("no backend")):
+            self.assertEqual(len(kira_health._probe_brain()), 2)
+        with patch("kira_ai.chat", return_value=reply):
+            ok, detail = kira_health._probe_brain()
+        self.assertFalse(ok)
+        self.assertTrue(detail)
 
 
 class OpsTests(unittest.TestCase):
@@ -129,7 +134,6 @@ class OpsTests(unittest.TestCase):
         db = root / "kira_memory.db"
         db.write_bytes(b"sqlite")
         backup_dir = root / "kira_backups"
-        real_backup_memory = kira_ops.backup_memory
 
         def scoped_backup(source_name, keep=5):
             # Same logic as the real one, rooted at the temp dir.
@@ -159,11 +163,10 @@ class OpsTests(unittest.TestCase):
                          "description_required")
 
     def test_plugin_is_generated_and_loadable(self):
-        plugins_dir = Path(tempfile.mkdtemp(prefix="kira-plugins-"))
         fake = Mock()
         fake.load_plugin = Mock(return_value=True)
-        with patch.object(kira_ops.Path, "__truediv__", autospec=True) as _:
-            pass  # (path patching is fragile; exercise the real dir instead)
+        # No path patching: it was fragile and asserted nothing, so the real
+        # plugins/ folder is exercised directly instead.
         result = kira_ops.generate_plugin("testgen", "A generated test plugin.")
         # Cleans up after itself if the real plugins/ folder was used.
         generated = Path(__file__).resolve().parent.parent / "plugins" / "testgen.py"
@@ -231,9 +234,25 @@ class SpecialCommandTests(unittest.TestCase):
 
     def test_diagnostic_route_returns_checks(self):
         import kira_agents
-        result = kira_agents.run("run_diagnostic", {}, source="test")
+        # The route, not the host: every probe is stubbed so the test passes
+        # without Ollama, network or a writable code workspace.
+        fake_probes = {name: (lambda n=name: (True, f"sonde {n}"))
+                       for name in kira_health.PROBES}
+        with patch.dict(kira_health.PROBES, fake_probes):
+            result = kira_agents.run("run_diagnostic", {}, source="test")
         self.assertTrue(result.ok)
         self.assertIn("systèmes OK", result.response)
+        self.assertNotIn("problème", result.response)
+
+    def test_diagnostic_route_reports_a_failing_probe(self):
+        import kira_agents
+        fake_probes = {name: (lambda n=name: (True, f"sonde {n}"))
+                       for name in kira_health.PROBES}
+        fake_probes["brain"] = lambda: (False, "modèle absent")
+        with patch.dict(kira_health.PROBES, fake_probes):
+            result = kira_agents.run("run_diagnostic", {}, source="test")
+        self.assertFalse(result.ok)
+        self.assertIn("problème : Cerveau IA", result.response)
 
     def test_briefing_route_returns_text(self):
         import kira_agents

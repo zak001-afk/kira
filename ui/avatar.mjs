@@ -1,8 +1,9 @@
 // Portrait photographique fictif : les couleurs de peau ne suivent pas le thème HUD.
 export const AVATAR_PORTRAIT = Object.freeze({
-  // Portrait d'origine : glyphes Matrix incrustés autour du visage, anneau
-// et machinerie d'origine (look KIRA complet, comme la référence).
-url: "assets/avatar-natural.webp?v=orig-1",
+  // Portrait détouré (scripts/gen_ui_assets.py) : anneau, visage et socle
+  // holographiques conservés, la pluie de glyphes devenue transparente pour
+  // laisser voir le fond « circuit imprimé » de la maquette.
+url: "assets/avatar-cutout.webp?v=mock-1",
   width: 1024,
   height: 1024,
 });

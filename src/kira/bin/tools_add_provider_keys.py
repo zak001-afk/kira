@@ -13,7 +13,6 @@ Usage (from the project root):
 import getpass
 import re
 import sys
-from pathlib import Path
 
 from kira import paths
 

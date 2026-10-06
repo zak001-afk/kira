@@ -6,7 +6,8 @@
 
 ### Core Capabilities
 - **AI Command Center UI** — Gold/black HUD with holographic AI avatar, live system gauges (CPU / RAM / Disk / Network), agents panel, recent tasks and a 9-view navigation dock
-- **Voice Control** — Natural language voice commands with wake word detection (French voices included: Denise, Éloïse, Vivienne, Henri)
+- **Voice Control** — Natural language voice commands with wake word detection (all voices are **female**: Denise, Éloïse, Vivienne)
+- **Local Kokoro Voice (TTS)** — Free, offline neural voice (no ElevenLabs, no paid API, no key): KIRA speaks through a local Kokoro engine with a modular provider system (Edge neural voices as automatic fallback)
 - **Computer Control** — Open apps, control windows, manage files, automate tasks
 - **Persistent Memory** — SQLite-based memory system that remembers across sessions
 - **Multi-Language** — Supports English, French, and Arabic
@@ -70,6 +71,23 @@ cd kira
 pip install -r requirements.txt
 ```
 
+> **Using (or repairing) the virtual environment**
+>
+> `.venv/pyvenv.cfg` records the absolute path of the Python that created it,
+> so a checkout copied from another machine can arrive with a venv that will
+> not start (`did not find executable at ...`). Run this with any working
+> Python from PATH:
+>
+> ```bash
+> python scripts/setup_venv.py            # or double-click setup_venv.bat
+> ```
+>
+> It repoints the environment at the local interpreter when that is safe
+> (same Python major.minor, so the installed binary extensions still match),
+> otherwise rebuilds it, then installs `requirements.txt` and
+> `requirements-dev.txt`. `--rebuild` forces a clean environment, `--no-install`
+> skips the pip step.
+
 3. **Install Ollama**
 Download from https://ollama.ai and install the required models:
 ```bash
@@ -88,6 +106,33 @@ For hot-reload during development:
 ```bash
 python dev.py
 ```
+
+`dev.py` polls the project every 0.8s and restarts `main_window.py` whenever a
+watched file (`.py`, `.json`, `.js`, `.css`, `.html`, images, fonts) changes, so
+code edits show up without relaunching. It ignores `.venv`, `__pycache__`,
+`build`, `dist` and other generated directories. Closing the KIRA window now
+stops dev mode instead of resurrecting the app; run `python dev.py
+--auto-restart` to restore the old auto-restart behavior (with a guard:
+three fast startup crashes in a row stop the watcher).
+
+### Desktop shortcut
+Double-clicking **KIRA** on the desktop starts the app itself — one instance,
+no watcher. The shortcut points at `launch_kira.bat`, which:
+
+- launches `main_window.py` through `.venv\Scripts\python.exe` (falling back
+  to PATH only if the venv is missing) — it never uses a stale
+  system-registered interpreter, so a broken `pyvenv.cfg` cannot produce a
+  `did not find executable at ...` failure;
+- prints a clear error pointing at `setup_venv.bat` if no interpreter works.
+
+### Single instance
+Every launcher (`main_window.py`, `dev.py`, `launch_desktop.py`) takes the
+same single-instance lock (`single_instance.py`). Starting KIRA while it is
+already running prints who holds the lock and exits (code 3) instead of
+opening a second window that fights over ports 8765/8766. A lock left by a
+crashed run is detected and cleaned at the next launch; `--force` overrides
+it deliberately. The lock lives in `kira.lock` at the project root
+(`%APPDATA%\KIRA\kira.lock` for a frozen build).
 
 ### Build Executable
 ```bash
@@ -194,7 +239,12 @@ node --check ui/app.js
 node --check ui/speech.mjs
 node --test tests/*.test.mjs
 python -m unittest discover -s tests -p "test_*.py"
+python -m ruff check .     # linter, from requirements-dev.txt
 ```
+The Python tests are hermetic: the health/diagnostic probes are stubbed, so
+nothing needs Ollama, the network or a microphone to pass. `ruff check .` runs
+the rule set pinned in `pyproject.toml` (pyflakes + bugbear + whitespace) and
+runs in CI before the test suite.
 The tests cover the audio envelope, fallback timing, interruption/mute, stale
 callbacks, resource cleanup and the actual app's reactor wiring with rendering
 and audio test doubles. A real headless Chromium test with decoded PCM audio also exercised the actual
@@ -344,6 +394,67 @@ Edit `kira_config.json`:
 - **preferred_address** — How to address the user (sir, captain, etc.)
 - **shortcuts** — Custom multi-action shortcuts
 
+## 🔊 KIRA Voice — local Kokoro TTS
+
+KIRA speaks with a **fully local, free neural voice** (Kokoro v1.0, Apache-2.0 weights).
+No ElevenLabs, no paid API, no API key — and once installed it works **completely offline**.
+
+### Pipeline
+
+```
+USER → KIRA LLM/Orchestrator → Persona → Speech Formatter → Kokoro TTS → Audio
+```
+
+- The **speech formatter** (`src/kira/services/tts/speech_formatter.py`) turns long replies into
+  short spoken sentences: markdown, code blocks and tables are never read aloud, clichés
+  ("Certainly, sir.") are dropped, numbers and names survive, and replies are capped at a few
+  spoken sentences (details stay visible in the UI).
+- The **TTS manager** (`src/kira/services/tts/manager.py`) owns speaking modes
+  (`normal`, `alert`, `serious`, `system`, `success`), the sentence-by-sentence audio queue
+  (no overlapping clips) and barge-in: a new user utterance stops speech instantly.
+- The **TTSProvider** contract (`src/kira/services/tts/base.py`) keeps engines swappable:
+  `KokoroTTSProvider` (local) today, Piper/XTTS tomorrow — plus `EdgeTTSProvider`, the
+  automatic fallback for non-English replies or when the local engine is off.
+- Only KIRA speaks. Specialized agents return text to KIRA; KIRA's voice says it.
+
+### Setup (one time, internet only for the download)
+
+```bat
+scripts\setup_kokoro.bat
+```
+
+That installs a Python 3.13 side-venv (`.kokoro-venv`) with the `kokoro-onnx` runtime and
+downloads the model once (~354 MB into `models/kokoro/`). KIRA then starts its own local voice
+server (`scripts/kokoro_server.py` on `http://127.0.0.1:7860`) automatically at launch.
+Without the setup, KIRA stays fully functional and falls back to Edge voices (or text-only).
+
+### Voices and tuning
+
+Test and compare voices, speeds and modes in the built-in **VOICE LAB** (Paramètres →
+Diagnostics → `VOICE LAB`, or `ui/voice_test.html`). English **female** Kokoro voices:
+`af_heart` (default), `bf_emma`, `bf_isabella`, `bf_alice`, `bf_lily` (UK) and `af_nicole`,
+`af_nova`, `af_sarah`, `af_river`, `af_sky`, `af_kore`, `af_jessica`, `af_bella`, `af_alloy` (US).
+Only female voices are offered: male names (Kokoro `am_*`/`bm_*`, Edge `henri`, Windows
+`David`…) are never selected by KIRA — they would only be used if the OS offers no female
+voice at all for a language.
+Default: `af_heart`, speed `0.94` — calm, precise, not robotic. Every clip is smoothed
+before it leaves the engine: level-matched to a constant loudness, softly limited instead of
+clipped (the raw model peaks above full scale), micro-faded at the trimmed edges, and given a
+±3% tempo variation so consecutive sentences do not march at one speed. Pauses between
+sentences follow the speaking mode (normal 0.45 s, serious 0.60 s, alert 0.14 s…) with a small
+variation, which is what makes a reply breathe instead of ticking. All tuning lives in one
+place: the `KIRA_TTS_*` section of `.env` (see `.env.example`). GPU acceleration is optional
+(`KIRA_TTS_DEVICE=auto`); measured here, DirectML cannot run the Kokoro v1.0 encoder, so the
+server automatically rebuilds itself on CPU — synthesis stays ~2× faster than real time and
+KIRA never loses its voice.
+
+### Voice status in the cockpit
+
+The HUD shows the engine state (`● KIRA VOICE — ONLINE`, `◐ KIRA — SPEAKING`,
+`○ KIRA VOICE — OFFLINE`) and the central orb follows the speaking state
+(IDLE / LISTENING / THINKING / SPEAKING / INTERRUPTED / ERROR).
+If the voice engine dies mid-session, KIRA keeps working as a text-only assistant.
+
 ## 🔌 API Reference
 
 ### REST API Endpoints
@@ -354,11 +465,17 @@ Edit `kira_config.json`:
 **GET** `/api/memories` — Stored memories  
 **GET** `/api/tasks` — Task list  
 **GET** `/api/system` — System telemetry  
+**GET** `/api/tts/status` — Voice layer state (engine, device, voices)  
+**GET** `/api/tts/voices` — Voices of every engine
 
 **POST** `/api/command` — Process a command  
 **POST** `/api/chat` — Send chat message  
 **POST** `/api/task` — Add a task  
 **POST** `/api/remember` — Store a memory  
+**POST** `/api/tts` — Text-to-speech audio (Kokoro local → Edge fallback)  
+**POST** `/api/tts/plan` — Speech-formatted sentences for a reply (no audio)  
+**POST** `/api/tts/stop` — Stop speaking and clear the queue  
+**POST** `/api/tts/mode` — Select the speaking mode  
 
 ## 🎨 Customization
 

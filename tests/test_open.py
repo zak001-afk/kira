@@ -727,7 +727,7 @@ class AskWhichOneTests(unittest.TestCase):
             commands.clear_pending_open()
             commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
             self.opened.clear()
-            result = commands.process_command(self.backend, answer, reply_language="fr")
+            commands.process_command(self.backend, answer, reply_language="fr")
             self.assertEqual(len(self.opened), 1, answer)
             self.assertTrue(self.opened[0].endswith("rapport2.pdf"), answer)
 
@@ -740,15 +740,14 @@ class AskWhichOneTests(unittest.TestCase):
 
     def test_the_choice_stays_available_for_ten_minutes(self):
         commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
-        import time as time_module
         stale = commands._PENDING_OPEN["time"] - 400  # 6-7 minutes old
         commands._PENDING_OPEN["time"] = stale
-        result = commands.process_command(self.backend, "2", reply_language="fr")
+        commands.process_command(self.backend, "2", reply_language="fr")
         self.assertEqual(len(self.opened), 1)
 
     def test_the_answer_opens_the_chosen_one(self):
         commands.process_command(self.backend, "ouvre le fichier rapport", reply_language="fr")
-        result = commands.process_command(self.backend, "2", reply_language="fr")
+        commands.process_command(self.backend, "2", reply_language="fr")
         self.assertEqual(len(self.opened), 1)
         self.assertTrue(self.opened[0].endswith(".pdf"))
         self.assertIsNone(commands.pending_open())

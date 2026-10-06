@@ -6,11 +6,9 @@ It uses pywebview to create a native window that renders the web UI,
 making it look and feel like a real desktop app (no browser chrome).
 """
 
-import os
 import sys
 import threading
 import time
-from pathlib import Path
 from http.server import ThreadingHTTPServer
 from kira import paths
 from kira.presentation.kira_ui import KiraUIHandler, UI_BUILD_LABEL, validate_ui_bundle, print_ui_info, webview_profile_directory
@@ -50,7 +48,7 @@ except Exception as e:
 
 # Import caching
 try:
-    from kira_cache import command_cache, start_cache_cleanup_thread
+    from kira_cache import start_cache_cleanup_thread
     CACHE_ENABLED = True
     print("[OK] Caching enabled")
 except ImportError:
@@ -139,7 +137,6 @@ def start_ui_server():
             server = ThreadingHTTPServer((HOST, port), handler)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
-            UI_PORT_USED = port
             globals()["UI_PORT_USED"] = port
             print(f"       UI server started on port {port}")
             return server
@@ -173,10 +170,10 @@ def process_command(text, reply_language="auto", previous_language=None, interfa
 
 class KiraAPI:
     """Python API exposed to JavaScript via pywebview."""
-    
+
     def send_command(self, text, reply_language="auto", previous_language=None, interface_language="en"):
         return process_command(text, reply_language, previous_language, interface_language)
-    
+
     def get_system_info(self):
         """Get system telemetry."""
         try:
@@ -188,7 +185,7 @@ class KiraAPI:
             }
         except Exception as e:
             return {"error": str(e)}
-    
+
     def get_tasks(self):
         """Get pending tasks."""
         try:
@@ -197,7 +194,7 @@ class KiraAPI:
             return {"tasks": tasks[:5]}
         except Exception as e:
             return {"tasks": [], "error": str(e)}
-    
+
     def get_status(self):
         """Get KIRA status."""
         return {
@@ -213,32 +210,32 @@ class KiraAPI:
 
 def main():
     """Main entry point."""
-    
+
     if not WEBVIEW_AVAILABLE:
         print("\nError: pywebview is required to run KIRA as a native app.")
         print("Install it with: pip install pywebview")
         print("\nAlternatively, use launch_web.py to run in a browser.")
         sys.exit(1)
-    
+
     print()
     print("=" * 60)
     print("              KIRA — NEURAL INTERFACE")
     print("=" * 60)
     print()
-    
+
     # Start cache cleanup thread if caching is enabled
     if CACHE_ENABLED:
         print("[0/4] Starting cache cleanup thread...")
         start_cache_cleanup_thread(interval=300)  # Cleanup every 5 minutes
         print("       Cache cleanup active")
-    
+
     if kira_api is None:
         print("[ERROR] kira_api module not available. Cannot start API server.")
         print("        Please ensure all dependencies are installed:")
         print("        pip install -r requirements.txt")
         input("\nPress Enter to exit...")
         sys.exit(1)
-    
+
     # 1. Set up the API backend
     print("[1/4] Initializing KIRA backend...")
     if backend is not None:
@@ -248,7 +245,7 @@ def main():
     else:
         print(f"       Backend unavailable: {BACKEND_ERROR}")
         print("       Chat and actions will not work, but UI will load")
-    
+
     # 2. Start the API server (ports de secours si 8765 est occupé)
     print(f"[2/4] Starting API server on http://{HOST}:{API_PORT}")
     api_server = start_api_server()
@@ -257,7 +254,7 @@ def main():
             print("       API server healthy")
         else:
             print("       [WARNING] L'API ne répond pas encore à /health")
-    
+
     # 3. Start the UI server
     print(f"[3/4] Starting UI server on http://{HOST}:{UI_PORT}")
     try:
@@ -269,16 +266,27 @@ def main():
         print(f"       Close any older KIRA instance using port {UI_PORT} and check the complete ui/ folder.")
         input("\nPress Enter to exit...")
         sys.exit(1)
-    
+
+    # Voice layer (local Kokoro TTS): warm up in the background so the voice
+    # is ready when the first reply arrives. Never blocks, never crashes:
+    # if the engine cannot start, KIRA simply stays text-only.
+    try:
+        from kira.services.tts import get_manager
+
+        get_manager().warmup_async()
+        print("       Voice layer warming up (Kokoro local, Edge fallback)")
+    except Exception as voice_error:
+        print(f"       [WARNING] Voice layer unavailable: {voice_error}")
+
     # 4. Create native window
     print("[4/4] Creating native window...")
     time.sleep(0.5)
-    
+
     # Create the API bridge
     api = KiraAPI()
-    
+
     # Create the window (sur le port UI réellement utilisé)
-    window = webview.create_window(
+    webview.create_window(
         WINDOW_TITLE,
         f"http://{HOST}:{globals().get('UI_PORT_USED', UI_PORT)}",
         width=WINDOW_WIDTH,
@@ -287,7 +295,7 @@ def main():
         js_api=api,
         text_select=True
     )
-    
+
     print()
     print("=" * 60)
     print("  KIRA is running!")
@@ -296,14 +304,14 @@ def main():
     print("  Close the window to exit KIRA.")
     print("=" * 60)
     print()
-    
+
     # Start the webview event loop
     # pywebview defaults to private mode; localStorage would otherwise disappear
     # on exit, including language, voice and lip-sync preferences.
     profile = webview_profile_directory()
     profile.mkdir(parents=True, exist_ok=True)
     webview.start(debug=False, private_mode=False, storage_path=str(profile))
-    
+
     # Cleanup when window is closed
     print("\n[KIRA] Shutting down...")
     kira_api.stop_server(api_server)

@@ -27,7 +27,7 @@ def _connect():
             timeout=5,
             check_same_thread=False,
         )
-        
+
         # Performance optimizations
         connection.execute("PRAGMA journal_mode=WAL")           # Write-Ahead Logging
         connection.execute("PRAGMA synchronous=NORMAL")         # Balance safety/speed
@@ -35,9 +35,9 @@ def _connect():
         connection.execute("PRAGMA cache_size=-64000")          # 64MB cache (was 2MB)
         connection.execute("PRAGMA mmap_size=268435456")        # 256MB memory-mapped I/O
         connection.execute("PRAGMA page_size=4096")             # Optimal page size
-        
+
         _connection_local.connection = connection
-    
+
     return _connection_local.connection
 
 
@@ -235,7 +235,7 @@ def save_memory(category, key, value, confidence=1.0):
                 now,
             ),
         )
-        
+
         # Invalidate cache for this memory
         if CACHE_ENABLED:
             cache_key = f"memory:{category}:{key}"
@@ -354,7 +354,7 @@ def get_memory(category, key, default=None):
         cached_value = memory_cache.get(cache_key)
         if cached_value is not None:
             return cached_value
-    
+
     try:
         connection = _connect()
         row = connection.execute(

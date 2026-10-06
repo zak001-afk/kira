@@ -10,12 +10,10 @@ import json
 import logging
 import os
 import socket
-import sys
 import threading
-import base64
 from kira.core import kira_language
 from kira.tools import kira_commands
-from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 from kira import paths
 
@@ -48,7 +46,7 @@ def set_events_callback(callback):
 
 def set_command_handler(handler):
     """Set a custom command handler function.
-    
+
     The handler receives text and may accept reply_language, previous_language,
     interface_language and chat_only keyword arguments. Older text-only handlers
     remain supported and are never called twice. It should return a dict like:
@@ -138,6 +136,10 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._handle_agents()
         elif path == "/api/health":
             self._handle_health()
+        elif path == "/api/tts/status":
+            self._handle_tts_status()
+        elif path == "/api/tts/voices":
+            self._handle_tts_voices()
         elif path == "/api/settings":
             self._handle_settings_get()
         elif path == "/api/documents":
@@ -181,6 +183,16 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._handle_remember(data)
         elif path == "/api/tts":
             self._handle_tts(data)
+        elif path == "/api/tts/plan":
+            self._handle_tts_plan(data)
+        elif path == "/api/tts/stop":
+            self._handle_tts_stop()
+        elif path == "/api/tts/pause":
+            self._handle_tts_pause()
+        elif path == "/api/tts/resume":
+            self._handle_tts_resume()
+        elif path == "/api/tts/mode":
+            self._handle_tts_mode(data)
         elif path == "/api/web/search":
             self._handle_web_search(data)
         elif path == "/api/web/fetch":
@@ -274,7 +286,6 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             import time as _time
 
             import psutil
-            import time as _time
             data = {
                 "cpu_percent": psutil.cpu_percent(interval=None),
                 "cpu_cores": psutil.cpu_count(logical=True),
@@ -312,7 +323,8 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
                     ["wmic", "path", "win32_VideoController", "get", "name"],
                     capture_output=True, text=True, timeout=5,
                 )
-                lines = [l.strip() for l in result.stdout.splitlines() if l.strip() and "Name" not in l]
+                lines = [line.strip() for line in result.stdout.splitlines()
+                          if line.strip() and "Name" not in line]
                 data["gpu"] = lines[0] if lines else "Unknown"
             except Exception:
                 data["gpu"] = "N/A"
@@ -442,7 +454,6 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         comments. A restart is recommended for deep settings — the response
         says so.
         """
-        import kira_ai
         updates = {key: str(data.get(key, "")).strip()
                    for key in self._SETTINGS_KEYS if key in data}
         if not updates:
@@ -457,7 +468,6 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             except OSError:
                 lines = []
         for key, value in updates.items():
-            pattern = None
             replaced = False
             for index, line in enumerate(lines):
                 if line.strip().startswith(f"{key}="):
@@ -626,49 +636,128 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
     def _handle_tts(self, data):
-        """Generate text-to-speech audio using neural voices."""
+        """Generate text-to-speech audio through the modular voice layer.
+
+        The TTS manager picks the engine (local Kokoro first, Edge neural
+        voices as fallback, e.g. for non-English replies) and returns the
+        same ``audio``/``format``/``word_timings`` payload as before, with
+        additive engine metadata. When no engine is reachable the client
+        falls back to its browser voice, and KIRA keeps working text-only.
+        """
         try:
-            import kira_tts
-            
+            from kira.services.tts import get_manager
+
             text = str(data.get("text", "")).strip()
-            voice = data.get("voice", None)  # Optional voice name
-            
             if not text:
                 self._send_json({"error": "Text required"}, 400)
                 return
-            
+
             language = data.get("language", "auto")
             if kira_language.normalize_language(language) is None:
                 self._send_json({"error": "Unsupported speech language", "error_code": "invalid_language"}, 400)
                 return
-            selected_language = kira_language.speech_language(text, language)
-            selected_voice = kira_tts.select_neural_voice(text, voice=voice, language=selected_language)
-            if not selected_voice:
-                self._send_json({"error": "No neural voice available for this language", "error_code": "voice_unavailable", "language": selected_language}, 422)
+
+            payload = get_manager().speak(
+                text,
+                mode=data.get("mode"),
+                voice=data.get("voice"),
+                speed=data.get("speed"),
+                engine=data.get("engine"),
+                language=language,
+                format_text=bool(data.get("format_speech", False)),
+                max_sentences=data.get("max_sentences"),
+            )
+            if not payload.get("success"):
+                status = 503 if payload.get("error_code") in ("tts_disabled", "tts_unavailable") else 400
+                self._send_json(payload, status)
                 return
-            # The audio and word timing use exactly the same selected voice.
-            audio_path = kira_tts.generate_speech(text, selected_voice, language=selected_language)
-            
-            if not audio_path:
-                self._send_json({"error": "Failed to generate speech"}, 500)
+            self._send_json(payload)
+
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_tts_status(self):
+        """Voice layer state for the cockpit indicator (also warms the engine)."""
+        try:
+            from kira.services.tts import get_manager
+
+            manager = get_manager()
+            manager.warmup_async()
+            self._send_json(manager.status())
+        except Exception as e:
+            self._send_json({"enabled": False, "state": "offline", "error": str(e),
+                             "label": "KIRA VOICE — OFFLINE", "speaking": False})
+
+    def _handle_tts_voices(self):
+        """Voices of every engine, for the test page and the voice picker."""
+        try:
+            from kira.services.tts import get_manager
+
+            manager = get_manager()
+            voices = {}
+            for name in ("kokoro", "edge"):
+                provider = manager.provider(name)
+                voices[name] = provider.get_voices() if provider is not None else []
+            self._send_json({"voices": voices})
+        except Exception as e:
+            self._send_json({"voices": {}, "error": str(e)}, 500)
+
+    def _handle_tts_plan(self, data):
+        """Speech-formatted sentences for a reply, without synthesizing audio.
+
+        The UI calls this once per reply, then asks /api/tts for one sentence
+        at a time: speech starts on the first sentence instead of waiting for
+        the whole reply to be synthesized.
+        """
+        try:
+            from kira.services.tts import get_manager
+
+            text = str(data.get("text", "")).strip()
+            if not text:
+                self._send_json({"error": "Text required"}, 400)
                 return
-            
-            # Read audio file and encode as base64
-            with open(audio_path, "rb") as f:
-                audio_data = f.read()
-            
-            audio_base64 = base64.b64encode(audio_data).decode("utf-8")
-            
-            self._send_json({
-                "success": True,
-                "audio": audio_base64,
-                "format": "mp3",
-                "word_timings": kira_tts.get_word_timings(audio_path),
-                "language": selected_language,
-                "locale": kira_language.locale_for(selected_language),
-                "voice": selected_voice,
-            })
-            
+            self._send_json(get_manager().plan(
+                text, mode=data.get("mode"), max_sentences=data.get("max_sentences")))
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_tts_stop(self):
+        """Barge-in: stop current speech and clear the audio queue."""
+        try:
+            from kira.services.tts import get_manager
+
+            manager = get_manager()
+            manager.stop_speaking()
+            self._send_json({"success": True, "speaking": manager.is_speaking()})
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_tts_pause(self):
+        try:
+            from kira.services.tts import get_manager
+
+            manager = get_manager()
+            manager.pause_speaking()
+            self._send_json({"success": True, "paused": manager.paused})
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_tts_resume(self):
+        try:
+            from kira.services.tts import get_manager
+
+            manager = get_manager()
+            manager.resume_speaking()
+            self._send_json({"success": True, "paused": manager.paused})
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _handle_tts_mode(self, data):
+        """Select the active speaking mode (normal/alert/serious/system/success)."""
+        try:
+            from kira.services.tts import get_manager
+
+            self._send_json(get_manager().set_mode(data.get("mode", "normal")))
         except Exception as e:
             self._send_json({"error": str(e)}, 500)
 
@@ -676,17 +765,17 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         """Search the web using DuckDuckGo."""
         try:
             import kira_web
-            
+
             query = str(data.get("query", "")).strip()
             num_results = int(data.get("num_results", 5))
-            
+
             if not query:
                 self._send_json({"error": "Query required"}, 400)
                 return
-            
+
             results = kira_web.search_web(query, num_results)
             self._send_json({"success": True, "results": results})
-            
+
         except Exception as e:
             self._send_json({"error": str(e)}, 500)
 
@@ -694,17 +783,17 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         """Fetch and extract content from a web page."""
         try:
             import kira_web
-            
+
             url = str(data.get("url", "")).strip()
             max_length = int(data.get("max_length", 3000))
-            
+
             if not url:
                 self._send_json({"error": "URL required"}, 400)
                 return
-            
+
             result = kira_web.fetch_webpage(url, max_length)
             self._send_json(result)
-            
+
         except Exception as e:
             self._send_json({"error": str(e)}, 500)
 
@@ -712,16 +801,16 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         """Learn from a URL and store in memory."""
         try:
             import kira_web
-            
+
             url = str(data.get("url", "")).strip()
-            
+
             if not url:
                 self._send_json({"error": "URL required"}, 400)
                 return
-            
+
             result = kira_web.learn_from_url(url)
             self._send_json({"success": True, "message": result})
-            
+
         except Exception as e:
             self._send_json({"error": str(e)}, 500)
 
@@ -729,16 +818,16 @@ class KiraAPIHandler(BaseHTTPRequestHandler):
         """Search the web and store results in memory."""
         try:
             import kira_web
-            
+
             query = str(data.get("query", "")).strip()
-            
+
             if not query:
                 self._send_json({"error": "Query required"}, 400)
                 return
-            
+
             result = kira_web.search_and_learn(query)
             self._send_json({"success": True, "message": result})
-            
+
         except Exception as e:
             self._send_json({"error": str(e)}, 500)
 

@@ -109,7 +109,7 @@ def handle_calculate(action_data: dict) -> bool:
         return False
 
     try:
-        result = _safe_eval(expression)
+        _safe_eval(expression)  # validates the input; raises ValueError if invalid
         return True
     except ValueError:
         return False

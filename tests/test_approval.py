@@ -82,7 +82,7 @@ class ApprovalFlowTests(unittest.TestCase):
             chat_backend = make_backend(None)
             commands.process_command(chat_backend, "tell me a joke")
             # A later "confirm" must NOT execute the stale share.
-            result = commands.process_command(make_backend(None), "confirm")
+            commands.process_command(make_backend(None), "confirm")
         web.share_project_knowledge.assert_not_called()
         self.assertIsNone(commands.pending_approval())
 

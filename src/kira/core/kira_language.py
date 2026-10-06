@@ -424,7 +424,11 @@ def available_languages():
 
 
 def select_installed_voice(voices, language):
-    """Select pyttsx3 voices by language, including Windows' empty language tags."""
+    """Select pyttsx3 voices by language, including Windows' empty language tags.
+
+    KIRA speaks with a female voice: a male voice is only chosen when the
+    system offers no female voice at all for that language.
+    """
     code = normalize_language(language, "en")
     locale = locale_for(language).lower()
     aliases = {"fr": ("french", "francais", "hortense", "heloise", "denise"),
@@ -437,6 +441,8 @@ def select_installed_voice(voices, language):
         if not re.search(r"(?<![a-z])" + re.escape(code) + r"(?:-[a-z]{2})?(?![a-z])", description) and not any(name in description for name in aliases):
             continue
         score = (20 if locale in description else 0) + (10 if any(name in description for name in ("female", "denise", "hortense", "zira", "samantha", "jenny", "hoda")) else 0)
+        if re.search(r"(?<![a-z])(?:david|mark|george|richard|ryan|guy|christopher|steffan|henri|male)(?![a-z])", description):
+            score -= 15  # male voice: only used when no female voice exists
         candidates.append((score, voice))
     return max(candidates, key=lambda item: item[0])[1] if candidates else None
 

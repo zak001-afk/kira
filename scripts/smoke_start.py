@@ -1,6 +1,7 @@
 """Smoke test de demarrage : demarre les serveurs UI+API comme main_window,
 sonde /health et /, verifie le contenu, puis arrete proprement."""
 
+import re
 import sys
 import threading
 import time
@@ -34,14 +35,19 @@ try:
     with urllib.request.urlopen(f"http://127.0.0.1:{UI_PORT}/", timeout=4) as r:
         html = r.read().decode("utf-8", "replace")
         print("index:", r.status, "octets:", len(html))
-        print("build:", 'kira-ui-build" content="med-anticlick-01"' in html)
-        print("style vert:", 'style.css?v=green-1' in html)
+        # L'identifiant de bundle et la version de cache sont lus dans le HTML :
+        # la fumigène ne doit pas casser à chaque livraison UI.
+        build_ok = f'kira-ui-build" content="{kira_ui.UI_BUILD_ID}"' in html
+        css_ref = re.search(r'href="\./(style\.css\?v=[^"]+)"', html)
+        print("build:", build_ok, kira_ui.UI_BUILD_ID)
+        print("style:", css_ref.group(1) if css_ref else "ABSENT")
         print("nav sante:", "openView('sante')" in html)
-        ok &= r.status == 200 and 'style.css?v=green-1' in html
-    with urllib.request.urlopen(f"http://127.0.0.1:{UI_PORT}/style.css?v=green-1", timeout=4) as r:
-        css = r.read().decode("utf-8", "replace")
-        print("css:", r.status, "octets:", len(css))
-        ok &= r.status == 200 and len(css) > 5000
+        ok &= r.status == 200 and build_ok and css_ref is not None
+    if css_ref:
+        with urllib.request.urlopen(f"http://127.0.0.1:{UI_PORT}/{css_ref.group(1)}", timeout=4) as r:
+            css = r.read().decode("utf-8", "replace")
+            print("css:", r.status, "octets:", len(css))
+            ok &= r.status == 200 and len(css) > 5000
 finally:
     ui_server.shutdown()
     ui_server.server_close()

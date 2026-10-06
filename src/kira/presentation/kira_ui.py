@@ -21,11 +21,13 @@ from urllib.parse import urlsplit
 from kira import paths
 
 UI_DIRECTORY = paths.root_path("ui")
-UI_BUILD_ID = "med-anticlick-01"
-UI_BUILD_LABEL = "AI COMMAND CENTER MED / ANTICLICK 01"
+UI_BUILD_ID = "mock-circuit-01"
+UI_BUILD_LABEL = "AI COMMAND CENTER / MOCK CIRCUIT 01"
 UI_REQUIRED_FILES = (
     "index.html", "style.css", "theme.css", "app.js", "speech.mjs", "locale.mjs", "lips.mjs",
-    "avatar.mjs", "holo-mouth.mjs", "assets/avatar-natural.webp",
+    "avatar.mjs", "holo-mouth.mjs",
+    # Portrait d'origine (source du détourage) + rendu détouré + fond de la maquette.
+    "assets/avatar-natural.webp", "assets/avatar-cutout.webp", "assets/circuit-board.webp",
 )
 
 

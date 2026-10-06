@@ -309,13 +309,14 @@ export class SpeechPlayer {
     if (!enabled) this.stop();
   }
 
-  async speak(text, { language = "en-US", onProgress = null } = {}) {
+  async speak(text, { language = "en-US", onProgress = null, mode = "normal" } = {}) {
     this.stop();
     const cleanText = cleanForSpeech(text);
     if (!this.enabled || !cleanText) return;
     const session = {
       abort: new this.env.AbortController(), fallback: false,
       language: speechLocale(language), text: cleanText,
+      mode: String(mode || "normal"),
       onProgress: typeof onProgress === "function" ? onProgress : null,
     };
     this.session = session;
@@ -324,7 +325,7 @@ export class SpeechPlayer {
     // Also handles a fetch implementation that never resolves after abort.
     session.timer = this.env.setTimeout(() => this.fallback(session, cleanText), 15000);
     try {
-      const data = await this.fetchAudio(cleanText, { signal: session.abort.signal, language: session.language });
+      const data = await this.fetchAudio(cleanText, { signal: session.abort.signal, language: session.language, mode: session.mode });
       if (!this.isCurrent(session) || session.fallback) return;
       this.clearTimer(session);
       if (data.error || !data.audio) throw new Error(data.error || "No speech audio");

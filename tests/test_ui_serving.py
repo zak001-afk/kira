@@ -5,13 +5,14 @@ from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import re
 import tempfile
 from threading import Thread
 import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from kira_ui import KiraUIHandler, UI_BUILD_ID, UI_REQUIRED_FILES, validate_ui_bundle
+from kira_ui import KiraUIHandler, UI_BUILD_ID, UI_BUILD_LABEL, UI_REQUIRED_FILES, validate_ui_bundle
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,6 +58,8 @@ class StaticUiTests(unittest.TestCase):
             for path, expected in [("index.html", "text/html"), ("hologram.mjs", "javascript"),
                                    ("assets/kira-hologram.webp", "image/webp"),
                                    ("assets/avatar-natural.webp?v=natural-face-1", "image/webp"),
+                                   ("assets/avatar-cutout.webp", "image/webp"),
+                                   ("assets/circuit-board.webp", "image/webp"),
                                    ("avatar.mjs?v=lipsync-fix-1", "javascript"),
                                    ("holo-mouth.mjs?v=lipsync-fix-1", "javascript"),
                                    ("assets/reticle.svg", "image/svg+xml"),
@@ -80,8 +83,8 @@ class UIBundleTests(unittest.TestCase):
             with self.assertRaisesRegex(FileNotFoundError, "do not replace main_window.py alone"):
                 validate_ui_bundle(tmp)
 
-    def test_partial_update_missing_natural_avatar_or_renderer_is_rejected(self):
-        for missing in ("assets/avatar-natural.webp", "avatar.mjs", "holo-mouth.mjs"):
+    def test_partial_update_missing_portrait_backdrop_or_renderer_is_rejected(self):
+        for missing in ("assets/avatar-cutout.webp", "assets/circuit-board.webp", "avatar.mjs", "holo-mouth.mjs"):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory() as tmp:
                 for name in UI_REQUIRED_FILES:
                     if name == missing:
@@ -99,7 +102,9 @@ class UIBundleTests(unittest.TestCase):
                 path = Path(tmp, name)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("old UI", encoding="utf-8")
-            with self.assertRaisesRegex(RuntimeError, "does not match AI COMMAND CENTER MED"):
+            # Le message cite le libellé du bundle attendu, pas une version figée :
+            # la fumigène suit les livraisons de l'UI.
+            with self.assertRaisesRegex(RuntimeError, f"does not match {re.escape(UI_BUILD_LABEL)}"):
                 validate_ui_bundle(tmp)
 
 

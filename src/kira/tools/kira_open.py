@@ -88,7 +88,6 @@ SITES = {
     "amazon france": "https://www.amazon.fr",
     "amazon com": "https://www.amazon.com",
     "facebook": "https://www.facebook.com",
-    "instagram": "https://www.instagram.com",
     "twitter": "https://x.com",
     "whatsapp": "https://web.whatsapp.com",
     "telegram": "https://web.telegram.org",
@@ -192,7 +191,6 @@ APPS = {
     "outils de capture": "SnippingTool.exe",
     "media player": "wmplayer.exe",
     "windows media player": "wmplayer.exe",
-    "lecteur multimedia": "wmplayer.exe",
     "lecteur multimedia": "wmplayer.exe",
     # Microsoft Office / productivity
     "word": "winword.exe",

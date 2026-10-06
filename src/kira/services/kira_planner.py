@@ -141,7 +141,7 @@ def plan_steps(command, ask=None, timeout=8):
         '...] — or [] when the request is a single action or not tool-shaped. '
         "Never invent tool names or arguments. Each step must be one of the "
         "listed tools.\n"
-        f"Tools:\n" + "\n".join(lines) + f"\nUser request: {command}\n"
+        "Tools:\n" + "\n".join(lines) + f"\nUser request: {command}\n"
         "JSON:"
     )
     try:

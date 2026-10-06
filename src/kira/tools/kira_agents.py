@@ -16,7 +16,7 @@ Architecture rules enforced here:
   a later increment; the flag is the contract for it.
 """
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 import os
 import threading

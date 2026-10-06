@@ -2,11 +2,18 @@ import customtkinter as ctk
 import tkinter as tk
 from PIL import Image
 from datetime import datetime
-from pathlib import Path
-import threading, queue, sys, os, math, subprocess, time, random, urllib.request, urllib.error
+import threading
+import queue
+import sys
+import os
+import math
+import subprocess
+import time
+import random
+import urllib.request
+import urllib.error
 from kira import paths
 
-from kira import paths
 
 HERE = paths.PROJECT_ROOT
 PROJECT_ROOT = HERE
@@ -698,11 +705,11 @@ class KiraUI(ctk.CTk):
         )
         self.status_text.pack(side="left", padx=(0, 10))
 
-    def _metric(self, p, l, v):
+    def _metric(self, p, label, v):
         f = ctk.CTkFrame(p, fg_color="transparent")
         f.pack(side="left", padx=7)
         ctk.CTkLabel(
-            f, text=l, text_color=MUTED, font=ctk.CTkFont(size=7, weight="bold")
+            f, text=label, text_color=MUTED, font=ctk.CTkFont(size=7, weight="bold")
         ).pack()
         x = ctk.CTkLabel(
             f, text=v, text_color=TEXT, font=ctk.CTkFont(size=10, weight="bold")
@@ -1001,7 +1008,7 @@ class KiraUI(ctk.CTk):
             self.status_dot.configure(text_color=status_color)
 
         if hasattr(self, "core_cards"):
-            for frame, card_color in self.core_cards:
+            for frame, _card_color in self.core_cards:
                 frame.configure(fg_color=PANEL2, border_color="#123046")
 
             state_index = {

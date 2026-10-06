@@ -9,10 +9,9 @@ import os
 import re
 import sqlite3
 import threading
-import time
 import uuid
-from datetime import datetime, timedelta
-from typing import Callable, Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Callable, Dict, List, Optional
 from kira import paths
 
 DB_PATH = os.path.join(paths.ROOT, "kira_memory.db")
@@ -361,7 +360,7 @@ def parse_reminder_command(text: str) -> Optional[dict]:
     # "alarm in X"
     m = re.match(r"(?:alarm\s+in\s+)(.+)", lower)
     if m:
-        return {"title": f"Alarm", "due_at": m.group(1).strip()}
+        return {"title": "Alarm", "due_at": m.group(1).strip()}
 
     return None
 

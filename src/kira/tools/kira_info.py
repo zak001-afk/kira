@@ -340,7 +340,7 @@ def translate_text(text: str, target_language: str, source_language: str = "") -
     except requests.HTTPError as error:
         if getattr(error.response, "status_code", 0) == 429:
             raise RuntimeError("The free translation quota for today is used up "
-                               "(MyMemory). Ask the chat model to translate instead.")
+                               "(MyMemory). Ask the chat model to translate instead.") from error
         raise
     body = data.get("responseData") or {}
     translated = str(body.get("translatedText", "")).strip()

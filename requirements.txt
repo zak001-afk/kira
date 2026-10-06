@@ -17,7 +17,10 @@ Pillow>=10.0.0
 # Native App Dependencies (pywebview creates the desktop window)
 pywebview>=4.0.0
 
-# High-quality neural TTS (Microsoft Edge voices - sounds very human)
+# High-quality neural TTS fallback (Microsoft Edge voices - needs internet)
+# The primary voice engine is LOCAL Kokoro (free, offline, no API key):
+# it runs in its own Python 3.13 side-venv because the Kokoro ONNX runtime
+# does not support this venv's Python. One-time setup: scripts\setup_kokoro.bat
 edge-tts>=6.1.0
 
 # Web access (search and browse the internet)

@@ -82,7 +82,6 @@ def _snippet(chunk, query_tokens, limit=_MAX_SNIPPET):
 
 def add_document(path, content=""):
     """Save a note into kira_docs/ (the voice/UI 'note this' path)."""
-    from pathlib import PurePosixPath
     relative = str(path or "").strip().replace("\\", "/")
     if not relative or ".." in relative or relative.startswith("/"):
         return {"ok": False, "error": "A relative file name is required.",

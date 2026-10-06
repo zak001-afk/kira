@@ -9,7 +9,6 @@ import unittest
 from unittest.mock import Mock, patch
 
 import kira_agents
-import kira_tools
 
 
 class RegistryTests(unittest.TestCase):
@@ -99,7 +98,7 @@ class ActivityTests(unittest.TestCase):
     def test_failures_are_recorded_truthfully(self):
         kira_agents.run("no_such_tool_2", {})
         # unknown tools have no spec/agent, so they are not attributed to one
-        result = kira_agents.run("recall_memory", {})  # missing required query
+        kira_agents.run("recall_memory", {})  # missing required query
         entry = kira_agents.recent_activity(1)[0]
         self.assertEqual(entry["tool"], "recall_memory")
         self.assertFalse(entry["ok"])

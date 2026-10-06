@@ -277,7 +277,7 @@ ZEN = [{"q": "Stay hungry.", "a": "Steve Jobs"}]
 
 class CryptoTests(unittest.TestCase):
     def test_price_with_currency_word(self):
-        with patch.object(kira_info, "_get_json", return_value=CRYPTO) as get:
+        with patch.object(kira_info, "_get_json", return_value=CRYPTO):
             data = kira_info.crypto_price("bitcoin", "eur")
         self.assertEqual(data["price"], 73953.2)
         self.assertEqual(data["change_24h"], 0.3)
@@ -297,7 +297,7 @@ class CryptoTests(unittest.TestCase):
 
 class PrayerTests(unittest.TestCase):
     def test_geocodes_then_timings(self):
-        with patch.object(kira_info, "_get_json", side_effect=[COINGECKO_META, ALADHAN]) as get:
+        with patch.object(kira_info, "_get_json", side_effect=[COINGECKO_META, ALADHAN]):
             data = kira_info.prayer_times("Nabeul")
         self.assertEqual(data["times"]["Fajr"], "04:46")
         self.assertEqual(data["hijri_year"], "1448")

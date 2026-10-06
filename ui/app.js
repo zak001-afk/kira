@@ -1,10 +1,11 @@
 import * as THREE from "three";
-import { SpeechPlayer, cleanForSpeech } from "./speech.mjs?v=speech-sync-3";
+import { SpeechPlayer, cleanForSpeech } from "./speech.mjs?v=tts-1";
+import { VoiceQueue } from "./voice_queue.mjs?v=tts-1";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { HoloMouth } from "./holo-mouth.mjs?v=anticlick-1";
-import { AVATAR_PORTRAIT, AVATAR_BRIGHTNESS_DEFAULT, createPortraitMaterial } from "./avatar.mjs?v=orig-1";
+import { AVATAR_PORTRAIT, AVATAR_BRIGHTNESS_DEFAULT, createPortraitMaterial } from "./avatar.mjs?v=cutout-1";
 import { lipDemoPose } from "./lips.mjs?v=command-center-45";
 
 /* =========================================================
@@ -23,7 +24,12 @@ const GOLD_DEEP = 0x0A1804;
 
 const container = document.getElementById("scene-container");
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x020101);
+// Fond « circuit imprimé » de la maquette (généré par scripts/gen_ui_assets.py),
+// et non plus un aplat noir : la pluie de glyphes est désormais détourée du
+// portrait, c'est ce fond qui doit remplir l'écran.
+const backdropTexture = new THREE.TextureLoader().load("assets/circuit-board.webp?v=mock-1");
+backdropTexture.colorSpace = THREE.SRGBColorSpace;
+scene.background = backdropTexture;
 
 /* =========================================================
    CAMÉRA
@@ -630,8 +636,11 @@ const ACTIVITY_FR = {
   THINKING: "Réflexion…",
   SPEAKING: "Je parle",
   LISTENING: "J'écoute",
+  INTERRUPTED: "Interrompue",
   ERROR: "Erreur",
 };
+
+let interruptToken = 0;
 
 function setActivity(state) {
   if (state === "READY" && speechState !== "READY") state = speechState;
@@ -652,6 +661,33 @@ function setActivity(state) {
   } else if (state !== "STANDBY") {
     dotEl.classList.add("active");
   }
+
+  setOrbVoiceState(state === "READY" ? "IDLE" : state);
+  // Interruption is a transient: show it, then fall back to idle unless
+  // something new (thinking/speaking) already took over.
+  if (state === "INTERRUPTED") {
+    const token = ++interruptToken;
+    setTimeout(() => {
+      if (token === interruptToken && activityEl.textContent === "INTERRUPTED") setActivity("READY");
+    }, 1200);
+  }
+}
+
+// ─────────────────────────────────────────────
+// État visuel du noyau (IDLE / LISTENING / THINKING / SPEAKING / INTERRUPTED / ERROR)
+// ─────────────────────────────────────────────
+
+let orbVoiceState = "";
+const ORB_BLOOM_BOOST = { IDLE: 0, LISTENING: 0.1, THINKING: 0.08, SPEAKING: 0.18, INTERRUPTED: -0.1, ERROR: -0.25 };
+
+function setOrbVoiceState(state) {
+  if (!state || state === orbVoiceState) return;
+  orbVoiceState = state;
+  try {
+    if (document.body && document.body.dataset) document.body.dataset.orbState = state;
+  } catch { /* très vieux WebView : l'état reste purement interne */ }
+  const boost = ORB_BLOOM_BOOST[state] ?? 0;
+  bloomPass.strength = 1.4 + boost;
 }
 
 // ─────────────────────────────────────────────
@@ -660,18 +696,44 @@ function setActivity(state) {
 
 let speechEnabled = true;
 
+// Kokoro v1.0 voice names (af_/am_/bf_/bm_) speak with the local engine; the
+// Edge short names below would bypass it, so they are used only when picked.
+const KOKORO_VOICE = /^(af|am|bf|bm)_/;
+
+// Voice in use (a female Kokoro voice by default) and whether the user picked
+// it explicitly in Paramètres — an explicit choice is never overridden by the
+// server configuration.
+let activeVoice = "";
+let voiceChosen = false;
+
+function savedVoice() {
+  try { return localStorage.getItem("kira.voice") || ""; } catch { return ""; }
+}
+
 function currentVoice() {
-  try {
-    return localStorage.getItem("kira.voice") || "jenny";
-  } catch { return "jenny"; }
+  // Read on every request: a voice saved in Paramètres must win even when the
+  // page was already open. Falls back to the menu / server configuration.
+  return savedVoice() || activeVoice || "bf_emma";
+}
+
+// A Kokoro voice is English-only: let the language detector decide so a reply
+// in another language falls back to Edge instead of being read by an English
+// voice. Edge names pin the locale of the voice the user chose.
+function voiceLanguage(voice) {
+  const name = String(voice || "");
+  if (KOKORO_VOICE.test(name)) return "auto";
+  if (["denise", "eloise", "vivienne"].includes(name)) return "fr-FR";
+  return name === "aria_uk" ? "en-GB" : "en-US";
 }
 
 const speech = new SpeechPlayer({
-  fetchAudio: async (text, { signal, language }) => {
+  fetchAudio: async (text, { signal, language, mode }) => {
     const response = await fetch(`${API_BASE}/api/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice: currentVoice(), language }),
+      // The sentence was already formatted by /api/tts/plan (or locally):
+      // ask the voice layer for the audio, not for another rewrite.
+      body: JSON.stringify({ text, voice: currentVoice(), language, mode: mode || "normal", format_speech: false }),
       signal,
     });
     if (!response.ok) throw new Error(`TTS API error: ${response.status}`);
@@ -683,18 +745,61 @@ const speech = new SpeechPlayer({
   },
 });
 
+// File de parole : une phrase à la fois, jamais de chevauchement, stop net.
+const voiceQueue = new VoiceQueue({ player: speech, apiBase: API_BASE, fetchImpl: (url, init) => fetch(url, init) });
+
 function speak(text, options = {}) {
-  const voice = currentVoice();
-  const language = ["denise", "eloise", "vivienne", "henri"].includes(voice)
-    ? "fr-FR" : voice === "aria_uk" ? "en-GB" : "en-US";
-  return speech.speak(text, { language, ...options });
+  return voiceQueue.speak(text, { language: voiceLanguage(currentVoice()), ...options });
 }
 
 function stopSpeaking() {
-  speech.stop();
+  voiceQueue.stop();
 }
 
-window.addEventListener("pagehide", () => { speech.destroy(); holoMouth?.destroy?.(); stopEventPolling(); });
+window.addEventListener("pagehide", () => { voiceQueue.destroy(); speech.destroy(); holoMouth?.destroy?.(); stopEventPolling(); });
+
+// ─────────────────────────────────────────────
+// Statut de la voix KIRA (moteur local Kokoro, repli Edge)
+// ─────────────────────────────────────────────
+
+const ttsStatusEl = document.getElementById("tts-status");
+
+function voiceStatusLabel(status) {
+  if (!status || status.enabled === false) return "○ KIRA VOICE — OFFLINE";
+  if (status.speaking) return "◐ KIRA — SPEAKING";
+  if (status.state === "online") return "● KIRA VOICE — ONLINE";
+  return "○ KIRA VOICE — OFFLINE";
+}
+
+async function pollVoiceStatus() {
+  let status = null;
+  try {
+    const response = await fetch(`${API_BASE}/api/tts/status`, { cache: "no-store" });
+    if (response.ok) status = await response.json();
+  } catch { /* moteur arrêté : le libellé passe hors-ligne */ }
+  const configured = status?.config?.voice;
+  if (configured && !voiceChosen && !savedVoice()) {
+    activeVoice = String(configured);
+    // Show the configured voice in the menu too: what you see is what KIRA says.
+    try {
+      const select = document.getElementById("voice-select");
+      select.value = activeVoice;
+      if (select.value !== activeVoice && typeof Option === "function") {
+        select.add(new Option(activeVoice, activeVoice));
+        select.value = activeVoice;
+      }
+    } catch { /* menu indisponible */ }
+  }
+  if (ttsStatusEl) {
+    ttsStatusEl.textContent = voiceStatusLabel(status);
+    try {
+      if (ttsStatusEl.dataset) ttsStatusEl.dataset.state = status?.speaking ? "speaking" : (status?.state || "offline");
+    } catch { /* DOM doubles without dataset */ }
+    if (status?.engine) ttsStatusEl.title = `Moteur: ${status.engine}${status.device ? " (" + status.device + ")" : ""} — mode ${status.mode || "normal"}`;
+  }
+}
+setInterval(pollVoiceStatus, 6000);
+pollVoiceStatus();
 
 // Bouton STOP : arrête KIRA net — la voix en cours ET la commande/action
 // en attente (changement d'avis). La voix reste activée pour la prochaine fois.
@@ -1149,12 +1254,6 @@ let pluginData = [];       // full plugin payloads (id, tools, actions, version.
 let availablePlugins = []; // discovered on disk but not loaded
 
 const CORE_MODULES = [
-  { id: "voix", name: "Voix & Commande", desc: "Commandes vocales et réponses parlées", icon: "mic", view: "parametres" },
-  { id: "memoire", name: "Mémoire persistante", desc: "Conversations et faits enregistrés localement", icon: "memory", view: "historique" },
-  { id: "taches", name: "Gestion de tâches", desc: "Rappels, minuteurs et notes", icon: "clock", view: "taches" },
-  { id: "plugins", name: "Plugins", desc: "0 extension chargée", icon: "plugin", view: "agents" },
-  { id: "vision", name: "Vision écran", desc: "Analyse d'écran via le modèle local", icon: "eye", action: "analyze screen" },
-  { id: "web", name: "Recherche web", desc: "Recherche et apprentissage en ligne", icon: "globe", action: "__web" },
   { id: "programmation", name: "Agent de programmation", desc: "Crée des projets complets et modifie le code sur demande", icon: "code", view: "agents" },
 ];
 
@@ -1272,26 +1371,43 @@ const VIEW_TITLES = {
   historique: "Historique",
   systeme: "Système",
   sante: "Santé des agents",
-  documents: "Documents",
+  documents: "Notes",
   reglages: "Réglages moteur",
 };
 
 const VIEW_IDS = ["taches", "agents", "fichiers", "outils", "parametres", "historique", "systeme", "sante", "documents", "reglages"];
-const NAV_IDS = ["accueil", "conversation", "agents", "fichiers", "outils", "parametres", "historique", "systeme"];
+const NAV_IDS = ["conversation", "agents", "fichiers", "outils", "notes", "historique"];
 let activeView = null;
+
+// Écran courant — « home » reprend la maquette (aucun panneau), « chat » affiche
+// la colonne de gauche, « stats » la colonne de droite. Les vues (overlay) sont
+// indépendantes de cet écran.
+const SCREENS = ["home", "chat", "stats"];
+let screen = "home";
 
 function setActiveNav(name) {
   NAV_IDS.forEach((id) => {
     const btn = document.getElementById("nav-" + id);
     if (!btn) return;
-    btn.classList.remove("active");
-    if (id === name) btn.classList.add("active");
+    btn.classList.toggle("active", btn.dataset.view === name);
   });
 }
+
+function setScreen(next) {
+  screen = SCREENS.includes(next) ? next : "home";
+  SCREENS.forEach((mode) => {
+    document.body.classList.toggle("screen-" + mode, mode === screen);
+  });
+  setActiveNav(screen === "chat" ? "conversation" : null);
+}
+window.setScreen = setScreen;
 
 function openView(name) {
   const overlay = document.getElementById("view-overlay");
   if (!VIEW_IDS.includes(name)) { closeView(); return; }
+  // Une vue s'ouvre toujours sur l'écran net de la maquette : les panneaux de
+  // latéraux passent derrière l'overlay.
+  setScreen("home");
   activeView = name;
   overlay.classList.remove("hidden");
   document.getElementById("view-title").textContent = VIEW_TITLES[name] || name;
@@ -1335,7 +1451,7 @@ window.convClear = function () {
 function closeView() {
   activeView = null;
   document.getElementById("view-overlay").classList.add("hidden");
-  setActiveNav("accueil");
+  setActiveNav(screen === "chat" ? "conversation" : null);
 }
 
 window.closeView = closeView;
@@ -1559,23 +1675,31 @@ NAV_IDS.forEach((id) => {
   const btn = document.getElementById("nav-" + id);
   if (!btn) return;
   btn.addEventListener("click", () => {
-    if (id === "accueil" || id === "conversation") {
+    const view = btn.dataset.view;
+    if (view === "conversation") {
+      // Tuile Conversation : bascule la colonne de saisie, sans rien ouvrir par-dessus.
       closeView();
-      if (id === "conversation") commandInput.focus();
+      setScreen(screen === "chat" ? "home" : "chat");
+      if (screen === "chat") commandInput.focus();
     } else {
-      openView(id);
+      openView(view);
     }
   });
 });
 
 document.getElementById("bell-btn").addEventListener("click", () => openView("taches"));
 document.getElementById("settings-btn").addEventListener("click", () => openView("parametres"));
+// Icône « graphiques » de la barre supérieure : colonne de droite (jauges).
+document.getElementById("stats-btn").addEventListener("click", () => {
+  closeView();
+  setScreen(screen === "stats" ? "home" : "stats");
+});
 document.getElementById("agents-add").addEventListener("click", () => openView("agents"));
 document.getElementById("tasks-open").addEventListener("click", () => openView("taches"));
 document.getElementById("view-close").addEventListener("click", closeView);
 
 const standby = document.getElementById("standby");
-document.getElementById("power-btn").addEventListener("click", () => {
+document.getElementById("standby-btn").addEventListener("click", () => {
   stopSpeaking();
   standby.classList.remove("hidden");
 });
@@ -1591,14 +1715,26 @@ const voiceSelect = document.getElementById("voice-select");
 const microSelect = document.getElementById("micro-select");
 
 try {
-  const savedVoice = localStorage.getItem("kira.voice");
-  if (savedVoice) voiceSelect.value = savedVoice;
+  const saved = savedVoice();
+  if (saved) { activeVoice = saved; voiceChosen = true; }
   const savedMicro = localStorage.getItem("kira.micro");
   if (savedMicro) microSelect.value = savedMicro;
 } catch { /* stockage indisponible */ }
 
+// The spoken voice must match the menu: a Kokoro voice configured in .env may
+// be absent from the static list — add it instead of silently ignoring it.
+try {
+  const chosen = activeVoice || voiceSelect.value;
+  if (chosen && ![...voiceSelect.options].some((option) => option.value === chosen)) {
+    voiceSelect.add(new Option(chosen, chosen));
+  }
+  if (chosen) voiceSelect.value = chosen;
+} catch { /* menu indisponible */ }
+
 voiceSelect.addEventListener("change", () => {
-  try { localStorage.setItem("kira.voice", voiceSelect.value); } catch { /* optionnel */ }
+  activeVoice = voiceSelect.value;
+  voiceChosen = true;
+  try { localStorage.setItem("kira.voice", activeVoice); } catch { /* optionnel */ }
   showToast("Voix enregistrée : " + voiceSelect.options[voiceSelect.selectedIndex].text);
 });
 
@@ -1951,7 +2087,7 @@ async function pollEvents() {
     for (const event of (Array.isArray(data.events) ? data.events : [])) {
       lastEventId = Math.max(lastEventId, Number(event.id || 0));
       showEventToast(event);
-      if (event.speak && event.title) speak(`Rappel : ${event.title}`);
+      if (event.speak && event.title) speak(`Rappel : ${event.title}`, { mode: "alert" });
       addMessage("KIRA", `⏰ Rappel : ${event.title}`);
     }
   } catch (error) {

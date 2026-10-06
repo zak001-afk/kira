@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
 import { SpeechPlayer } from "../ui/speech.mjs";
+import { VoiceQueue } from "../ui/voice_queue.mjs";
 import { AVATAR_BRIGHTNESS_DEFAULT } from "../ui/avatar.mjs";
 import { playerRig } from "./support/speech-fakes.mjs";
 
@@ -32,6 +33,18 @@ function appRig(options = {}) {
     clone() { return new Material(this); }
   }
   class Geometry { setAttribute() {} }
+  class Texture {
+    constructor(image) { this.image = image; this.colorSpace = ""; }
+    dispose() { this.disposed = true; }
+  }
+  class TextureLoader {
+    // Le décor charge le fond « circuit imprimé » au démarrage de la scène.
+    load(url, onLoad) {
+      const texture = new Texture({ naturalWidth: 2560, naturalHeight: 1440, src: url });
+      onLoad?.(texture);
+      return texture;
+    }
+  }
   class Renderer {
     constructor() { this.domElement = {}; }
     setPixelRatio() {} setSize() {} render() {} addPass() {} clearDepth() {}
@@ -40,7 +53,7 @@ function appRig(options = {}) {
   function element(id) {
     if (!elements.has(id)) elements.set(id, {
       textContent: "", innerHTML: "", style: {}, value: "", children: [],
-      classList: { add() {}, remove() {} },
+      classList: { add() {}, remove() {}, toggle() {} },
       appendChild(child) { this.children.push(child); },
       addEventListener(name, fn) { this[name] = fn; },
       getContext: () => drawing,
@@ -54,6 +67,7 @@ function appRig(options = {}) {
     CylinderGeometry: Geometry, RingGeometry: Geometry, BufferGeometry: Geometry,
     BufferAttribute: Geometry, MeshBasicMaterial: Material, MeshStandardMaterial: Material,
     PointsMaterial: Material, PointLight: Node, AmbientLight: Node,
+    TextureLoader, SRGBColorSpace: "srgb",
     WebGLRenderer: Renderer, Color: Vector, Vector2: Vector, Euler: Vector,
   };
   const context = vm.createContext({
@@ -61,9 +75,14 @@ function appRig(options = {}) {
     SpeechPlayer: class extends SpeechPlayer {
       constructor(options) { super({ ...options, env: rig.env }); }
     },
+    VoiceQueue,
     EffectComposer: Renderer, RenderPass: Node, UnrealBloomPass: Node,
     console: { log() {}, error() {} },
-    document: { getElementById: element, createElement: () => element(`new-${elements.size}`) },
+    document: {
+      getElementById: element,
+      createElement: () => element(`new-${elements.size}`),
+      body: element("body"),
+    },
     location: { protocol: "http:", hostname: "127.0.0.1" },
     innerWidth: 1280, innerHeight: 800, devicePixelRatio: 1,
     matchMedia: () => mediaQuery,

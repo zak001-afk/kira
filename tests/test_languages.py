@@ -236,7 +236,9 @@ class LanguageApiTests(unittest.TestCase):
             try:
                 yield f"http://127.0.0.1:{server.server_port}"
             finally:
-                server.shutdown(); server.server_close(); worker.join()
+                server.shutdown()
+                server.server_close()
+                worker.join()
 
     def post(self, base, path, data):
         request = Request(base + path, data=json.dumps(data).encode(), headers={"Content-Type": "application/json"})
@@ -273,7 +275,8 @@ class LanguageApiTests(unittest.TestCase):
 
     def test_tts_receives_french_voice_and_returns_word_timing_and_locale(self):
         with tempfile.TemporaryDirectory() as tmp:
-            audio = Path(tmp) / "test.mp3"; audio.write_bytes(b"fixture audio")
+            audio = Path(tmp) / "test.mp3"
+            audio.write_bytes(b"fixture audio")
             with patch.object(kira_tts, "generate_speech", return_value=str(audio)) as generate, self.server() as base:
                 result = self.post(base, "/api/tts", {"text": "Bonjour, je suis Kira.", "language": "fr-FR", "voice": "jenny"})
             self.assertEqual(generate.call_args.args[1], "fr-FR-DeniseNeural")

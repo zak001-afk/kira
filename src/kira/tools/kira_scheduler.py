@@ -11,8 +11,7 @@ Also here: the morning briefing (weather + tasks + holidays, localized) used
 by the "briefing" command route and the ``KIRA_BRIEFING=1`` boot option.
 """
 from collections import deque
-from datetime import datetime, timedelta
-import os
+from datetime import datetime
 import threading
 import time
 

@@ -1,5 +1,152 @@
 # KIRA Changelog
 
+## Unreleased — Voix locale Kokoro (TTS gratuit, hors-ligne, modulaire)
+
+- **Rendu plus doux et plus humain** : chaque clip est lissé avant d'être renvoyé
+  (`polish_audio` dans `kokoro_server.py`) — niveau constant (RMS cible), plafond
+  doux en `tanh` au lieu d'une coupure nette (mesuré : le modèle brut monte à
+  1,086, PCM_16 clipped deux échantillons), fondu de 4 ms / 25 ms aux bords
+  coupés par le trim, et décalage de tempo ±3 % déterministe par phrase pour que
+  les phrases ne défilent pas au même métronom. **Rythme entre les phrases** : la
+  pause vient maintenant du mode de parole (`VoiceQueue.paceGapMs`) — 0,45 s en
+  normal, 0,60 s en serious, 0,14 s en alert — bornée à [120, 700] ms avec 6 % de
+  variation, au lieu d'un fixe 140 ms quel que soit le mode.
+- **Voix par défaut `af_heart`** (Heart) : `KIRA_TTS_VOICE`, le menu Paramètres et
+  le VOICE LAB proposent Heart en premier — c'est la voix préférée, douce et
+  posée, toujours hors-ligne.
+
+- **Moteur de voix local Kokoro v1.0** (kokoro-onnx, poids Apache-2.0) :
+  gratuit, hors-ligne après installation, aucune clé, aucun service payant —
+  aucun ElevenLabs. Serveur HTTP interne `scripts/kokoro_server.py` sur
+  `http://127.0.0.1:7860`, lancé automatiquement par KIRA dans un side-venv
+  Python 3.13 (`.kokoro-venv`) car le runtime ONNX ne supporte pas le 3.14
+  du `.venv` principal. Installation en un clic : `scripts/setup_kokoro.bat`
+  (téléchargement unique ~354 Mo dans `models/kokoro/`).
+- **Couche voix modulaire** (`src/kira/services/tts/`) : contrat abstrait
+  `TTSProvider` (`base.py`), `KokoroTTSProvider` (local), `EdgeTTSProvider`
+  (repli automatique : réponses non anglaises, moteur local éteint ou
+  inaccessible), `TTSManager` (`manager.py`) et `TTSConfig` (`config.py` —
+  toute la configuration vit dans la section `KIRA_TTS_*` du `.env`).
+  Remplacer Kokoro par Piper/XTTS = un nouveau provider, pas une réécriture.
+- **Speech formatter** (`speech_formatter.py`) : réponses transformées en
+  dialogue parlé — markdown, code et tableaux jamais lus à voix haute,
+  phrases longues scindées, clichés (« Certainly, sir. ») supprimés,
+  chiffres et noms préservés, 1-4 phrases parlées par réponse (les détails
+  restent visibles dans l'UI).
+- **Modes de parole** : `normal` (0.94), `alert` (1.00), `serious` (0.90),
+  `system/boot` (0.88), `success` (0.96) — pauses de respiration intégrées
+  entre phrases. Voix par défaut **bf_emma** (voix féminine, comme le personnage
+  de KIRA) ; bf_isabella, bf_alice, bf_lily, af_heart, af_nicole, af_nova,
+  af_sarah testables dans le **VOICE LAB** (`ui/voice_test.html`, ouvert
+  depuis Paramètres → Diagnostics).
+- **Voix féminines uniquement** : plus aucune voix masculine n'est proposée
+  ni prononcée. Le défaut du serveur local est passé de `bm_george` à
+  `bf_emma`, le menu Paramètres et le VOICE LAB n'exposent que des voix
+  féminines, les noms masculins sont retirés du catalogue (`henri` sorti de
+  `FEMALE_VOICES`, nouveau `MALE_VOICES`) et réécrits vers la voix féminine
+  de la langue par `select_neural_voice`. Les replis automatiques
+  (navigateur `matchingVoice`, Windows `select_installed_voice`) pénalisent
+  explicitement les voix masculines (David…) : une voix masculine ne
+  subsiste que si le système n'en propose aucune autre pour la langue.
+- **File audio phrase par phrase** : `/api/tts/plan` formate la réponse, l'UI
+  enfile les phrases et les joue l'une après l'autre (aucun chevauchement,
+  la voix démarre dès la première phrase) ; **barge-in** : toute nouvelle
+  demande utilisateur coupe la parole net (`/api/tts/stop`, file vidée).
+- **Résilience** : Kokoro hors-ligne → repli Edge → repli navigateur →
+  mode texte ; jamais de crash. GPU optionnel (`KIRA_TTS_DEVICE=auto`) avec
+  **repli CPU à chaud** : DirectML charge mais ne sait pas exécuter
+  l'encodeur Kokoro v1.0 (ConvTranspose) — constaté sur cette machine — le
+  serveur se reconstruit sur CPU et **termine la requête en cours** au lieu de
+  perdre la voix. Mesuré : ~1,6 s d'audio par seconde de génération (CPU).
+  Statut visible dans le HUD
+  (`● KIRA VOICE — ONLINE`, `◐ KIRA — SPEAKING`, `○ OFFLINE`) et état de
+  l'orbe synchronisé (IDLE/LISTENING/THINKING/SPEAKING/INTERRUPTED/ERROR).
+- **Routes API** : `/api/tts` passe par le manager (payload inchangé pour
+  les clients existants, champs moteur ajoutés) ; nouvelles routes
+  `/api/tts/status`, `/api/tts/voices`, `/api/tts/plan`, `/api/tts/stop`,
+  `/api/tts/pause`, `/api/tts/resume`, `/api/tts/mode`.
+- Tests : `tests/test_tts_voice_layer.py` (30 cas — formatter, config,
+  manager, routes) et `tests/voice-queue.test.mjs` (8 cas — file ordonnée,
+  barge-in, repli plan) ; `test_tts_timing` et `test_languages` épinglés
+  sur le moteur Edge pour rester hermétiques.
+
+## Unreleased — Une seule instance de KIRA (raccourci bureau réparé)
+
+- **L'icône du bureau lance KIRA une seule fois** : `KIRA.lnk` pointe
+  désormais sur `launch_kira.bat` (fenêtre native, sans watcher) au lieu de
+  `dev_mode.bat`. Constat sur la machine : deux `dev.py` et deux
+  `main_window.py` tournaient simultanément, l'API sur 8765/8766 contre une
+  copie repliée sur 8767, l'UI répondait 503. Cause : le watcher `dev.py`
+  **ressuscitait la fenêtre à chaque fermeture**, empilant les instances.
+- **Verrou d'instance unique** (`single_instance.py`) : `main_window.py`,
+  `dev.py` et `launch_desktop.py` prennent un verrou exclusif (`kira.lock`,
+  PID + horodatage). Second lancement → message clair « already running
+  (process N) » et code de sortie 3 au lieu d'une deuxième fenêtre qui se
+  bat pour les ports ; `--force` pour contourner volontairement. Verrou
+  périmé (crash) détecté via la vivacité du PID et nettoyé au lancement
+  suivant ; en build figé, le verrou vit dans `%APPDATA%\KIRA`.
+- **`dev.py` : fermer la fenêtre arrête le watcher** — plus de
+  réanimation en boucle. `--auto-restart` restaure l'ancien comportement,
+  avec garde anti-boucle de crash (3 démarrages < 10 s d'affilée → arrêt).
+  Le watcher refuse aussi de démarrer si KIRA tourne déjà.
+- **`pip.exe` du `.venv` réparé** (réinstallation via `ensurepip`) ; journal
+  vide `_kokoro_install.log` supprimé.
+- Tests : `tests/test_single_instance.py` (10 cas — vivacité PID
+  cross-OS, cycle du verrou, verrou périmé/illisible, refus du second
+  détenteur avec un processus étranger vivant) ; README mis à jour
+  (raccourci = `launch_kira.bat`, section « Single instance »).
+- **Découverte Python 3.14** : le `python.exe` d'un venv 3.14 est un
+  tremplin qui relance le vrai interpréteur en **enfant** (l'arbre montre
+  deux `python.exe main_window.py`, ligne de commande à double espace).
+  Ce n'est pas une double instance — la preuve est faite : tuer la fenêtre
+  fait sortir le parent, une seule fenêtre s'ouvre, un second clic est
+  refusé par le verrou. Conséquence corrigée : `dev.py` redémarre l'app
+  avec `taskkill /T /F` (l'arbre entier) au lieu de `terminate()`, qui
+  n'aurait tué que le tremplin et orpheliné la fenêtre (verrou mort,
+  ports occupés).
+
+## Unreleased — Lint, tests hermétiques et réparation du `.venv`
+
+- **`ruff` configuré (`pyproject.toml`)** : jeu de règles explicite (`E4`,
+  `E7`, `E9`, `F`, `W`, `B`), cible Python 3.9+, exclusions `build/`,
+  `dist/`, `kira_workspace/`, `kira_files/`, `.venv/`. **251 constats**
+  relevés, **231 corrigés** : imports et variables morts, doublons de
+  dictionnaire dans `kira_open.py` (« instagram », « lecteur multimedia »),
+  import `time` dupliqué dans `kira_api.py`, `raise … from`, lambdas devenus
+  `def`, espaces de fin de ligne. Seuls **20 E402** restent, couverts par des
+  ignores ciblés et commentés (modules d'amorçage : `sys.path` et variables
+  d'environnement avant les imports, tests : variables d'environnement avant
+  les imports) — **aucun `F401` n'est ignoré** : le motif `kira_*.py`
+  initialement prévu correspondait aussi aux noms de fichiers de `src/kira/`
+  et masquait 26 imports morts, qui ont été supprimés pour de bon.
+  `ruff check .` est propre et tourne dans CI avant les tests.
+- **Tests hermétiques** : `test_diagnostic_route_returns_checks` ne dépend
+  plus d'Ollama, du réseau ni de l'espace disque — les sept sondes sont
+  stubbées, avec un test négatif pour la voie « probe en échec ».
+  `test_brain_probe_never_raises` n'interroge plus le modèle en direct.
+  Le fichier passe de 30 s à 6 s et la suite est verte sur n'importe quelle
+  machine : **526 tests = OK** (525 + 1 nouveau).
+- **Réparation du virtualenv** (`scripts/setup_venv.py`, `setup_venv.bat`) :
+  `.venv/pyvenv.cfg` conserve le chemin absolu de l'interpréteur qui a créé
+  l'environnement ; copié sur une autre machine, le lanceur refuse de
+  démarrer (« did not find executable at … »). Le script repropointe
+  l'environnement quand la version mineure correspond (les extensions
+  binaires restent valides), le reconstruit sinon, puis installe
+  `requirements.txt` et `requirements-dev.txt`.
+- **Nouveau `requirements-dev.txt`** : `ruff`, séparé des dépendances
+  runtime. README : section « réparer le `.venv` » + `ruff check .` ajouté
+  aux contrôles développeur.
+- **Raccourci bureau « KIRA » + lanceurs venv-aware** : `dev_mode.bat` et
+  `launch_kira.bat` préfèrent `.venv/Scripts/python.exe` et ne retombent sur
+  `python` de PATH que si l'environnement est absent ; si aucun interpréteur
+  ne démarre, ils affichent un message pointant vers `setup_venv.bat` au lieu
+  d'échouer silencieusement. Le raccourci `KIRA.lnk` du bureau lance
+  `dev_mode.bat`, donc `dev.py` : KIRA démarre et **se redémarme
+  automatiquement** à chaque modification de code (`.py`, `.js`, `.css`,
+  `.html`, `.json`, images). Vérifié : les deux ports répondent 200 après un
+  touch sur `src/kira/paths.py` et sur `ui/app.js`, avec nouvel PID à chaque
+  redémarrage.
+
 ## Unreleased — Refactoring de l'architecture (code uniquement, zéro changement de comportement)
 
 - **Nouvelle structure `src/kira/`** : le code est organisé en package par

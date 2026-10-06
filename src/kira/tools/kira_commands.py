@@ -556,8 +556,13 @@ def resume_pending_plan():
     return _run_planned_steps(plan["steps"], {})
 
 
+# Characters trimmed from both ends of a raw answer before matching a yes/no
+# word. This is a set of single characters, NOT a substring to remove.
+_APPROVAL_PUNCTUATION = " .!!؟?,،;:«»\"'"
+
+
 def match_approval_choice(text):
-    value = languages.fold(str(text or "")).strip(" .!!؟?,،;:«»\"'")
+    value = languages.fold(str(text or "")).strip(_APPROVAL_PUNCTUATION)
     if value in _CONFIRM_WORDS:
         return "confirm"
     if value in _CANCEL_WORDS:

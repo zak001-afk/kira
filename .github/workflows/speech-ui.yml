@@ -26,5 +26,9 @@ jobs:
           python-version: '3.11'
       - name: Install offline language detector
         run: pip install langid
+      - name: Install linter
+        run: pip install -r requirements-dev.txt
+      - name: Lint Python
+        run: ruff check .
       - name: Test uncached UI module serving
         run: python -m unittest discover -s tests -p 'test_*.py'

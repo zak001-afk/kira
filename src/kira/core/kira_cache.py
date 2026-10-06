@@ -16,11 +16,11 @@ class LRUCache:
     Thread-safe LRU (Least Recently Used) cache with TTL support.
     Automatically evicts old entries when capacity is reached.
     """
-    
+
     def __init__(self, capacity: int = 1000, default_ttl: int = 3600):
         """
         Initialize cache.
-        
+
         Args:
             capacity: Maximum number of items to store
             default_ttl: Default time-to-live in seconds (1 hour)
@@ -32,14 +32,14 @@ class LRUCache:
         self.lock = threading.RLock()
         self.hits = 0
         self.misses = 0
-    
+
     def get(self, key: str) -> Optional[Any]:
         """
         Get value from cache.
-        
+
         Args:
             key: Cache key
-        
+
         Returns:
             Cached value or None if not found/expired
         """
@@ -47,22 +47,22 @@ class LRUCache:
             if key not in self.cache:
                 self.misses += 1
                 return None
-            
+
             # Check expiry
             if key in self.expiry and time.time() > self.expiry[key]:
                 self.delete(key)
                 self.misses += 1
                 return None
-            
+
             # Move to end (most recently used)
             self.cache.move_to_end(key)
             self.hits += 1
             return self.cache[key]
-    
+
     def set(self, key: str, value: Any, ttl: Optional[int] = None):
         """
         Set value in cache.
-        
+
         Args:
             key: Cache key
             value: Value to cache
@@ -77,22 +77,22 @@ class LRUCache:
                 if len(self.cache) >= self.capacity:
                     oldest_key = next(iter(self.cache))
                     self.delete(oldest_key)
-            
+
             self.cache[key] = value
-            
+
             # Set expiry
             if ttl is not None:
                 self.expiry[key] = time.time() + ttl
             elif self.default_ttl > 0:
                 self.expiry[key] = time.time() + self.default_ttl
-    
+
     def delete(self, key: str) -> bool:
         """
         Delete item from cache.
-        
+
         Args:
             key: Cache key
-        
+
         Returns:
             True if deleted, False if not found
         """
@@ -103,13 +103,13 @@ class LRUCache:
                     del self.expiry[key]
                 return True
             return False
-    
+
     def clear(self):
         """Clear all cached items."""
         with self.lock:
             self.cache.clear()
             self.expiry.clear()
-    
+
     def cleanup_expired(self):
         """Remove all expired entries."""
         with self.lock:
@@ -120,7 +120,7 @@ class LRUCache:
             ]
             for key in expired_keys:
                 self.delete(key)
-    
+
     def stats(self) -> dict:
         """Get cache statistics."""
         with self.lock:
@@ -145,11 +145,11 @@ memory_cache = LRUCache(capacity=1000, default_ttl=60)   # 1 min for memory look
 def cached(cache_instance: LRUCache, key_func=None):
     """
     Decorator for caching function results.
-    
+
     Args:
         cache_instance: LRUCache instance to use
         key_func: Optional function to generate cache key from args
-    
+
     Example:
         @cached(web_cache)
         def search_web(query):
@@ -164,17 +164,17 @@ def cached(cache_instance: LRUCache, key_func=None):
             else:
                 # Default: use function name + args
                 cache_key = f"{func.__name__}:{str(args)}:{str(kwargs)}"
-            
+
             # Try cache first
             result = cache_instance.get(cache_key)
             if result is not None:
                 return result
-            
+
             # Compute and cache
             result = func(*args, **kwargs)
             if result is not None:
                 cache_instance.set(cache_key, result)
-            
+
             return result
         return wrapper
     return decorator
@@ -184,7 +184,7 @@ def cached(cache_instance: LRUCache, key_func=None):
 def start_cache_cleanup_thread(interval: int = 300):
     """
     Start background thread to periodically clean up expired cache entries.
-    
+
     Args:
         interval: Cleanup interval in seconds (default 5 minutes)
     """
@@ -195,7 +195,7 @@ def start_cache_cleanup_thread(interval: int = 300):
             web_cache.cleanup_expired()
             tts_cache.cleanup_expired()
             memory_cache.cleanup_expired()
-    
+
     thread = threading.Thread(target=cleanup_loop, daemon=True)
     thread.start()
     return thread

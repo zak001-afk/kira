@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
 import { SpeechPlayer } from "../ui/speech.mjs";
+import { VoiceQueue } from "../ui/voice_queue.mjs";
 import { LipMotion, REST_MOUTH, lipDemoPose } from "../ui/lips.mjs";
 import { AVATAR_PORTRAIT, AVATAR_BRIGHTNESS_DEFAULT, createPortraitMaterial } from "../ui/avatar.mjs";
 import { MOUTH_REGION } from "../ui/holo-mouth.mjs";
@@ -76,7 +77,7 @@ function avatarRig(options = {}) {
       const context = drawing();
       elements.set(id, {
         textContent: "", innerHTML: "", style: {}, value: "", children: [],
-        classList: { add() {}, remove() {} },
+        classList: { add() {}, remove() {}, toggle() {} },
         appendChild(child) { this.children.push(child); },
         addEventListener(name, fn) { this[name] = fn; },
         getContext: () => context,
@@ -93,7 +94,7 @@ function avatarRig(options = {}) {
     ShaderMaterial: Material, CanvasTexture: Texture, TextureLoader,
     PointLight: Node, AmbientLight: Node,
     WebGLRenderer: Renderer, Color: Vector, Vector2: Vector, Euler: Vector,
-    NoColorSpace: "", NormalBlending: "normal", LinearFilter: "linear",
+    NoColorSpace: "", SRGBColorSpace: "srgb", NormalBlending: "normal", LinearFilter: "linear",
   };
   const context = vm.createContext({
     ...rig.env, THREE: three, AVATAR_PORTRAIT, AVATAR_BRIGHTNESS_DEFAULT, createPortraitMaterial,
@@ -101,9 +102,14 @@ function avatarRig(options = {}) {
     SpeechPlayer: class extends SpeechPlayer {
       constructor(options) { super({ ...options, env: rig.env }); }
     },
+    VoiceQueue,
     EffectComposer: Composer, RenderPass: Node, UnrealBloomPass: Node,
     console: { log() {}, error: (...args) => errors.push(args) },
-    document: { getElementById: element, createElement: () => element(`new-${elements.size}`) },
+    document: {
+      getElementById: element,
+      createElement: () => element(`new-${elements.size}`),
+      body: element("body"),
+    },
     location: { protocol: "http:", hostname: "127.0.0.1" },
     innerWidth: 1280, innerHeight: 800, devicePixelRatio: 1,
     matchMedia: () => ({ matches: false }),
@@ -129,14 +135,21 @@ function avatarRig(options = {}) {
   return { ...rig, probe: context.probe, material, element, storage, renders };
 }
 
-test("the active portrait is a bundled, compact WebP, not the metallic avatar", () => {
+test("the active portrait is a bundled, compact WebP cut out of the natural avatar", () => {
   const rig = avatarRig();
   assert.equal(rig.material.uniforms.map.value.image.src, AVATAR_PORTRAIT.url);
-  assert.match(AVATAR_PORTRAIT.url, /^assets\/avatar-natural\.webp\?/);
+  // La maquette a remplacé la pluie de glyphes par un circuit imprimé : le
+  // portrait actif est donc le détourage du portrait d'origine.
+  assert.match(AVATAR_PORTRAIT.url, /^assets\/avatar-cutout\.webp\?/);
   const bytes = readFileSync(new URL(`../ui/${AVATAR_PORTRAIT.url.split("?")[0]}`, import.meta.url));
   assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
   assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
   assert.ok(bytes.length < 500_000);
+  // La source du détourage reste embarquée : sans elle, ni la re-génération ni
+  // la vérification du portrait ne sont possibles.
+  const source = readFileSync(new URL("../ui/assets/avatar-natural.webp", import.meta.url));
+  assert.equal(source.toString("ascii", 0, 4), "RIFF");
+  assert.equal(source.toString("ascii", 8, 12), "WEBP");
 });
 
 test("the natural portrait starts at 90 % in both materials and the settings", () => {

@@ -99,17 +99,17 @@ def _share_to_supabase(
 def search_web(query: str, num_results: int = 5) -> list:
     """
     Search the web using DuckDuckGo.
-    
+
     Args:
         query: Search query
         num_results: Number of results to return (default 5)
-    
+
     Returns:
         List of search results with title, url, and snippet
     """
     if not DUCKDUCKGO_AVAILABLE:
         return [{"error": "ddgs not installed"}]
-    
+
     # Check cache first
     if CACHE_ENABLED:
         cache_key = f"search:{hashlib.md5(query.encode()).hexdigest()}:{num_results}"
@@ -117,13 +117,13 @@ def search_web(query: str, num_results: int = 5) -> list:
         if cached_result and not any("error" in item for item in cached_result):
             print(f"[KIRA WEB] Cache hit for search: {query}")
             return cached_result
-    
+
     try:
         print(f"[KIRA WEB] Searching: {query}")
-        
+
         with DDGS() as ddgs:
             results = list(ddgs.text(query, max_results=num_results) or [])
-        
+
         # Format results
         formatted = []
         for r in results:
@@ -132,15 +132,15 @@ def search_web(query: str, num_results: int = 5) -> list:
                 "url": r.get("href", ""),
                 "snippet": r.get("body", "")
             })
-        
+
         print(f"[KIRA WEB] Found {len(formatted)} results")
-        
+
         # Cache the results
         if CACHE_ENABLED and formatted:
             web_cache.set(cache_key, formatted, ttl=3600)  # 1 hour TTL
-        
+
         return formatted
-        
+
     except Exception as e:
         print(f"[KIRA WEB] Search error: {e}")
         return [{"error": str(e)}]
@@ -149,11 +149,11 @@ def search_web(query: str, num_results: int = 5) -> list:
 def fetch_webpage(url: str, max_length: int = 3000) -> dict:
     """
     Fetch and extract text content from a web page.
-    
+
     Args:
         url: URL to fetch
         max_length: Maximum characters to extract (default 3000)
-    
+
     Returns:
         Dictionary with title, url, and content
     """
@@ -162,7 +162,7 @@ def fetch_webpage(url: str, max_length: int = 3000) -> dict:
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             return {"error": "Invalid URL"}
-        
+
         # Check cache first
         if CACHE_ENABLED:
             cache_key = f"webpage:{hashlib.md5(url.encode()).hexdigest()}"
@@ -170,53 +170,53 @@ def fetch_webpage(url: str, max_length: int = 3000) -> dict:
             if cached_result is not None:
                 print(f"[KIRA WEB] Cache hit for webpage: {url}")
                 return cached_result
-        
+
         print(f"[KIRA WEB] Fetching: {url}")
-        
+
         # Fetch page with timeout
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-        
+
         # Parse HTML
         soup = BeautifulSoup(response.text, "html.parser")
-        
+
         # Remove script and style elements
         for script in soup(["script", "style", "nav", "footer", "header"]):
             script.decompose()
-        
+
         # Extract text
         text = soup.get_text(separator=" ", strip=True)
-        
+
         # Clean up whitespace
         text = re.sub(r"\s+", " ", text)
-        
+
         # Extract title
         title = ""
         title_tag = soup.find("title")
         if title_tag:
             title = title_tag.get_text(strip=True)
-        
+
         # Truncate if too long
         if len(text) > max_length:
             text = text[:max_length] + "..."
-        
+
         print(f"[KIRA WEB] Fetched {len(text)} characters")
-        
+
         result = {
             "title": title,
             "url": url,
             "content": text
         }
-        
+
         # Cache the result
         if CACHE_ENABLED:
             web_cache.set(cache_key, result, ttl=3600)  # 1 hour TTL
-        
+
         return result
-        
+
     except requests.exceptions.Timeout:
         return {"error": "Request timed out"}
     except requests.exceptions.RequestException as e:
@@ -229,30 +229,30 @@ def fetch_webpage(url: str, max_length: int = 3000) -> dict:
 def search_and_summarize(query: str, store_memory: bool = False) -> str:
     """
     Search the web and return a formatted summary of results.
-    
+
     Args:
         query: Search query
         store_memory: If True, store key information in KIRA's memory
-    
+
     Returns:
         Formatted string with search results
     """
     results = search_web(query, num_results=3)
-    
+
     if not results:
         return f"I found no web results for '{query}'. Try a different search phrase."
 
     if "error" in results[0]:
         return f"I couldn't search the web: {results[0].get('error', 'Unknown error')}"
-    
+
     # Format results
     summary_parts = [f"Here's what I found for '{query}':\n"]
-    
+
     for i, result in enumerate(results, 1):
         summary_parts.append(f"{i}. **{result['title']}**")
         summary_parts.append(f"   {result['snippet']}")
         summary_parts.append(f"   Source: {result['url']}\n")
-    
+
     # Store in memory if requested
     if store_memory:
         try:
@@ -262,7 +262,7 @@ def search_and_summarize(query: str, store_memory: bool = False) -> str:
             memory_content = f"Web search results for '{query}': " + "; ".join([
                 f"{r['title']} - {r['snippet'][:100]}" for r in results[:2]
             ])
-            
+
             kira_memory.save_memory("web_knowledge", memory_key, memory_content)
             summary_parts.append("\n💾 I've saved this information to my memory for future reference.")
             print(f"[KIRA WEB] Stored search results in memory: {memory_key}")
@@ -282,44 +282,44 @@ def search_and_summarize(query: str, store_memory: bool = False) -> str:
                 )
         except Exception as e:
             print(f"[KIRA WEB] Failed to store memory: {e}")
-    
+
     return "\n".join(summary_parts)
 
 
 def learn_from_url(url: str) -> str:
     """
     Fetch a web page and store key information in KIRA's memory.
-    
+
     Args:
         url: URL to learn from
-    
+
     Returns:
         Status message
     """
     try:
         import kira_memory
-        
+
         # Fetch the page
         page_data = fetch_webpage(url, max_length=5000)
-        
+
         if "error" in page_data:
             return f"I couldn't read that page: {page_data['error']}"
-        
+
         # Extract key information
         title = page_data.get("title", "Untitled")
         content = page_data.get("content", "")
-        
+
         # Create a summary (first 500 chars)
         summary = content[:500].strip()
         if len(content) > 500:
             summary += "..."
-        
+
         # Store in memory
         memory_key = url.replace("https://", "").replace("http://", "").replace("/", "_")[:50]
         memory_content = f"Learned from {title} ({url}): {summary}"
-        
+
         kira_memory.save_memory("web_knowledge", memory_key, memory_content)
-        
+
         print(f"[KIRA WEB] Learned from {url} and stored in memory")
 
         # 2. Also share this NON-personal web knowledge to Supabase
@@ -340,7 +340,7 @@ def learn_from_url(url: str) -> str:
             )
 
         return f"I've read and memorized the content from '{title}'. I'll remember this for future conversations."
-        
+
     except Exception as e:
         print(f"[KIRA WEB] Learn from URL error: {e}")
         return f"I encountered an error while trying to learn from that page: {str(e)}"
@@ -349,10 +349,10 @@ def learn_from_url(url: str) -> str:
 def search_and_learn(query: str) -> str:
     """
     Search the web and automatically store key information in memory.
-    
+
     Args:
         query: Search query
-    
+
     Returns:
         Formatted string with search results and memory confirmation
     """

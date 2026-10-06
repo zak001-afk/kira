@@ -7,7 +7,6 @@ Provides file system operations: create, read, search, and manage files.
 import os
 import shutil
 import glob
-from pathlib import Path
 
 PLUGIN_NAME = "File Manager"
 PLUGIN_VERSION = "1.1"

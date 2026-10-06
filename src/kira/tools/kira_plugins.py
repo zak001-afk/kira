@@ -30,7 +30,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional
 from kira import paths
 
 logger = logging.getLogger(__name__)
@@ -226,8 +226,6 @@ def unload_plugin(name: str) -> bool:
 
     # Give the plugin a chance to clean up (best-effort, optional hook).
     try:
-        plugins_path = Path(PLUGINS_DIR)
-        plugin_file = plugins_path / f"{name}.py"
         # No re-execution: only call unload() if the module object is alive.
         module = sys.modules.get(f"kira_plugins.{name}")
         if module is not None and hasattr(module, "unload"):
@@ -394,7 +392,7 @@ def _builtin_system_monitor():
     def handle_disk_info(action_data: dict) -> bool:
         try:
             import psutil
-            usage = psutil.disk_usage("/")
+            psutil.disk_usage("/")  # probes the disk; raises when unavailable
             return True
         except Exception:
             return False
@@ -402,7 +400,7 @@ def _builtin_system_monitor():
     def handle_network_info(action_data: dict) -> bool:
         try:
             import psutil
-            counters = psutil.net_io_counters()
+            psutil.net_io_counters()  # probes the counters; None when unsupported
             return True
         except Exception:
             return False
@@ -450,7 +448,7 @@ def _builtin_calculator():
             if any(bad in expression for bad in ["import", "exec", "eval", "open", "__"]):
                 return False
 
-            result = eval(expression, {"__builtins__": {}}, allowed_names)
+            eval(expression, {"__builtins__": {}}, allowed_names)
             return True
         except Exception:
             return False

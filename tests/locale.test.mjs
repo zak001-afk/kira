@@ -40,6 +40,16 @@ test("voice selection prefers the exact language and never the English default",
   assert.equal(matchingVoice([{ lang: "fr-CA", name: "French Canada" }], "fr-FR").lang, "fr-CA");
 });
 
+test("a male browser voice never wins over a female one", () => {
+  const david = { lang: "en-US", name: "Microsoft David", default: true };
+  const zira = { lang: "en-US", name: "Microsoft Zira" };
+  assert.equal(matchingVoice([david, zira], "en-US").name, "Microsoft Zira");
+  assert.equal(matchingVoice([{ lang: "en-US", name: "Google UK English Male" }, zira], "en-US").name,
+    "Microsoft Zira");
+  // Only male voices installed: KIRA still speaks instead of staying silent.
+  assert.equal(matchingVoice([david], "en-US"), david);
+});
+
 test("a spoken reply captures its language before the asynchronous TTS request", async () => {
   const rig = playerRig();
   await rig.player.speak("Bonjour, je suis Kira.", { language: "fr" });

@@ -42,7 +42,9 @@ class CloudStageTests(unittest.TestCase):
         self.answer = ns["chat_answer_with_web"]
 
     def test_cloud_rescues_a_slow_model(self):
-        slow_model = lambda c, l: time.sleep(5) or "late"
+        def slow_model(_command, _language):
+            time.sleep(5)
+            return "late"
         cloud = Mock(return_value="Gemini answer.")
         web = Mock(return_value=("web", None))
         text, source = self.answer("q", "en", slow_model, ask_web=web,
@@ -52,13 +54,15 @@ class CloudStageTests(unittest.TestCase):
 
     def test_fast_local_model_wins_and_cloud_is_never_called(self):
         cloud = Mock(return_value="Gemini answer.")
-        text, source = self.answer("q", "en", lambda c, l: "local", budget=2,
+        text, source = self.answer("q", "en", lambda _command, _language: "local", budget=2,
                                    ask_cloud=cloud)
         self.assertEqual((text, source), ("local", "model"))
         cloud.assert_not_called()
 
     def test_cloud_failure_falls_back_to_web(self):
-        slow_model = lambda c, l: time.sleep(5) or None
+        def slow_model(_command, _language):
+            time.sleep(5)
+            return None
         cloud = Mock(return_value=None)
         web = Mock(return_value=("web text", None))
         text, source = self.answer("q", "en", slow_model, ask_web=web,
@@ -66,7 +70,9 @@ class CloudStageTests(unittest.TestCase):
         self.assertEqual((text, source), ("web text", "web"))
 
     def test_without_cloud_behavior_is_unchanged(self):
-        slow_model = lambda c, l: time.sleep(5) or None
+        def slow_model(_command, _language):
+            time.sleep(5)
+            return None
         web = Mock(return_value=("web text", None))
         text, source = self.answer("q", "en", slow_model, ask_web=web, budget=1.2)
         self.assertEqual((text, source), ("web text", "web"))
@@ -132,13 +138,13 @@ class ChatProviderTests(unittest.TestCase):
         from types import SimpleNamespace
         ns_extra = {
             "kira_commands": kira_commands,
-            "kira_language": SimpleNamespace(normalize_language=lambda l, d=None: l or d,
-                                             ensure_reply_language=lambda a, l, m: a),
+            "kira_language": SimpleNamespace(normalize_language=lambda value, default=None: value or default,
+                                             ensure_reply_language=lambda answer, _language, _mode: answer),
             "kira_memory": SimpleNamespace(save_message=lambda *a, **k: None),
             "call_ollama": Mock(),
             "detect_language": lambda text: "en",
-            "_web_lookup": lambda c, l: None,
-            "_synthesize_web_answer": lambda c, l, p: None,
+            "_web_lookup": lambda _command, _language: None,
+            "_synthesize_web_answer": lambda _command, _language, _prompt: None,
             "_ask_chat_response": local or Mock(return_value="local answer"),
             "_CHAT_HISTORY": [],
             "_SESSION_ID": "test",

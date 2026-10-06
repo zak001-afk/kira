@@ -286,7 +286,6 @@ def ollama_model(default: str = "") -> str:
     if default:
         return default
     try:  # The desktop app's model choice lives in kira_config.json.
-        from pathlib import Path
         config = json.loads((paths.root_path("kira_config.json")).read_text(encoding="utf-8"))
         return str(config.get("model", "")).strip() or "qwen3:0.6b"
     except Exception:

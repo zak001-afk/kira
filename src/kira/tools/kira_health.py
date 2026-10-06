@@ -21,7 +21,7 @@ def _probe_research():
 
 def _probe_memory():
     import kira_memory
-    rows = kira_memory.search_messages("kira", limit=1)
+    kira_memory.search_messages("kira", limit=1)
     return True, "mémoire locale lue"  # empty result is still a healthy DB
 
 

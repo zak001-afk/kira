@@ -12,8 +12,6 @@ import re
 import subprocess
 import threading
 import time
-import webbrowser
-import base64
 from datetime import datetime
 from typing import Optional
 from urllib.parse import quote_plus
@@ -300,6 +298,16 @@ STYLE EXAMPLES (translate the style naturally; these are NOT required English ou
 - "I've taken the liberty of..."
 - "Might I suggest..."
 - "Very good, sir."
+
+VOICE AND DIALOGUE (your replies are read aloud):
+- Speak in calm, concise, observant sentences: short enough to be spoken, never a wall of text
+- Confident without arrogance; professional, precise, restrained, never robotic or theatrical
+- Natural openers and closers, used sparingly: "Understood.", "One moment.", "I've located it.",
+  "I've detected an issue.", "Done.", "The operation is complete.", "I recommend...",
+  "I've finished the analysis."
+- Do not repeat assistant clichés ("Certainly, sir.", "Of course, sir.", "As you wish, sir.")
+- Do not add honorifics such as "sir" or "madam" to your own replies
+- Rarely use exclamation marks; plain, calm statements
 - "I'm afraid that's not possible, sir." (when declining)
 - "Shall I proceed with...?"
 - "I've prepared..."
@@ -372,7 +380,7 @@ def build_chat_system_prompt(language: str) -> str:
         "KIRA has access to information from previous conversations.\n\n"
 
         "When using memory:\n"
-        "1. Treat stored user statements as factual records of what the user said.\n" 
+        "1. Treat stored user statements as factual records of what the user said.\n"
         "1a. Personal memories always belong to the USER unless explicitly stated otherwise.\n"
         "1b. Never interpret a USER preference as KIRA's own preference.\n"
         "2. Never change, embellish, reinterpret, or invent facts from memory.\n"
@@ -554,7 +562,6 @@ def chat_budget():
     if value is None:
         try:
             import json
-            from pathlib import Path
             config = json.loads((paths.root_path("kira_config.json")).read_text(encoding="utf-8"))
             value = float(config.get("chat_budget_seconds") or 0) or None
         except Exception:
@@ -590,7 +597,6 @@ def chat_answer_with_web(command, language, ask_model, ask_web=None, synthesize=
     Returns (answer_or_empty, "model" | "cloud" | "web" | "timeout")."""
     budget = budget or CHAT_ANSWER_BUDGET
     deadline = time.monotonic() + budget
-    started = time.monotonic()
     box = []
 
     def _model():
@@ -3408,7 +3414,7 @@ def execute_action(action_data):
                     logging.warning("Sequence step %s failed: %s", index, step)
                     return f"I could not complete step {index}, sir."
 
-            except Exception as exc:
+            except Exception:
                 logging.exception("Sequence step %s failed", index)
                 return f"The sequence stopped at step {index}, sir."
 
@@ -3566,7 +3572,7 @@ def execute_action(action_data):
         due_at = str(action_data.get("due_at", "")).strip()
         if not title:
             return False
-        task_id = kira_tasks.add_task(
+        kira_tasks.add_task(
             title=title,
             task_type="reminder",
             due_at=due_at,

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>KIRA — Voice Lab</title>
+<style>
+  :root {
+    --bg: #050505; --gold: #5FBF17; --gold-bright: #8EFF4D; --gold-soft: #7AD63A;
+    --gold-dark: #2E6B0A; --gold-glow: rgba(95, 191, 23, 0.35);
+    --text: #E8E8E8; --muted: #8D8D8D; --panel: rgba(8, 12, 5, 0.85);
+    --border: rgba(95, 191, 23, 0.26); --danger: #FF4D4D;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh; padding: 32px 20px 60px;
+    background: radial-gradient(1100px 700px at 50% 30%, rgba(46, 107, 10, 0.22), transparent 65%), var(--bg);
+    font-family: 'Rajdhani', 'Segoe UI', Arial, sans-serif; color: var(--text);
+  }
+  h1 { font-size: 22px; letter-spacing: 4px; color: var(--gold-bright); text-shadow: 0 0 18px var(--gold-glow); }
+  .sub { color: var(--muted); margin: 6px 0 22px; letter-spacing: 1px; }
+  .panel {
+    max-width: 860px; margin: 0 auto 18px; padding: 20px 22px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-end; }
+  label { display: block; font-size: 12px; letter-spacing: 1.5px; color: var(--gold-soft); margin-bottom: 6px; text-transform: uppercase; }
+  select, textarea, input[type="range"] {
+    background: #0a0f06; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; font: inherit; min-width: 170px;
+  }
+  textarea { width: 100%; min-height: 84px; resize: vertical; }
+  input[type="range"] { min-width: 200px; padding: 0; accent-color: var(--gold); }
+  .speed-value { color: var(--gold-bright); font-variant-numeric: tabular-nums; }
+  .samples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .samples button {
+    background: transparent; color: var(--gold-soft); border: 1px solid var(--border);
+    border-radius: 20px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .samples button:hover { border-color: var(--gold); color: var(--gold-bright); }
+  .actions { display: flex; gap: 12px; margin-top: 16px; align-items: center; }
+  .play, .stop {
+    font: inherit; font-weight: 600; letter-spacing: 2px; padding: 10px 26px;
+    border-radius: 8px; cursor: pointer; border: 1px solid var(--gold);
+  }
+  .play { background: var(--gold-dark); color: var(--gold-bright); }
+  .play:hover { background: var(--gold); color: #04120a; }
+  .stop { background: transparent; color: var(--danger); border-color: var(--danger); }
+  .stop:hover { background: rgba(255, 77, 77, 0.12); }
+  #status { margin-left: auto; font-size: 13px; color: var(--muted); letter-spacing: 1px; }
+  #status[data-state="online"] { color: var(--gold-bright); }
+  #status[data-state="offline"], #status[data-state="error"] { color: var(--danger); }
+  #engine-info { margin-top: 10px; font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .note { margin-top: 8px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+  <h1>KIRA — VOICE LAB</h1>
+  <p class="sub">Moteur local Kokoro (hors-ligne) · comparer les voix, vitesses et modes</p>
+
+  <div class="panel">
+    <div class="row">
+      <div>
+        <label for="voice">Voix</label>
+        <select id="voice">
+          <optgroup label="Kokoro — voix féminines anglaises (local, hors-ligne)">
+            <option value="af_heart" selected>af_heart — Heart (US, chaleureuse)</option>
+            <option value="bf_isabella">bf_isabella — Isabella (UK)</option>
+            <option value="bf_alice">bf_alice — Alice (UK)</option>
+            <option value="bf_lily">bf_lily — Lily (UK)</option>
+            <option value="bf_emma">bf_emma — Emma (UK, posé)</option>
+            <option value="af_nicole">af_nicole — Nicole (US)</option>
+            <option value="af_nova">af_nova — Nova (US)</option>
+            <option value="af_sarah">af_sarah — Sarah (US)</option>
+            <option value="af_river">af_river — River (US)</option>
+            <option value="af_sky">af_sky — Sky (US)</option>
+            <option value="af_kore">af_kore — Kore (US)</option>
+            <option value="af_jessica">af_jessica — Jessica (US)</option>
+            <option value="af_bella">af_bella — Bella (US)</option>
+            <option value="af_alloy">af_alloy — Alloy (US, neutre)</option>
+          </optgroup>
+          <option value="">voix par défaut (config)</option>
+        </select>
+      </div>
+      <div>
+        <label for="mode">Mode</label>
+        <select id="mode">
+          <option value="normal" selected>normal — 0.94</option>
+          <option value="alert">alert — 1.00</option>
+          <option value="serious">serious — 0.90</option>
+          <option value="system">system / boot — 0.88</option>
+          <option value="success">success — 0.96</option>
+        </select>
+      </div>
+      <div>
+        <label for="engine">Moteur</label>
+        <select id="engine">
+          <option value="auto" selected>auto (Kokoro → Edge)</option>
+          <option value="kokoro">kokoro uniquement</option>
+          <option value="edge">edge uniquement</option>
+        </select>
+      </div>
+      <div>
+        <label for="speed">Vitesse <span class="speed-value" id="speed-value">0.94</span></label>
+        <input type="range" id="speed" min="0.70" max="1.20" step="0.01" value="0.94" />
+      </div>
+      <div>
+        <label for="volume">Volume <span class="speed-value" id="volume-value">100 %</span></label>
+        <input type="range" id="volume" min="0" max="1" step="0.05" value="1" />
+      </div>
+      <div id="output-device-wrap" hidden>
+        <label for="output-device">Sortie audio</label>
+        <select id="output-device"><option value="">Sortie système par défaut</option></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <label for="text">Phrase de test</label>
+    <textarea id="text">Good morning. All systems are online.</textarea>
+    <div class="samples" id="samples">
+      <button type="button">Good morning. All systems are online.</button>
+      <button type="button">I've detected an unusual process running in the background.</button>
+      <button type="button">I've completed the analysis. Everything appears to be functioning normally.</button>
+      <button type="button">One moment. I'm checking the available information.</button>
+      <button type="button">Done. The operation completed successfully.</button>
+    </div>
+    <div class="actions">
+      <button class="play" id="play" type="button">▶ PLAY</button>
+      <button class="stop" id="stop" type="button">■ STOP</button>
+      <div id="status" data-state="offline">○ KIRA VOICE — …</div>
+    </div>
+    <div id="engine-info"></div>
+    <p class="note">Les voix Kokoro sont locales et gratuites : aucune clé, aucun envoi sur internet.
+      Si le moteur local est arrêté, KIRA bascule automatiquement sur les voix Edge (internet requis).</p>
+  </div>
+
+<script>
+  const API_BASE = location.protocol.startsWith("http") ? "" : "http://127.0.0.1:8765";
+  const $ = (id) => document.getElementById(id);
+  const audio = new Audio();
+  let currentController = null;
+
+  function syncLabels() {
+    $("speed-value").textContent = Number($("speed").value).toFixed(2);
+    $("volume-value").textContent = Math.round(Number($("volume").value) * 100) + " %";
+    audio.volume = Number($("volume").value);
+  }
+  $("speed").addEventListener("input", syncLabels);
+  $("volume").addEventListener("input", syncLabels);
+  syncLabels();
+
+  $("samples").addEventListener("click", (event) => {
+    if (event.target.tagName === "BUTTON") $("text").value = event.target.textContent;
+  });
+
+  // Output device selection: only offered when the browser exposes it
+  // (Chromium/Edge). Everything else keeps the system default output.
+  (async () => {
+    if (typeof audio.setSinkId !== "function" || !navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      if (navigator.mediaDevices.selectAudioOutput) await navigator.mediaDevices.selectAudioOutput();
+      const outputs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audiooutput");
+      if (!outputs.length) return;
+      const select = $("output-device");
+      outputs.forEach((device, index) => {
+        const option = document.createElement("option");
+        option.value = device.deviceId;
+        option.textContent = device.label || `Sortie ${index + 1}`;
+        select.appendChild(option);
+      });
+      $("output-device-wrap").hidden = false;
+      select.addEventListener("change", () => {
+        audio.setSinkId(select.value || "").catch(() => {});
+      });
+      const preferred = String(window.KIRA_TTS_AUDIO_DEVICE || "");
+      if (preferred && outputs.some(d => d.deviceId === preferred)) select.value = preferred;
+    } catch { /* device list unavailable: system default output */ }
+  })();
+
+  function setStatus(text, state) {
+    const el = $("status");
+    el.textContent = text;
+    el.dataset.state = state;
+  }
+
+  async function refreshEngineInfo() {
+    try {
+      const response = await fetch(`${API_BASE}/api/tts/status`, { cache: "no-store" });
+      const status = await response.json();
+      const engines = status.engines || {};
+      const kokoro = engines.kokoro || {};
+      const edge = engines.edge || {};
+      const voiceCount = (status.voices || []).length;
+      if (status.speaking) setStatus("◐ KIRA — SPEAKING", "speaking");
+      else if (status.enabled === false) setStatus("○ KIRA VOICE — OFFLINE", "offline");
+      else if (status.state === "online") setStatus("● KIRA VOICE — ONLINE", "online");
+      else setStatus("○ KIRA VOICE — OFFLINE", "offline");
+      $("engine-info").innerHTML =
+        `Kokoro local : ${kokoro.available ? "● prêt" : "○ indisponible"} · device ${kokoro.device || "—"} · ${voiceCount} voix<br />` +
+        `Edge (repli) : ${edge.available ? "● disponible" : "○ indisponible"} · mode actif : ${status.mode || "normal"}` +
+        (status.error ? `<br />Dernière erreur : ${status.error}` : "");
+    } catch {
+      $("engine-info").textContent = "Moteur KIRA injoignable — lancez KIRA (main_window.py) puis rechargez cette page.";
+    }
+  }
+
+  $("play").addEventListener("click", async () => {
+    const text = $("text").value.trim();
+    if (!text) return;
+    stopPlayback(false);
+    setStatus("◐ KIRA — PROCESSING", "thinking");
+    const controller = new AbortController();
+    currentController = controller;
+    try {
+      const response = await fetch(`${API_BASE}/api/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          voice: $("voice").value || undefined,
+          speed: Number($("speed").value),
+          mode: $("mode").value,
+          engine: $("engine").value,
+          language: "en-US",
+          format_speech: false,
+        }),
+        signal: controller.signal,
+      });
+      const data = await response.json();
+      if (!data.success || !data.audio) throw new Error(data.error || "Aucun audio");
+      const bytes = Uint8Array.from(atob(data.audio), (char) => char.charCodeAt(0));
+      const mime = data.format === "wav" ? "audio/wav" : "audio/mpeg";
+      audio.src = URL.createObjectURL(new Blob([bytes], { type: mime }));
+      audio.volume = Number($("volume").value);
+      audio.onplaying = () => setStatus(`● KIRA — SPEAKING · ${data.engine} · ${data.voice}`, "speaking");
+      audio.onended = () => setStatus(`● KIRA VOICE — ONLINE · ${data.engine} · ${data.voice} · ${Number(data.duration || 0).toFixed(1)} s`, "online");
+      audio.onerror = () => setStatus("○ Lecture impossible", "error");
+      await audio.play();
+    } catch (error) {
+      if (error.name !== "AbortError") setStatus(`○ ${error.message}`, "error");
+    }
+  });
+
+  function stopPlayback(notifyServer = true) {
+    currentController?.abort();
+    currentController = null;
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    if (notifyServer) {
+      fetch(`${API_BASE}/api/tts/stop`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+        .catch(() => {});
+      setStatus("■ Interrompu", "offline");
+    }
+  }
+  $("stop").addEventListener("click", () => stopPlayback(true));
+
+  refreshEngineInfo();
+  setInterval(refreshEngineInfo, 8000);
+</script>
+</body>
+</html>

@@ -66,7 +66,7 @@ class ChatDeadlineTests(unittest.TestCase):
             return "trop tard"
 
         answer, source = self.answer("question", "fr", model,
-                                     lambda c, l: "Réponse web", budget=1.0)
+                                     lambda _command, _language: "Réponse web", budget=1.0)
         self.assertEqual((answer, source), ("Réponse web", "web"))
 
     def test_web_failure_lets_the_model_finish(self):
@@ -76,7 +76,7 @@ class ChatDeadlineTests(unittest.TestCase):
 
         start = time.monotonic()
         answer, source = self.answer("question", "fr", model,
-                                     lambda c, l: None, budget=1.0)
+                                     lambda _command, _language: None, budget=1.0)
         elapsed = time.monotonic() - start
         self.assertEqual((answer, source), ("réponse modèle", "model"))
         self.assertLess(elapsed, 1.6, "the budget still bounds the total wait")
@@ -86,7 +86,7 @@ class ChatDeadlineTests(unittest.TestCase):
             time.sleep(5)
 
         start = time.monotonic()
-        answer, source = self.answer("question", "fr", model, lambda c, l: None, budget=1.0)
+        answer, source = self.answer("question", "fr", model, lambda _command, _language: None, budget=1.0)
         self.assertEqual((answer, source), ("", "timeout"))
         self.assertLess(time.monotonic() - start, 1.6)
 
@@ -99,7 +99,7 @@ class ChatDeadlineTests(unittest.TestCase):
         def synthesize(command, language, results):
             return f"Réponse reformulée sur {results[0]['body']}"
 
-        answer, source = self.answer("question", "fr", lambda c, l: None, web, synthesize, budget=2.0)
+        answer, source = self.answer("question", "fr", lambda _command, _language: None, web, synthesize, budget=2.0)
         self.assertEqual((answer, source), ("Réponse reformulée sur result one", "web"))
 
     def test_slow_synthesis_falls_back_to_the_raw_text(self):
@@ -111,7 +111,7 @@ class ChatDeadlineTests(unittest.TestCase):
             return "trop tard"
 
         start = time.monotonic()
-        answer, source = self.answer("question", "fr", lambda c, l: None, web, synthesize, budget=1.0)
+        answer, source = self.answer("question", "fr", lambda _command, _language: None, web, synthesize, budget=1.0)
         self.assertEqual((answer, source), ("raw snippets", "web"))
         self.assertLess(time.monotonic() - start, 1.6)
 
@@ -122,15 +122,15 @@ class ChatDeadlineTests(unittest.TestCase):
         def synthesize(command, language, results):
             raise RuntimeError("model down")
 
-        answer, source = self.answer("question", "fr", lambda c, l: None, web, synthesize, budget=1.0)
+        answer, source = self.answer("question", "fr", lambda _command, _language: None, web, synthesize, budget=1.0)
         self.assertEqual((answer, source), ("raw snippets", "web"))
 
     def test_empty_payload_keeps_the_raw_text(self):
         def web(command, language):
             return "raw snippets", []
 
-        answer, _source = self.answer("question", "fr", lambda c, l: None, web,
-                                      lambda c, l, r: "never", budget=1.0)
+        answer, _source = self.answer("question", "fr", lambda _command, _language: None, web,
+                                      lambda _command, _language, _request: "never", budget=1.0)
         self.assertEqual(answer, "raw snippets")
 
 

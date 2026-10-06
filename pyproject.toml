@@ -1,0 +1,29 @@
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+extend-exclude = [
+    "build",
+    "dist",
+    "kira_workspace",
+    "kira_files",
+    ".venv",
+]
+
+[tool.ruff.lint]
+# Deliberately explicit so the rule set does not drift between ruff versions.
+# E4/E7/E9/F — pyflakes: undefined names, unused imports/variables, redefinitions
+# W          — whitespace errors
+# B          — flake8-bugbear: real footguns (mutable defaults, bare raise,
+#              comparisons that are always true, ...)
+select = ["E4", "E7", "E9", "F", "W", "B"]
+
+# per-file-ignores: E402 ONLY — never F401. Bootstrap modules must put
+# sys.path / environment variables in place *before* importing project code,
+# so their imports legitimately cannot sit at the top of the file. Unused
+# imports are a real finding and are fixed, not ignored.
+[tool.ruff.lint.per-file-ignores]
+"launch_web.py" = ["E402"]
+"main_window.py" = ["E402"]
+"main_window_tk.py" = ["E402"]
+"src/kira/presentation/launch_web.py" = ["E402"]
+"tests/*.py" = ["E402"]

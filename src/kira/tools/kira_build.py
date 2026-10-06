@@ -19,7 +19,6 @@ failures — for free.
 """
 from pathlib import Path
 import json
-import os
 import re
 
 _MAX_FILES = 8
@@ -211,7 +210,7 @@ def _report_text(project, written, errors, verified_ok, output):
         parts.append(f"{len(written)} fichier(s) écrit(s) : {listed}."
                      if True else f"Wrote {len(written)} file(s): {listed}.")
     if errors:
-        parts.append(f"Échecs : " + ", ".join(f"{row['path']} ({row['error'][:60]})"
+        parts.append("Échecs : " + ", ".join(f"{row['path']} ({row['error'][:60]})"
                                               for row in errors))
     if written and verified_ok:
         parts.append("Exécution : OK." if True else "Run: OK.")

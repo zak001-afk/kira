@@ -9,6 +9,10 @@ __pycache__/
 venv/
 env/
 
+# Local voice engine (Kokoro): side-venv + model files
+.kokoro-venv/
+models/
+
 # Build outputs
 build/
 dist/
@@ -54,3 +58,10 @@ Thumbs.db
 
 # Local tooling and visual-test artifacts
 .cache/
+
+# KIRA single-instance lock
+kira.lock
+
+# Freebuff local workspace metadata (never shared)
+.freebuff/
+

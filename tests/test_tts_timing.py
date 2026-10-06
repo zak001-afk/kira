@@ -122,8 +122,10 @@ class TTSTimingTests(unittest.TestCase):
         worker = Thread(target=server.serve_forever, daemon=True)
         worker.start()
         try:
+            # engine=edge pins the fallback provider: the test must stay hermetic
+            # even when a local Kokoro server is running on this machine.
             with patch.object(kira_tts, "generate_speech", return_value=audio):
-                request = Request(f"http://127.0.0.1:{server.server_port}/api/tts", data=b'{"text":"Hello Kira"}', headers={"Content-Type": "application/json"})
+                request = Request(f"http://127.0.0.1:{server.server_port}/api/tts", data=b'{"text":"Hello Kira","engine":"edge"}', headers={"Content-Type": "application/json"})
                 with urlopen(request, timeout=3) as response:
                     payload = json.load(response)
             self.assertTrue(payload["success"])
