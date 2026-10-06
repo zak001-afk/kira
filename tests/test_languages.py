@@ -125,15 +125,20 @@ class CommandLanguageTests(unittest.TestCase):
 
     def test_each_chat_turn_receives_its_language_without_cross_language_caching(self):
         backend = self.backend()
-        commands.process_command(backend, "Explain gravity", reply_language="fr")
-        commands.process_command(backend, "Explain gravity", reply_language="es")
+        for code in ("fr", "es"):
+            # Elle annonce d'abord OÙ elle va chercher (Gemini), puis « oui »
+            # envoie la question au modèle dans la langue demandée.
+            asked = commands.process_command(backend, "Explain gravity", reply_language=code)
+            self.assertEqual(asked["action"], "intent")
+            commands.process_command(backend, "yes", reply_language=code)
         self.assertEqual([call.kwargs["language"] for call in backend.ask_chat.call_args_list], ["fr", "es"])
 
     def test_action_executes_once_even_if_its_translation_fails(self):
         backend = self.backend()
         backend.parse_simple_command.return_value = {"action": "open_app", "target": "chrome"}
         backend.call_ollama.side_effect = RuntimeError("model offline")
-        result = commands.process_command(backend, "open chrome", reply_language="fr", interface_language="fr")
+        commands.process_command(backend, "open chrome", reply_language="fr", interface_language="fr")
+        result = commands.process_command(backend, "oui", reply_language="fr", interface_language="fr")
         self.assertTrue(result["success"])
         self.assertEqual(result["language_warning"], "action_completed_translation_unavailable")
         self.assertEqual(backend.execute_action.call_count, 1)
@@ -186,7 +191,7 @@ class VoiceLanguageTests(unittest.TestCase):
 class ModelPromptTests(unittest.TestCase):
     def namespace(self, model):
         tree = ast.parse((ROOT / "src/kira/services/kira_voice_agent.py").read_text())
-        names = {"build_chat_system_prompt", "clean_chat_response", "ask_chat", "_ask_chat_response", "preferred_address", "address_for_language", "detect_language", "chat_answer_with_web", "_web_answer", "_run_bounded", "_web_lookup", "_web_results", "_format_web_results", "_synthesize_web_answer", "WEB_SYNTHESIS_PROMPTS", "chat_budget", "_cloud_chat_answer", "CLOUD_CHAT_PROMPTS", "chat_provider", "_preferred_cloud", "_role_cloud", "_local_chat_answer", "direct_answer", "_is_personal", "_safe_math", "_FR_DAYS", "_FR_MONTHS", "_EN_DAYS", "_EN_MONTHS", "_AR_DAYS", "_AR_MONTHS", "_TIME_QUESTIONS", "_DATE_QUESTIONS", "_MATH_LEADINS", "_MATH_WORDS", "_name_capture", "_NAME_STATEMENTS", "_diagnostic_answer", "_cloud_test_answer"}
+        names = {"build_chat_system_prompt", "clean_chat_response", "ask_chat", "_ask_chat_response", "preferred_address", "address_for_language", "detect_language", "chat_answer_with_web", "_web_answer", "_run_bounded", "_web_lookup", "_web_results", "_format_web_results", "_synthesize_web_answer", "_synthesis_uses_cloud", "WEB_SYNTHESIS_PROMPTS", "chat_budget", "_cloud_chat_answer", "CLOUD_CHAT_PROMPTS", "chat_provider", "_preferred_cloud", "_role_cloud", "_local_chat_answer", "direct_answer", "_is_personal", "_safe_math", "_FR_DAYS", "_FR_MONTHS", "_EN_DAYS", "_EN_MONTHS", "_AR_DAYS", "_AR_MONTHS", "_TIME_QUESTIONS", "_DATE_QUESTIONS", "_MATH_LEADINS", "_MATH_WORDS", "_name_capture", "_NAME_STATEMENTS", "_diagnostic_answer", "_cloud_test_answer"}
         nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
         nodes += [node for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id in (names | {"CHAT_SYSTEM_PROMPT", "ADDRESS_OPTIONS", "CHAT_ANSWER_BUDGET"}) for target in node.targets)]
         nodes.sort(key=lambda node: node.lineno)  # module order: constants before their users

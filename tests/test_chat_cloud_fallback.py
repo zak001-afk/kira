@@ -196,6 +196,29 @@ class ChatProviderTests(unittest.TestCase):
             answer = ns["ask_chat"]("tell me a joke", language="en")
         self.assertEqual(answer, "Cloud saves the day.")
 
+    def test_ready_gemini_never_uses_the_local_model_as_a_net(self):
+        """KIRA_CHAT_PROVIDER=gemini with a ready cloud: a failed cloud call
+        must NOT send the question to Ollama — that is the model that never
+        answers. Honest timeout instead, inside the budget."""
+        reply = types.SimpleNamespace(ok=False, text="", error_code="provider_error",
+                                      provider="gemini", model="", error="")
+        fake_ai = types.SimpleNamespace(cloud_ready=Mock(return_value=True),
+                                        chat=Mock(return_value=reply),
+                                        CLOUD_PROVIDER="gemini")
+        local = Mock(return_value="local answer")
+        ns = self.namespace(fake_ai, local=local)
+        # A slow web stage proves the budget is respected end to end.
+        ns["_web_lookup"] = Mock(side_effect=lambda c, lang: time.sleep(6) or "web")
+        with patch.dict(os.environ, {"KIRA_CHAT_PROVIDER": "gemini", "KIRA_CHAT_BUDGET": "4"}), \
+                patch.dict(sys.modules, kira_ai=fake_ai):
+            started = time.monotonic()
+            answer = ns["ask_chat"]("tell me a joke", language="en")
+            elapsed = time.monotonic() - started
+        local.assert_not_called()
+        self.assertNotIn("local model is slow", str(answer))
+        self.assertIn("cloud model (Gemini)", str(answer))
+        self.assertLess(elapsed, 5.0, "the answer must land inside the 4 s budget")
+
     def test_provider_parsing(self):
         ns = load_names({"chat_provider"})
         for raw, expected in [("gemini", "gemini"), ("cloud", "gemini"), ("ollama", "ollama"),

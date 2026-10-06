@@ -24,8 +24,9 @@ _MESSAGES = {
         "nl": "Hallo! Ik ben KIRA. Hoe kan ik je helpen?",
     },
     "thanks": {"en": "You’re welcome!", "fr": "Avec plaisir !", "ar": "على الرحب والسعة!", "es": "¡De nada!", "de": "Gern geschehen!", "it": "Prego!", "pt": "De nada!", "zh": "不客气！", "ja": "どういたしまして！", "ru": "Пожалуйста!"},
-    "identity": {"en": "I’m KIRA, your local AI assistant. I can chat, manage tasks and use the computer controls connected to this application.", "fr": "Je suis KIRA, votre assistante IA locale. Je peux discuter, gérer vos tâches et utiliser les commandes de votre ordinateur reliées à cette application.", "ar": "أنا كيرا، مساعدتك المحلية بالذكاء الاصطناعي. يمكنني المحادثة وإدارة المهام واستخدام أدوات التحكم بالحاسوب المتصلة بهذا التطبيق."},
-    "help": {"en": "You can ask me questions, open applications, files and web pages, search the web, manage tasks or analyze your screen. Available actions depend on the connected KIRA backend.", "fr": "Vous pouvez me poser des questions, ouvrir des applications, des fichiers et des pages web, rechercher sur le Web, gérer vos tâches ou analyser votre écran. Les actions disponibles dépendent du moteur KIRA connecté.", "ar": "يمكنك طرح الأسئلة وفتح التطبيقات والملفات وصفحات الويب والبحث في الويب وإدارة المهام أو تحليل الشاشة. تعتمد الإجراءات المتاحة على محرك كيرا المتصل."},
+    "identity": {"en": "I’m KIRA, your local AI assistant. I can chat, manage tasks and use the computer controls connected to this application.", "fr": "Je suis KIRA, votre assistante IA locale. Je peux discuter, gérer vos tâches et utiliser les commandes de votre ordinateur reliées à cette application.", "ar": "أنا كيرا، مساعدتك المحلية بالذكاء الاصطناعي. يمكنني المحادثة وإدارة المهام واستخدام أدوات التحكم بالحاسوب المتصلة بهذا التطبيق."},    "help": {"en": "You can ask me questions, open applications, files and web pages, search the web, manage tasks or analyze your screen. Before any search or action I tell you where I’m doing it and wait for your confirmation. Available actions depend on the connected KIRA backend.",
+             "fr": "Vous pouvez me poser des questions, ouvrir des applications, des fichiers et des pages web, rechercher sur le Web, gérer vos tâches ou analyser votre écran. Avant chaque recherche ou action, je te dis où je le fais et j’attends ta confirmation. Les actions disponibles dépendent du moteur KIRA connecté.",
+             "ar": "يمكنك طرح الأسئلة، وفتح التطبيقات والملفات وصفحات الويب، والبحث في الويب، وإدارة المهام، أو تحليل شاشتك. قبل كل بحث أو إجراء أخبرك أين سأفعله وأنتظر تأكيدك. تعتمد الإجراءات المتاحة على محرك كيرا المتصل."},
     "time": {"en": "It is {value}.", "fr": "Il est {value}.", "ar": "الساعة الآن {value}.", "es": "Son las {value}.", "de": "Es ist {value} Uhr."},
     "date": {"en": "Today is {value}.", "fr": "Nous sommes le {value}.", "ar": "تاريخ اليوم هو {value}.", "es": "Hoy es {value}.", "de": "Heute ist der {value}."},
     "language": {
@@ -102,6 +103,80 @@ _MESSAGES = {
     "wiki_not_found": {"en": "I found nothing on Wikipedia about “{topic}”.",
                        "fr": "Je n’ai rien trouvé sur Wikipédia à propos de « {topic} ».",
                        "ar": "لم أجد شيئاً في ويكيبيديا عن «{topic}»."},
+    "agent_search_no_query": {
+        "en": "What should I ask my agents? Give me the topic, e.g. “search my agents for the weather tomorrow”.",
+        "fr": "Que dois-je demander à mes agents ? Donne-moi le sujet, par exemple : « cherche chez mes agents la météo de demain ».",
+        "ar": "ماذا أطلب من وكلائي؟ اذكر الموضوع، مثلاً: «ابحث عند وكلائي عن طقس الغد».",
+    },
+    "agent_search_not_found": {
+        "en": "I found nothing among my agents that can answer “{query}”. I can search Gemini instead — shall I?",
+        "fr": "Je n’ai rien trouvé chez mes agents pour répondre à « {query} ». Je peux chercher sur Gemini — tu confirmes ?",
+        "ar": "لم أجد لدى وكلائي من يستطيع الإجابة عن «{query}». يمكنني البحث في Gemini — تؤكد؟",
+    },
+    "agent_search_confirmed": {
+        "en": "Right — searching Gemini then.", "fr": "D’accord, je cherche sur Gemini alors.",
+        "ar": "حسناً، سأبحث في Gemini إذن.",
+    },    "agent_search_cancelled": {
+        "en": "Okay, I’ll stay with my agents.",
+        "fr": "D’accord, je reste chez mes agents.",
+        "ar": "حسناً، أبقى عند وكلائي.",
+    },
+    # ── La secrétaire annonce OÙ elle agit AVANT d'agir ─────────────────────
+    "intent_confirm": {
+        "en": "I’m about to {target} — shall I go ahead?",
+        "fr": "Je vais {target} — tu confirmes ?",
+        "ar": "سأقوم بـ{target} — هل تؤكد؟",
+    },
+    "intent_cancelled": {
+        "en": "Okay — I won’t run anything.",
+        "fr": "D’accord, je ne lance rien.",
+        "ar": "حسنًا، لن أبدأ شيئًا.",
+    },
+    "agents_roster": {
+        "en": "Here are the agents I work with:\n{list}\nTell me what you need — I’ll say where I’m doing it before I act.",
+        "fr": "Voici les agents avec qui je travaille :\n{list}\nDis-moi ce dont tu as besoin — je te dirai où je le fais avant d’agir.",
+        "ar": "هؤلاء وكلائي الذين أعمل معهم:\n{list}\nأخبرني بما تحتاج — سأخبرك أين سأفعله قبل أن أبدأ.",
+    },
+    "intent_target_search": {
+        "en": "search with the {tool} tool (agent {agent}){detail}",
+        "fr": "chercher avec l’outil « {tool} » (agent {agent}){detail}",
+        "ar": "البحث عبر أداة {tool} (الوكيل {agent}){detail}",
+    },
+    "intent_target_use": {
+        "en": "use the {tool} tool (agent {agent}){detail}",
+        "fr": "utiliser l’outil « {tool} » (agent {agent}){detail}",
+        "ar": "استخدام أداة {tool} (الوكيل {agent}){detail}",
+    },
+    "intent_target_topic": {
+        "en": " for “{query}”",
+        "fr": " pour « {query} »",
+        "ar": " عن «{query}»",
+    },
+    "intent_target_open": {
+        "en": "open “{target}”",
+        "fr": "ouvrir « {target} »",
+        "ar": "فتح «{target}»",
+    },
+    "intent_target_action": {
+        "en": "run {action}{detail}",
+        "fr": "exécuter {action}{detail}",
+        "ar": "تنفيذ {action}{detail}",
+    },
+    "intent_target_chat": {
+        "en": "look the answer up on Gemini (cloud)",
+        "fr": "chercher la réponse sur Gemini (cloud)",
+        "ar": "البحث عن الإجابة في Gemini (سحابي)",
+    },
+    "intent_target_agents": {
+        "en": "consult my agents — {agents}",
+        "fr": "interroger mes agents — {agents}",
+        "ar": "استشارة وكلائي — {agents}",
+    },
+    "intent_target_steps": {
+        "en": "run {count} steps: {steps}",
+        "fr": "exécuter {count} étapes : {steps}",
+        "ar": "تنفيذ {count} خطوات: {steps}",
+    },
     "wrong_language": {"en": "The model could not answer in the requested language. Try a multilingual model or another language.", "fr": "Le modèle n’a pas réussi à répondre dans la langue demandée. Essayez un modèle multilingue ou une autre langue.", "ar": "لم يتمكن النموذج من الإجابة باللغة المطلوبة. جرّب نموذجاً متعدد اللغات أو لغة أخرى."},
 }
 
@@ -258,7 +333,9 @@ def _open_all(backend, action, paths, language, metadata, extra=None):
     return {"action": action, "success": opened > 0, "opened": opened, "response": reply, **metadata}
 
 
-def process_command(backend, text, reply_language="auto", previous_language=None, interface_language="en", chat_only=False):
+def process_command(backend, text, reply_language="auto", previous_language=None,
+                    interface_language="en", chat_only=False,
+                    _confirmed=False, _resume=None):
     text = str(text or "").strip()
     choice = languages.resolve_reply_language(text, reply_language, previous_language, interface_language)
     metadata = choice.metadata()
@@ -320,6 +397,56 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         # Anything else is a new request; the old question expires.
         clear_pending_open()
 
+    # « Oui, passe sur Gemini » / « non, reste chez les agents » après
+    # « je n'ai rien trouvé chez mes agents ». Traité AVANT le sélecteur de
+    # fichiers : « non » doit annuler la recherche, pas une liste inexistante.
+    waiting_search = pending_agent_search()
+    if waiting_search is not None and not chat_only and pending is None:
+        clear_pending_agent_search()
+        folded = languages.fold(text).strip(" .!?؟,،;:«»\"'")
+        tokens = [token for token in folded.replace("-", " ").split() if token]
+        short = len(tokens) <= 6
+        if short and (folded in _CONFIRM_WORDS
+                      or set(tokens) <= _CONFIRM_WORDS
+                      or (tokens and tokens[0] in _CONFIRM_WORDS)):
+            query = str(waiting_search.get("query") or "").strip()
+            try:
+                answer = str(call_with_options(backend.ask_chat, query,
+                                               language=choice.language) or "").strip()
+            except Exception:
+                answer = ""
+            intro = message("agent_search_confirmed", choice.language) or message("agent_search_confirmed", "en") or ""
+            if not answer:
+                return {"action": "chat", "success": False, "response": intro, **metadata}
+            return {"action": "chat", "response": f"{intro}\n\n{answer}", **metadata}
+        if short and (folded in _CANCEL_WORDS
+                      or set(tokens) <= _CANCEL_WORDS
+                      or (tokens and tokens[0] in _CANCEL_WORDS)):
+            return {"action": "chat",
+                    "response": message("agent_search_cancelled", choice.language) or message("agent_search_cancelled", "en"),
+                    **metadata}
+        # Ni l'un ni l'autre : nouvelle demande, l'attente expire ici.
+
+    # « Je vais le faire chez X — tu confirmes ? » : OUI reprend la demande
+    # SANS relancer les étapes déjà résolues (planneur compris), NON
+    # n'exécute rien, une nouvelle demande fait expirer l'intention.
+    waiting_intent = pending_intent()
+    if waiting_intent is not None and not chat_only and pending is None:
+        clear_pending_intent()
+        answer = _confirmation_answer(text)
+        if answer == "yes":
+            return process_command(backend, waiting_intent["text"],
+                                   reply_language=reply_language,
+                                   previous_language=previous_language,
+                                   interface_language=interface_language,
+                                   chat_only=chat_only, _confirmed=True,
+                                   _resume=waiting_intent.get("resume"))
+        if answer == "no":
+            return {"action": "intent", "success": False,
+                    "response": message("intent_cancelled", choice.language)
+                    or message("intent_cancelled", "en"), **metadata}
+        # Ni l'un ni l'autre : nouvelle demande, l'intention expire ici.
+
     if pending is None and not chat_only:
         if is_pure_choice(text, 10) and len(text.split()) <= 3 and kira_open.parse_open_command(text) is None:
             return {"action": "none",
@@ -333,9 +460,28 @@ def process_command(backend, text, reply_language="auto", previous_language=None
         cleaned = backend.normalize_command(text)
         if not cleaned:
             return {"action": "none", "response": "", **metadata}
+        # « Quels agents as-tu ? » : la réponse est lue sur le registre à
+        # l'instant T (Atlas aujourd'hui, les agents ajoutés demain le sont
+        # automatiquement) — aucune liste codée en dur.
+        if parse_agents_request(cleaned):
+            roster, agents = agents_roster(choice.language)
+            return {"action": "agents", "response": roster,
+                    "agents": agents, **metadata}
+        # Demande explicite de chercher CHEZ LES AGENTS : Gemini ne sera
+        # sollicité qu'après confirmation explicite de l'utilisateur.
+        agent_query = None if chat_only else parse_agent_search_request(cleaned)
+
+        def present(payload):
+            # Les réponses informationnelles des agents sont reformulées
+            # (cloud) avant d'être montrées : jamais de copier-coller.
+            return _present_information(payload, cleaned, choice.language, backend)
+
         special = None if chat_only else parse_special_command(cleaned)
         if special:
-            return _direct_tool_route(special["action"], special, metadata, choice.language)
+            if not _confirmed and not _approval_asks_instead(special["action"]):
+                return announce_intent(cleaned, special["action"], special,
+                                       choice.language, metadata)
+            return present(_direct_tool_route(special["action"], special, metadata, choice.language))
         parsed = None if chat_only else (parse_tool_command(cleaned) or backend.parse_simple_command(cleaned))
         if parsed and parsed.get("action", "none") != "none":
             action = parsed["action"]
@@ -352,13 +498,18 @@ def process_command(backend, text, reply_language="auto", previous_language=None
                 return {"action": action, "success": True,
                         "response": message("chat_reset", choice.language) or message("chat_reset", "en"),
                         **metadata}
+            if not _confirmed and not _approval_asks_instead(action):
+                # La secrétaire annonce l'action et son application AVANT de
+                # l'exécuter (« je vais ouvrir X », « je vais ajouter Y »…).
+                return announce_intent(cleaned, action, parsed,
+                                       choice.language, metadata)
             if action in DIRECT_TOOL_ACTIONS:
                 # Fast paths: tools return data immediately. The backend voice
                 # handlers speak synchronously and would block this HTTP
                 # response; the UI already displays the text and speaks it on
                 # its own TTS path. No execute_action, no Ollama translation.
                 # The standalone voice loop keeps its own speaking handlers.
-                return _direct_tool_route(action, parsed, metadata, choice.language)
+                return present(_direct_tool_route(action, parsed, metadata, choice.language))
             matches = None
             if action in {"open_file", "open_folder"} and hasattr(backend, "resolve_open_matches"):
                 try:
@@ -411,34 +562,82 @@ def process_command(backend, text, reply_language="auto", previous_language=None
             # knows; the planner only handles the rest.
             scaffold_args = parse_scaffold_request(cleaned)
             if scaffold_args:
+                if not _confirmed and not _approval_asks_instead("scaffold_project"):
+                    return announce_intent(cleaned, "scaffold_project", scaffold_args,
+                                           choice.language, metadata)
                 return _direct_tool_route("scaffold_project", scaffold_args,
                                           metadata, choice.language)
+            research_args = parse_research_request(cleaned)
+            if research_args:
+                if not _confirmed:
+                    # « Je vais chercher avec Atlas (atlas_research)… »
+                    return announce_intent(cleaned, "atlas_research", research_args,
+                                           choice.language, metadata)
+                payload = present(_direct_tool_route("atlas_research", research_args,
+                                                     metadata, choice.language))
+                if payload.get("success") or payload.get("approval_id"):
+                    return payload
+                # Atlas n'a rien trouvé (réseau, délai) : on ne montre pas une
+                # erreur d'outil, on répond directement — Gemini prend le relais.
             # Multi-step requests first ("puis", "then", "ensuite"...):
             # an ordered 2-4 step plan runs sequentially; any consequential
             # step parks the WHOLE plan behind one approval card.
-            try:
-                import kira_planner
-                steps = kira_planner.plan_steps(cleaned)
-            except Exception:
-                steps = None
+            if _resume is not None and "steps" in _resume:
+                steps = _resume.get("steps")  # déjà résolu avant la confirmation
+            else:
+                try:
+                    import kira_planner
+                    steps = kira_planner.plan_steps(cleaned)
+                except Exception:
+                    steps = None
             if steps:
+                if not _confirmed:
+                    # Le plan est déjà connu : elle annonce les étapes et
+                    # attend le feu vert avant d'exécuter la première.
+                    return announce_intent(cleaned, "__steps__", {"steps": steps},
+                                           choice.language, metadata,
+                                           resume={"steps": steps})
                 return _run_planned_steps(steps, metadata)
             # Optional planner (KIRA_PLANNER=1): the model picks ONE registered
             # tool or says none. Approval gates and validation stay intact;
             # any planner failure falls through to normal chat.
-            try:
-                import kira_planner
-                plan = kira_planner.plan_command(cleaned)
-            except Exception:
-                plan = None
+            # Les agents sont consultés AVANT la réponse, y compris pour les
+            # questions : le planneur choisit l'outil qui détient l'info
+            # (Atlas…). Timeout court sur une question pour tenir les 4 s ;
+            # pas de plan, plan invalide ou agent en échec → Gemini répond
+            # directement (jamais le modèle local).
+            plan = None
+            question = is_question(cleaned)
+            if _resume is not None and "plan" in _resume:
+                plan = _resume.get("plan")  # déjà planifié avant la confirmation
+            else:
+                try:
+                    import kira_planner
+                    plan = kira_planner.plan_command(cleaned, timeout=2.5 if question else 6)
+                except Exception:
+                    plan = None
             if plan:
                 plan_tool, plan_args = plan
+                if plan_tool == "atlas_research":
+                    # Le planner ne voit pas la langue de la réponse : on la
+                    # injecte pour que la synthèse Atlas sorte dans cette langue.
+                    plan_args = {**plan_args,
+                                 "language": languages.normalize_language(choice.language) or ""}
+                if not _confirmed and not _approval_asks_instead(plan_tool):
+                    # Elle dit CHEZ QUEL agent (Atlas…) avant de l'envoyer.
+                    return announce_intent(cleaned, plan_tool, plan_args,
+                                           choice.language, metadata,
+                                           resume={"steps": None,
+                                                   "plan": (plan_tool, plan_args)})
                 if plan_tool in DIRECT_TOOL_ACTIONS:
                     return _direct_tool_route(plan_tool, plan_args, metadata, choice.language)
                 import kira_agents
-                result = kira_agents.run(plan_tool, plan_args, source="planner")
-                if result.ok:
-                    return result.to_payload(**metadata)
+                try:
+                    result = kira_agents.run(plan_tool, plan_args, source="planner")
+                except Exception:
+                    result = None
+                if result is not None and result.ok:
+                    return present(result.to_payload(**metadata))
                 # A failed plan is not an error to the user: fall back to chat.
             else:
                 # Programming requests need multi-file arguments (name,
@@ -447,8 +646,29 @@ def process_command(backend, text, reply_language="auto", previous_language=None
                 # falling through to chat.
                 scaffold_args = parse_scaffold_request(cleaned)
                 if scaffold_args:
+                    if not _confirmed and not _approval_asks_instead("scaffold_project"):
+                        return announce_intent(cleaned, "scaffold_project", scaffold_args,
+                                               choice.language, metadata)
                     return _direct_tool_route("scaffold_project", scaffold_args,
                                               metadata, choice.language)
+        if agent_query is not None:
+            # Ni le parseur ni les agents n'ont pu répondre : on ne part pas
+            # sur Gemini tout seul, on demande la confirmation de l'utilisateur.
+            if not agent_query:
+                return {"action": "agent_search", "success": False,
+                        "response": message("agent_search_no_query", choice.language) or message("agent_search_no_query", "en"),
+                        **metadata}
+            set_pending_agent_search(agent_query)
+            return {"action": "agent_search", "success": False, "needs_confirmation": True,
+                    "response": message("agent_search_not_found", choice.language, query=agent_query)
+                    or message("agent_search_not_found", "en", query=agent_query),
+                    **metadata}
+        if not chat_only and not _confirmed:
+            # La question va être cherchée sur Gemini : elle annonce la cible
+            # et attend la confirmation (« oui » reprend la même demande,
+            # planneur déjà réglé).
+            return announce_intent(cleaned, "chat", {}, choice.language, metadata,
+                                   resume={"steps": None, "plan": None})
         answer = call_with_options(backend.ask_chat, cleaned, language=choice.language)
         return {"action": "chat", "response": answer, **metadata}
     except languages.ReplyLanguageError:
@@ -491,7 +711,11 @@ def _run_planned_steps(steps, metadata):
     import kira_agents
     results = []
     for index, step in enumerate(steps):
-        result = kira_agents.run(step["tool"], step.get("args", {}), source="planner",
+        step_args = dict(step.get("args") or {})
+        if step.get("tool") == "atlas_research":
+            step_args.setdefault("language",
+                                 languages.normalize_language(metadata.get("language") or "") or "")
+        result = kira_agents.run(step["tool"], step_args, source="planner",
                                  approved=bool(step.get("__approved")))
         if result.ok:
             results.append({"tool": step["tool"], "ok": True,
@@ -782,6 +1006,326 @@ def parse_scaffold_request(text):
     return None
 
 
+# Explicit research phrasings (FR/EN) delegated to the Atlas agent.
+# The planner covers everything this deterministic parser does not know.
+_RESEARCH_REQUEST = re.compile(
+    r"^(?:"
+    r"(?:fai(?:s|t)|donne|lance)(?:[-\s]?moi)?\s+(?:une|la|d['’]une)\s+"
+    r"recherche(?:\s+(?:approfondie|web))?(?:\s+(?:sur|dans|about|on))?\s+"
+    r"|(?:une|la)\s+recherche(?:\s+(?:approfondie|web))?\s+(?:sur|dans|about|on)\s+"
+    r"|(?:recherche|recherches)\s+(?:approfondie\s+|web\s+)?(?:sur|dans|about|on)\s+"
+    r"|(?:make|do)\s+(?:me\s+)?(?:a\s+)?(?:deep\s+)?research\s+(?:on|about)\s+"
+    r"|research\s+(?:on|about)\s+"
+    r")(?P<query>.+)$",
+    re.IGNORECASE)
+
+
+def parse_research_request(text):
+    """{"query": ...} pour les tournures explicites de recherche, else None.
+
+    « cherche X » et compagnie restent au planner/chat : ce parseur ne détient
+    que les formulations qui nomment explicitement une recherche.
+    """
+    match = _RESEARCH_REQUEST.match(str(text or "").strip())
+    if not match:
+        return None
+    query = match.group("query").strip(" \t?!.;:")
+    if not query:
+        return None
+    return {"query": query}
+
+
+# ── « Cherche chez mes agents » : les agents d'abord, Gemini sur confirmation ──
+
+_AGENT_SEARCH_PENDING = None
+_AGENT_SEARCH_TTL = 600.0
+
+_AGENT_SEARCH = re.compile(
+    r"(?:"
+    r"cherche(?:s|z)?\s+(?:chez|dans|avec|parmi|via)\s+(?:mes|tes|vos|nos|les)?\s*agents?\b"
+    r"|interroge(?:s)?\s+(?:mes|tes|vos|nos|les)\s+agents?\b"
+    r"|demande(?:s)?\s+(?:à\s+)?(?:mes|tes|vos|nos|les)\s+agents?\b"
+    r"|utilise\s+(?:mes|tes|vos|nos|les)\s+agents?\s+pour\s+cherche(?:r)?"
+    r"|passe\s+(?:la\s+question|ça|cela)\s+(?:à|aux)\s+(?:mes|tes|vos|nos|les)\s+agents?\b"
+    r"|search(?:es)?\s+(?:in|among|amongst|with|via|through)?\s*(?:my|your|our|the)?\s*agents?\b"
+    r"|ask\s+(?:my|your|our|the)\s+agents?\b"
+    r"|check\s+(?:with|among|in)\s+(?:my|your|our|the)\s+agents?\b"
+    r"|query\s+(?:my|your|our|the)\s+agents?\b"
+    r"|consult\s+(?:my|your|our|the)\s+agents?\b"
+    r")",
+    re.IGNORECASE)
+
+_AGENT_CONNECTORS = re.compile(
+    r"^\s*(?:sur|dans|pour|about|on|regarding|for|:|-|–|—)\s+", re.IGNORECASE)
+
+
+def parse_agent_search_request(text):
+    """La requête quand l'utilisateur demande explicitement de chercher CHEZ
+    LES AGENTS (« cherche chez mes agents la météo de demain »), sinon None.
+
+    Renvoie '' pour la demande nue (« cherche chez les agents ») : le sujet
+    devra alors être redemandé. Une question normale ne matche jamais ici.
+    """
+    raw = str(text or "").strip()
+    match = _AGENT_SEARCH.search(raw)
+    if not match:
+        return None
+    rest = (raw[:match.start()] + " " + raw[match.end():]).strip()
+    rest = _AGENT_CONNECTORS.sub("", rest).strip(" \t?!.;:«»\"'")
+    return rest
+
+
+def set_pending_agent_search(query):
+    global _AGENT_SEARCH_PENDING
+    _AGENT_SEARCH_PENDING = {"query": str(query or ""), "time": _time.monotonic()}
+    clear_pending_intent()  # une seule confirmation à la fois
+
+
+def clear_pending_agent_search():
+    global _AGENT_SEARCH_PENDING
+    _AGENT_SEARCH_PENDING = None
+
+
+def pending_agent_search():
+    """L'attente de confirmation « je passe sur Gemini ? », si elle est fraîche."""
+    if _AGENT_SEARCH_PENDING and _time.monotonic() - _AGENT_SEARCH_PENDING["time"] < _AGENT_SEARCH_TTL:
+        return _AGENT_SEARCH_PENDING
+    return None
+
+
+# ── « Je vais le faire CHEZ X — tu confirmes ? » ────────────────────────────
+# À chaque question, ordre ou action, la secrétaire annonce la cible (agent,
+# outil, application, Gemini) et attend « oui » / « non ». La cible vient
+# TOUJOURS du registre d'outils vivant : Atlas existe parce qu'il est
+# enregistré, les agents ajoutés plus tard sont connus sans rien coder en dur.
+
+_INTENT_PENDING = None
+_INTENT_TTL = 600.0
+
+
+def set_pending_intent(text, resume=None):
+    global _INTENT_PENDING
+    _INTENT_PENDING = {"text": str(text or ""), "resume": resume,
+                       "time": _time.monotonic()}
+    clear_pending_agent_search()  # une seule confirmation à la fois
+
+
+def clear_pending_intent():
+    global _INTENT_PENDING
+    _INTENT_PENDING = None
+
+
+def pending_intent():
+    """L'attente « oui/non » de la dernière annonce d'intention, si fraîche."""
+    if _INTENT_PENDING and _time.monotonic() - _INTENT_PENDING["time"] < _INTENT_TTL:
+        return _INTENT_PENDING
+    return None
+
+
+def _confirmation_answer(text):
+    """'yes' / 'no' pour une réponse courte de confirmation, sinon None."""
+    folded = languages.fold(str(text or "")).strip(" .!?؟,،;:«»\"'")
+    tokens = [token for token in folded.replace("-", " ").split() if token]
+    if len(tokens) > 6:
+        return None
+    if (folded in _CONFIRM_WORDS or set(tokens) <= _CONFIRM_WORDS
+            or (tokens and tokens[0] in _CONFIRM_WORDS)):
+        return "yes"
+    if (folded in _CANCEL_WORDS or set(tokens) <= _CANCEL_WORDS
+            or (tokens and tokens[0] in _CANCEL_WORDS)):
+        return "no"
+    return None
+
+
+def _tool_spec(name):
+    """Le spec VIVANT d'un outil dans le registre, jamais une liste en dur."""
+    try:
+        import kira_agents
+        return next((spec for spec in kira_agents.tool_catalog()
+                     if spec["name"] == str(name)), None)
+    except Exception:
+        return None
+
+
+def _approval_asks_instead(action):
+    """Un outil conséquentiel pose déjà SA question (carte d'approbation) :
+    on ne fait pas confirmer deux fois le même geste."""
+    spec = _tool_spec(action)
+    if not spec or not spec.get("consequential"):
+        return False
+    try:
+        import kira_agents
+        return bool(kira_agents.approvals_required())
+    except Exception:
+        return False
+
+
+def agents_roster(language="en"):
+    """(texte, données) : l'inventaire des agents lu sur le registre NOW."""
+    import kira_agents
+    rows, data = [], []
+    for entry in kira_agents.agents_snapshot():
+        tools = [str(name) for name in entry.get("tools") or []]
+        data.append({"id": entry.get("id", ""),
+                     "description": entry.get("description", ""),
+                     "tools": tools})
+        rows.append(f"• {entry.get('id', '')} — {entry.get('description', '')} "
+                    f"[{', '.join(tools) if tools else '—'}]")
+    listing = "\n".join(rows)
+    text = (message("agents_roster", language, list=listing)
+            or message("agents_roster", "en", list=listing) or "")
+    return text, data
+
+
+def _agents_inline():
+    """Résumé « research: atlas_research, web_search… ; windows: … » pour
+    l'annonce d'intention — toujours lu sur le registre."""
+    try:
+        import kira_agents
+        parts = []
+        for entry in kira_agents.agents_snapshot():
+            tools = [str(name) for name in entry.get("tools") or []]
+            shown = ", ".join(tools[:4])
+            extra = len(tools) - 4
+            if extra > 0:
+                shown += f" (+{extra})"
+            parts.append(f"{entry.get('id', '')}: {shown or '—'}")
+        return "; ".join(parts)
+    except Exception:
+        return ""
+
+
+_AGENTS_REQUEST = re.compile(
+    r"^(?:"
+    r"(?:quels|quelles)\s+(?:sont\s+)?(?:tes|vos|nos|mes|les)?\s*agents\b"
+    r"|(?:quel|quelle)\s+(?:sont\s+)?(?:tes|vos|nos|mes|les)\s+agents?\b"
+    r"|(?:qui|ce\s+qui)\s+(?:sont|est)\s+(?:tes|vos|nos|mes|les)\s+agents?\b"
+    r"|(?:montre|liste|pré?sente|donne|donnez|explique)(?:[-\s]?moi)?\s+"
+    r"(?:tes|vos|nos|mes|les)\s+agents?\b"
+    r"|(?:tes|vos|nos|mes|les)\s+agents?\s*[?!.]?\s*$"
+    r"|(?:who|which|what)\s+agents\b"
+    r"|(?:who|which|what)\s+(?:are|s)\s+(?:your|our|my|the)\s+agents?\b"
+    r"|(?:show|list|introduce|name)\s+(?:me\s+)?(?:your|our|my|the)\s+agents?\b"
+    r"|(?:your|our|my)\s+agents?\s*[?!.]?\s*$"
+    r")",
+    re.IGNORECASE)
+
+
+def parse_agents_request(text):
+    """True pour « quels agents as-tu ? » — une question sur ELLE-MÊME,
+    pas une recherche (« cherche chez mes agents » reste une recherche)."""
+    return True if _AGENTS_REQUEST.match(str(text or "").strip()) else None
+
+
+def _intent_target(action, parsed, language):
+    """La phrase « où » — construite à partir du registre VIVANT."""
+    lang = languages.normalize_language(language) or "en"
+    parsed = parsed if isinstance(parsed, dict) else {}
+
+    def msg(key, **values):
+        return message(key, lang, **values) or message(key, "en", **values) or ""
+
+    detail = ""
+    for key in ("query", "topic", "title", "city", "target", "text",
+                "request", "name"):
+        value = str(parsed.get(key) or "").strip()
+        if value:
+            detail = msg("intent_target_topic", query=value)
+            break
+
+    if action == "chat":
+        return msg("intent_target_chat")
+    if action == "__agents__":
+        return msg("intent_target_agents", agents=_agents_inline())
+    if action == "__steps__":
+        steps = [step for step in parsed.get("steps") or [] if isinstance(step, dict)]
+        tools = " → ".join(str(step.get("tool", "")) for step in steps)
+        return msg("intent_target_steps", count=len(steps), steps=tools)
+    if str(action).startswith("open_"):
+        target = str(parsed.get("target") or "").strip() or str(action)
+        return msg("intent_target_open", target=target)
+    spec = _tool_spec(action)
+    if spec is not None:
+        label = str(spec["name"]).replace("_", " ").capitalize()
+        key = "intent_target_search" if spec["name"] in _RESEARCH_ACTIONS else "intent_target_use"
+        return msg(key, tool=label, agent=str(spec.get("agent", "")), detail=detail)
+    return msg("intent_target_action", action=str(action).replace("_", " "), detail=detail)
+
+
+def announce_intent(text, action, parsed, language, metadata, resume=None):
+    """Garde la demande de côté et renvoie l'annonce « où je vais le faire ».
+
+    L'exécution n'a PAS commencé : « oui » reprend la même demande (sans
+    relancer le planneur), « non » n'exécute rien, une nouvelle demande
+    fait expirer l'intention.
+    """
+    target = _intent_target(action, parsed, language)
+    set_pending_intent(text, resume=resume)
+    reply = (message("intent_confirm", language, target=target)
+             or message("intent_confirm", "en", target=target) or target)
+    return {"action": "intent", "needs_confirmation": True,
+            "intent": {"action": str(action), "target": target},
+            "response": reply, **(metadata or {})}
+
+
+# Les sorties INFORMATIONNELLES d'un agent sont reformulées avant affichage :
+# une secrétaire ne recolle jamais des extraits bruts.
+_RESEARCH_ACTIONS = frozenset({"atlas_research", "web_search",
+                               "search_shared_knowledge", "wiki_summary"})
+
+
+def _present_information(payload, question, language, backend):
+    """Reformule la réponse d'un agent via le cloud épinglé, si possible.
+
+    Sans cloud, sans question, sortie courte ou outil non informationnel →
+    le payload est renvoyé tel quel : la reformulation ne doit JAMAIS casser
+    une réponse qui existe déjà.
+    """
+    if not isinstance(payload, dict):
+        return payload
+    if payload.get("success") is not True or payload.get("needs_approval"):
+        return payload
+    if payload.get("action") not in _RESEARCH_ACTIONS:
+        return payload
+    raw = str(payload.get("response") or "").strip()
+    question = str(question or "").strip()
+    if len(raw) < 80 or not question:
+        return payload
+    present = getattr(backend, "present_answer", None)
+    if not callable(present):
+        return payload
+    try:
+        better = present(question, raw, language)
+    except Exception:
+        return payload
+    better = str(better or "").strip()
+    if not better or better == raw:
+        return payload
+    payload = dict(payload)
+    payload["response"] = better
+    payload["reformulated"] = True
+    return payload
+
+
+# Questions (FR/EN/AR) : le planneur reste sollicité — c'est lui qui demande
+# aux agents liés (Atlas…) l'information qu'ils détiennent — mais avec un
+# timeout court (2,5 s, voir process_command) pour tenir les 4 s. Le parseur
+# déterministe ci-dessus (recherche, météo, tâches…) reste prioritaire.
+_QUESTION_SHAPE = re.compile(
+    r"[?؟]\s*$"
+    r"|^(?:quelle\b|quel\b|quels\b|quelles\b|comment\b|pourquoi\b|qui\b|quand\b"
+    r"|o[uù]\b|combien\b|est[\s-]*ce\b|c[\s-]*est[\s-]+(?:quoi|qui|o[uù])\b"
+    r"|what\b|why\b|when\b|where\b|who\b|which\b|how\b|whose\b)",
+    re.IGNORECASE,
+)
+
+
+def is_question(text):
+    """True si le message est une question (→ planneur bref, 2,5 s, puis
+    réponse directe)."""
+    return _QUESTION_SHAPE.match(str(text or "").strip()) is not None
+
+
 # Actions answered directly from tools: data out, no backend speech, no model.
 DIRECT_TOOL_ACTIONS = frozenset({
     "search_shared_knowledge", "share_project_knowledge",
@@ -806,6 +1350,16 @@ def _direct_tool_route(action, parsed, metadata, language):
 
     def msg(key, **values):
         return message(key, language, **values) or message(key, "en", **values) or ""
+
+    if action == "atlas_research":
+        # Agent Atlas : la recherche complète tourne dans un sous-processus,
+        # le serveur Atlas n'a pas besoin d'être ouvert. La langue détectée de
+        # la question part avec la requête : Atlas répond dans CETTE langue.
+        result = kira_agents.run(
+            action,
+            {"query": str(parsed.get("query", "")).strip(),
+             "language": languages.normalize_language(language) or ""})
+        return result.to_payload(**metadata)
 
     if action == "search_shared_knowledge":
         result = kira_agents.run(action, {"query": str(parsed.get("query", "")).strip(), "limit": 3})

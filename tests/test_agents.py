@@ -126,7 +126,11 @@ class RegistryRoutingTests(unittest.TestCase):
             ask_chat=Mock(), execute_action=Mock(), build_reply=Mock(), call_ollama=Mock())
         web = types.SimpleNamespace(search_shared_knowledge=Mock(return_value="found"))
         with patch.dict("sys.modules", kira_web=web):
-            result = kira_commands.process_command(backend, "search shared knowledge for q")
+            asked = kira_commands.process_command(backend, "search shared knowledge for q")
+            # La secrétaire annonce l'outil et son agent avant de l'exécuter.
+            self.assertEqual(asked["action"], "intent")
+            self.assertIn("research", asked["response"])
+            result = kira_commands.process_command(backend, "yes")
         self.assertTrue(result["success"])
         web.search_shared_knowledge.assert_called_once_with("q", limit=3)
         entry = kira_agents.recent_activity(1)[0]

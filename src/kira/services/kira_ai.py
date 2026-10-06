@@ -487,7 +487,22 @@ def _chat_openrouter(messages, model, key, timeout, started) -> AIReply:
                               extra_headers={"X-Title": "KIRA"})
 
 
-def _chat_gemini(messages, model, key, timeout, started, allow_discovery=True) -> AIReply:
+def _thinking_config(model):
+    """Thinking off/minimum so a chat reply lands inside the 4 s budget.
+
+    Gemini 3 reads ``thinkingLevel`` (``minimal`` == 'no thinking' for most
+    queries on 3.6/3.5 Flash); the 2.5 series reads ``thinkingBudget: 0``.
+    Sending the field a model does not know is a 400 — _chat_gemini retries
+    once without the block instead of failing the call.
+    """
+    name = str(model or "").strip().lower()
+    if name.startswith("gemini-3"):
+        return {"generationConfig": {"thinkingConfig": {"thinkingLevel": "minimal"}}}
+    return {"generationConfig": {"thinkingConfig": {"thinkingBudget": 0}}}
+
+
+def _chat_gemini(messages, model, key, timeout, started, allow_discovery=True,
+                 thinking=True) -> AIReply:
     system_parts = [m["content"] for m in messages if m["role"] == "system" and m["content"].strip()]
     contents = [{"role": "model" if m["role"] == "assistant" else "user",
                  "parts": [{"text": m["content"]}]}
@@ -495,6 +510,8 @@ def _chat_gemini(messages, model, key, timeout, started, allow_discovery=True) -
     body = {"contents": contents}
     if system_parts:
         body["systemInstruction"] = {"parts": [{"text": "\n".join(system_parts)}]}
+    if thinking:
+        body.update(_thinking_config(model))
     response = requests.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         headers={"x-goog-api-key": key, "Content-Type": "application/json"},  # Header, never the URL.
@@ -502,6 +519,12 @@ def _chat_gemini(messages, model, key, timeout, started, allow_discovery=True) -
         timeout=timeout,
     )
     elapsed = int((time.perf_counter() - started) * 1000)
+    if thinking and response.status_code == 400:
+        # This model refused the thinking block: retry once without it —
+        # a slightly slower answer still beats a hard failure.
+        logger.warning("Gemini refused the thinking config; retrying without it.")
+        return _chat_gemini(messages, model, key, timeout, started,
+                            allow_discovery=allow_discovery, thinking=False)
     if response.status_code == 404 and allow_discovery:
         # The configured model name rotted ('no longer available...').
         # Ask the API what this key CAN use, retry once, remember the answer.

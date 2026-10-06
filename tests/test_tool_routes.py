@@ -49,11 +49,21 @@ def fake_tasks(task_id="abc123", tasks=(), cleared=0, error=None):
     return module
 
 
+def confirm_then_run(backend, text, **options):
+    """La secrétaire annonce OÙ elle agit avant chaque action : « oui »
+    exécute, l'annonce est obligatoire."""
+    asked = commands.process_command(backend, text, **options)
+    assert asked.get("needs_confirmation"), f"pas d'annonce d'intention: {asked}"
+    assert asked["action"] == "intent", asked
+    assert "target" in (asked.get("intent") or {}), asked
+    return commands.process_command(backend, "yes", **options)
+
+
 class TaskRouteTests(unittest.TestCase):
     def run_route(self, parsed, text, tasks_module=None, **options):
         backend = make_backend(parsed)
         with patch.dict("sys.modules", kira_tasks=tasks_module or fake_tasks()):
-            result = commands.process_command(backend, text, **options)
+            result = confirm_then_run(backend, text, **options)
         return backend, result
 
     def test_add_reminder_returns_data_without_backend_speech(self):
@@ -127,7 +137,7 @@ class ShareRouteTests(unittest.TestCase):
         web = types.SimpleNamespace(
             share_project_knowledge=Mock(return_value="I've shared that project knowledge about 'deploy'."))
         with approvals_off(), patch.dict("sys.modules", kira_web=web):
-            result = commands.process_command(backend, "share knowledge deploy: use the bat script")
+            result = confirm_then_run(backend, "share knowledge deploy: use the bat script")
         self.assertTrue(result["success"])
         self.assertIn("deploy", result["response"])
         web.share_project_knowledge.assert_called_once_with("deploy", "use the bat script")
@@ -139,7 +149,7 @@ class ShareRouteTests(unittest.TestCase):
                                 "topic": "t", "content": "c"})
         web = types.SimpleNamespace(share_project_knowledge=Mock(side_effect=RuntimeError("offline")))
         with approvals_off(), patch.dict("sys.modules", kira_web=web):
-            result = commands.process_command(backend, "share knowledge t: c")
+            result = confirm_then_run(backend, "share knowledge t: c")
         self.assertFalse(result["success"])
         self.assertEqual(result["error_code"], "tool_failed")
         backend.execute_action.assert_not_called()
@@ -196,7 +206,7 @@ class RouteBoundaryTests(unittest.TestCase):
             with approvals_off(), patch.dict(os.environ, {"KIRA_CODE_DIR": sandbox}), \
                     patch.dict("sys.modules", kira_web=web, kira_tasks=fake_tasks(),
                                kira_info=info):
-                result = commands.process_command(backend, "anything")
+                result = confirm_then_run(backend, "anything")
             self.assertEqual(result["action"], action)
             self.assertIn("elapsed_ms", result)
             backend.execute_action.assert_not_called()
@@ -205,7 +215,7 @@ class RouteBoundaryTests(unittest.TestCase):
 
     def test_desktop_actions_still_use_execute_action(self):
         backend = make_backend({"action": "open_app", "target": "chrome"})
-        result = commands.process_command(backend, "open chrome")
+        result = confirm_then_run(backend, "open chrome")
         backend.execute_action.assert_called_once()
         self.assertTrue(result["success"])
 

@@ -129,14 +129,28 @@ class PlannerRoleTests(unittest.TestCase):
                 patch.dict(os.environ, {"KIRA_PLANNER_PROVIDER": "gemini"}):
             self.assertEqual(kira_planner.planner_route(), ("groq", "llama-3.1-8b-instant"))
 
-    def test_without_role_the_legacy_choice_stands(self):
-        fake_ai = types.SimpleNamespace(role_route=lambda role: (None, ""),
-                                        cloud_ready=lambda: True,
-                                        ensure_env_loaded=lambda path=None: None)
-        with patch.dict(sys.modules, kira_ai=fake_ai), \
+    def test_without_role_the_cloud_default_stands(self):
+        """The planner asks the linked agents, so it defaults to Gemini
+        whenever the cloud is ready — a local model that never answers must
+        not sit on that path. KIRA_PLANNER_PROVIDER=ollama opts back out."""
+        ready = types.SimpleNamespace(role_route=lambda role: (None, ""),
+                                      cloud_ready=lambda: True,
+                                      ensure_env_loaded=lambda path=None: None)
+        with patch.dict(sys.modules, kira_ai=ready), \
                 patch.dict(os.environ, {"KIRA_PLANNER_PROVIDER": "gemini"}):
             self.assertEqual(kira_planner.planner_route(), ("gemini", ""))
-        with patch.dict(sys.modules, kira_ai=fake_ai), \
+        with patch.dict(sys.modules, kira_ai=ready), \
+                patch.dict(os.environ, {"KIRA_PLANNER_PROVIDER": ""}):
+            self.assertEqual(kira_planner.planner_route(), ("gemini", ""))
+        with patch.dict(sys.modules, kira_ai=ready), \
+                patch.dict(os.environ, {"KIRA_PLANNER_PROVIDER": "ollama"}):
+            self.assertEqual(kira_planner.planner_route(), ("ollama", ""))
+
+    def test_no_cloud_means_the_local_planner_stays(self):
+        offline = types.SimpleNamespace(role_route=lambda role: (None, ""),
+                                        cloud_ready=lambda: False,
+                                        ensure_env_loaded=lambda path=None: None)
+        with patch.dict(sys.modules, kira_ai=offline), \
                 patch.dict(os.environ, {"KIRA_PLANNER_PROVIDER": ""}):
             self.assertEqual(kira_planner.planner_route(), ("ollama", ""))
 

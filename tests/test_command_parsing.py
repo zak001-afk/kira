@@ -157,7 +157,10 @@ class IntegrationTests(unittest.TestCase):
         tasks = types.SimpleNamespace(add_task=Mock(return_value="id9"))
         backend = self.backend()
         with patch.dict("sys.modules", kira_tasks=tasks):
-            result = commands.process_command(backend, "add a todo test kira")
+            asked = commands.process_command(backend, "add a todo test kira")
+            self.assertTrue(asked.get("needs_confirmation"))  # elle annonce avant
+            self.assertIn("Add todo", asked["response"])
+            result = commands.process_command(backend, "yes")
         self.assertTrue(result["success"])
         self.assertIn("test kira", result["response"])
         tasks.add_task.assert_called_once_with(title="test kira", task_type="todo")
@@ -168,7 +171,9 @@ class IntegrationTests(unittest.TestCase):
         tasks = types.SimpleNamespace(list_tasks=Mock(return_value=[]))
         backend = self.backend()
         with patch.dict("sys.modules", kira_tasks=tasks):
-            result = commands.process_command(backend, "list my tasks")
+            asked = commands.process_command(backend, "list my tasks")
+            self.assertTrue(asked.get("needs_confirmation"))
+            result = commands.process_command(backend, "yes")
         self.assertTrue(result["success"])
         self.assertEqual(result["response"], "You have no pending tasks.")
         backend.ask_chat.assert_not_called()
@@ -203,7 +208,9 @@ class IntegrationTests(unittest.TestCase):
     def test_backend_grammar_still_wins_when_ours_misses(self):
         backend = self.backend()
         backend.parse_simple_command.return_value = {"action": "open_app", "target": "chrome"}
-        result = commands.process_command(backend, "open chrome")
+        asked = commands.process_command(backend, "open chrome")
+        self.assertTrue(asked.get("needs_confirmation"))   # annonce d'abord
+        result = commands.process_command(backend, "yes")
         backend.execute_action.assert_called_once()
         self.assertTrue(result["success"])
 

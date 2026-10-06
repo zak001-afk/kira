@@ -705,8 +705,32 @@ WEB_SYNTHESIS_PROMPTS = {
 }
 
 
+def _synthesis_uses_cloud():
+    """(True, provider) when KIRA_CHAT_PROVIDER pins a READY cloud — the local
+    model is then out of the loop everywhere, synthesis included."""
+    try:
+        import os
+        import kira_ai
+        kira_ai.ensure_env_loaded()
+        pinned = {"gemini": "gemini", "cloud": "gemini", "groq": "groq",
+                  "fast": "groq", "openrouter": "openrouter"}.get(
+                      os.environ.get("KIRA_CHAT_PROVIDER", "").strip().lower())
+        if not pinned:
+            return False, ""
+        ready = getattr(kira_ai, "provider_ready", None)
+        ok = bool(ready(pinned)) if ready is not None else bool(kira_ai.cloud_ready())
+        return (True, pinned) if ok else (False, "")
+    except Exception:
+        return False, ""
+
+
 def _synthesize_web_answer(command, language, results):
-    """Reformulate the web results into a direct answer to the question."""
+    """Reformulate the web results into a direct answer to the question.
+
+    Cloud pinned → the cloud writes it too; if it cannot, keep the raw web
+    text. The local model is only a synthesis brain when the user never
+    opted into the cloud.
+    """
     bullets = []
     for item in list(results or [])[:4]:
         title = str(item.get("title") or "").strip()
@@ -718,6 +742,20 @@ def _synthesize_web_answer(command, language, results):
         return None
     system = WEB_SYNTHESIS_PROMPTS.get(language) or WEB_SYNTHESIS_PROMPTS["en"]
     content = f"{command}\n\n" + "\n".join(bullets)
+    use_cloud, provider = _synthesis_uses_cloud()
+    if use_cloud:
+        try:
+            import kira_ai
+            reply = kira_ai.chat([{"role": "system", "content": system},
+                                  {"role": "user", "content": content}],
+                                 provider=provider, timeout=6)
+        except Exception:
+            reply = None
+        if reply is not None and getattr(reply, "ok", False):
+            text = clean_chat_response(str(getattr(reply, "text", "") or ""))
+            if text:
+                return text
+        return None  # raw web text stays the honest fallback — never Ollama
     try:
         response = call_ollama(
             messages=[{"role": "system", "content": system},
@@ -728,6 +766,54 @@ def _synthesize_web_answer(command, language, results):
         return None
     text = clean_chat_response(str(response.get("message", {}).get("content", "")))
     return text or None
+
+
+_PRESENT_PROMPTS = {
+    "fr": ("Tu es KIRA, la secrétaire numérique de l'utilisateur. À partir de la matière "
+           "brute fournie, écris la réponse à sa question : reformule avec tes propres mots, "
+           "présente proprement (paragraphes courts, puces ou titres quand cela aide), garde "
+           "les faits, chiffres, noms propres et les liens utiles. NE RECOPIE JAMAIS les "
+           "extraits, les listes de liens ou les titres à l'identique. Réponds en français. "
+           "Si la matière ne permet pas de répondre, dis-le franchement."),
+    "ar": ("أنت كيرا، السكرتيرة الرقمية للمستخدم. اكتب من المادة الخام المقدَّمة إجابة "
+           "لسؤاله: أعِد الصياغة بكلماتك، وقدِّمها بشكل منسّق (فقرات قصيرة أو نقاط أو عناوين "
+           "عند الحاجة)، مع الحفاظ على الحقائق والأرقام وأسماء الأعلام والروابط المفيدة. "
+           "لا تنسخ أبداً المقتطفات أو قوائم الروابط أو العناوين حرفياً. أجب بالعربية. "
+           "إن لم تكفِ المادة للإجابة فقل ذلك بوضوح."),
+    "en": ("You are KIRA, the user's digital secretary. From the raw material provided, "
+           "write the answer to their question: put it in your own words, present it cleanly "
+           "(short paragraphs, bullets or headings when that helps), keep the facts, numbers, "
+           "proper nouns and useful links. NEVER copy the snippets, link lists or headings "
+           "verbatim. Answer in English. If the material is not enough, say so plainly."),
+}
+
+
+def present_answer(question, raw, language, timeout=4):
+    """Matière brute d'un agent → réponse présentée, dans la langue demandée.
+
+    Le cloud épinglé reformule (c'est le rôle d'une secrétaire) ; sans cloud
+    on renvoie le texte tel quel — jamais le modèle local, jamais d'erreur.
+    """
+    raw = str(raw or "").strip()
+    if not raw:
+        return ""
+    use_cloud, provider = _synthesis_uses_cloud()
+    if not use_cloud:
+        return raw
+    language = kira_language.normalize_language(language) or "en"
+    system = _PRESENT_PROMPTS.get(language) or _PRESENT_PROMPTS["en"]
+    question = str(question or "").strip()
+    try:
+        import kira_ai
+        reply = kira_ai.chat([{"role": "system", "content": system},
+                              {"role": "user", "content": f"{question}\n\n{raw}"}],
+                             provider=provider, timeout=timeout)
+    except Exception:
+        return raw
+    text = ""
+    if getattr(reply, "ok", False):
+        text = clean_chat_response(str(getattr(reply, "text", "") or ""))
+    return text or raw
 
 
 def select_voice(engine, language="en"):
@@ -2413,7 +2499,8 @@ def _cloud_test_answer(command, language):
 def chat_provider():
     """KIRA_CHAT_PROVIDER: 'auto' (local first, cloud rescue — default),
     'groq'/'fast' (fastest cloud first, ~10x Gemini's speed),
-    'gemini'/'cloud' (Gemini first, local pipeline as fallback),
+    'gemini'/'cloud' (Gemini first; the local model is no longer a fallback
+    while the cloud is ready),
     'ollama'/'local' (never use the cloud for chat)."""
     import os
     try:
@@ -2501,9 +2588,9 @@ def _local_chat_answer(command, language):
 def ask_chat(command: str, language=None):
     """The caller's selected language wins over history and persona examples.
 
-    Every question is answered within CHAT_ANSWER_BUDGET (5 s): local model
-    first, quick web lookup if it is too slow, honest message if neither
-    made it in time."""
+    Every question is answered within chat_budget() seconds (4 s in .env):
+    the cloud first (KIRA_CHAT_PROVIDER=gemini → no local fallback), a quick
+    web lookup if the budget still allows it, honest message otherwise."""
     global _LAST_REPLY_LANGUAGE
     from kira_commands import try_web_learning
     learning_reply = try_web_learning(command)
@@ -2527,9 +2614,29 @@ def ask_chat(command: str, language=None):
     budget = chat_budget()
     provider = chat_provider()
     personal = _is_personal(command)
-    if provider in {"gemini", "groq", "openrouter"} and not personal:
-        direct = _run_bounded(lambda: _cloud_chat_answer(command, language),
-                              max(2.0, budget - 1.0))
+    started = time.monotonic()
+    cloud_pinned = provider in {"gemini", "groq", "openrouter"}
+    # Cloud prêt → on reste sur le cloud : sous KIRA_CHAT_PROVIDER=gemini le
+    # modèle local (Ollama) ne sert plus jamais de filet. Cloud absent (pas de
+    # clé / opt-out) → le pipeline local reprend la main comme avant.
+    cloud_available = bool(cloud_pinned and not personal and _preferred_cloud())
+    cloud_tried = False
+    if cloud_pinned and not personal:
+        # Cible 4 s : premier essai borné à budget - 1,5 s, et un second essai
+        # ne prend QUE le temps restant — le total ne dépasse jamais le budget.
+        # On ne réessaie QUE si le premier essai a été coupé par le temps
+        # (modèle qui chauffe) : un échec rapide est un refus dur (quota 429,
+        # clé) — réessayer coûte un appel de quota pour le même résultat.
+        cloud_tried = True
+        limit = max(1.5, budget - 1.5)
+        first = time.monotonic()
+        direct = _run_bounded(lambda: _cloud_chat_answer(command, language), limit)
+        if not direct and (time.monotonic() - first) >= limit - 0.25:
+            left = budget - (time.monotonic() - first)
+            if left >= 1.2:
+                direct = _run_bounded(
+                    lambda: _cloud_chat_answer(command, language),
+                    max(1.2, left - 0.4))
         if direct:
             _CHAT_HISTORY.append({"role": "user", "content": command})
             _CHAT_HISTORY.append({"role": "assistant", "content": direct})
@@ -2539,24 +2646,41 @@ def ask_chat(command: str, language=None):
             except Exception:
                 pass
             return direct
-    answer, source = chat_answer_with_web(command, language, _local_chat_answer,
+    local_stage = None if cloud_available else _local_chat_answer
+    # Le budget restant (et non le budget complet) : sans ça, chaque étape
+    # repart de zéro et la réponse glisse à 12-25 s. Et pas de troisième
+    # appel cloud : il vient déjà d'être tenté (quota gratuit très serré).
+    remaining = max(0.5, budget - (time.monotonic() - started))
+    answer, source = chat_answer_with_web(command, language, local_stage,
                                           _web_lookup, _synthesize_web_answer,
-                                          budget=budget,
-                                          ask_cloud=None if provider == "ollama" or personal else _cloud_chat_answer)
+                                          budget=remaining,
+                                          ask_cloud=None if (provider == "ollama" or personal or cloud_tried)
+                                          else _cloud_chat_answer)
     if not str(answer or "").strip():
         seconds = int(budget)
+        detail = ({
+            "fr": "le cloud (Gemini) n'a pas répondu à temps et le web n'a rien trouvé",
+            "ar": "النموذج السحابي (Gemini) لم يرد في الوقت المحدد والويب لم يجد شيئًا",
+            "en": "the cloud model (Gemini) did not answer in time and the web found nothing",
+        } if local_stage is None else {
+            "fr": "le modèle local est lent et le web n'a rien donné",
+            "ar": "النموذج المحلي بطيء والويب لم يعط شيئًا",
+            "en": "the local model is slow and the web gave nothing",
+        }).get(language) or "the web gave nothing"
         answer = {
-            "fr": (f"Je n'ai pas eu de réponse en {seconds} secondes : le modèle local est lent "
-                   "et le web n'a rien donné. Reformule ou réessaie."),
-            "ar": (f"لم أحصل على رد خلال {seconds} ثوانٍ: النموذج المحلي بطيء والويب لم يعط شيئًا. "
+            "fr": (f"Je n'ai pas eu de réponse en {seconds} secondes : {detail}. "
+                   "Reformule ou réessaie."),
+            "ar": (f"لم أحصل على رد خلال {seconds} ثوانٍ: {detail}. "
                    "أعد الصياغة أو حاول مرة أخرى."),
-            "en": (f"I did not get an answer within {seconds} seconds: the local model is slow "
-                   "and the web gave nothing. Rephrase or try again."),
-        }.get(language) or (f"I did not get an answer within {seconds} seconds: the local model is slow "
-                            "and the web gave nothing. Rephrase or try again.")
+            "en": (f"I did not get an answer within {seconds} seconds: {detail}. "
+                   "Rephrase or try again."),
+        }.get(language) or (f"I did not get an answer within {seconds} seconds: {detail}. "
+                            "Rephrase or try again.")
         return answer
-    if source in {"web", "cloud"}:
-        return answer  # already readable/in-language; extra translation would waste the budget
+    # Toutes les sources (modèle local, cloud, web) passent par le même
+    # garde-fou de langue : détection locale gratuite, traduction UNIQUEMENT
+    # si la réponse est franchement dans une autre langue que celle de la
+    # question posée.
     return kira_language.ensure_reply_language(answer, language, call_ollama)
 
 
@@ -2604,9 +2728,12 @@ def _cloud_chat_answer(command, language):
                     {"role": "user", "content": str(command)}]
         # Two attempts max keeps latency bounded: quota exhausted or outage
         # on the first choice never silences a ready second cloud.
+        # Un seul tour ici : l'appelant (ask_chat) retente une fois si on
+        # renvoie None — échec transitoire (quota, 503) n'est pas une panne.
         for provider, model in order[:2]:
             try:
-                reply = kira_ai.chat(messages, provider=provider, model=model, timeout=8)
+                reply = kira_ai.chat(messages, provider=provider,
+                                     model=model, timeout=8)
             except Exception:
                 continue
             if reply.ok and reply.text.strip():

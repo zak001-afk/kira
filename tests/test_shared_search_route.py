@@ -44,7 +44,11 @@ class SharedSearchRouteTests(unittest.TestCase):
 
     def run_command(self, backend, web=None):
         with patch.dict("sys.modules", kira_web=web or fake_web()):
-            return commands.process_command(backend, "search shared knowledge for python")
+            asked = commands.process_command(backend, "search shared knowledge for python")
+            # La secrétaire annonce OÙ elle cherche avant d'exécuter.
+            self.assertEqual(asked["action"], "intent")
+            self.assertTrue(asked["needs_confirmation"])
+            return commands.process_command(backend, "yes")
 
     def test_returns_research_text_immediately(self):
         result = self.run_command(self.backend())
@@ -62,7 +66,9 @@ class SharedSearchRouteTests(unittest.TestCase):
     def test_no_model_translation_on_this_route(self):
         backend = self.backend()
         with patch.dict("sys.modules", kira_web=fake_web()):
-            result = commands.process_command(backend, "search shared knowledge for python",
+            commands.process_command(backend, "search shared knowledge for python",
+                                     reply_language="fr", interface_language="fr")
+            result = commands.process_command(backend, "yes",
                                               reply_language="fr", interface_language="fr")
         backend.call_ollama.assert_not_called()
         self.assertTrue(result["success"])
@@ -88,7 +94,9 @@ class SharedSearchRouteTests(unittest.TestCase):
     def test_other_actions_keep_the_existing_path(self):
         backend = self.backend()
         backend.parse_simple_command.return_value = {"action": "open_app", "target": "chrome"}
-        result = commands.process_command(backend, "open chrome")
+        asked = commands.process_command(backend, "open chrome")
+        self.assertEqual(asked["action"], "intent")       # annonce avant l'action
+        result = commands.process_command(backend, "yes")
         backend.execute_action.assert_called_once()
         self.assertTrue(result["success"])
 

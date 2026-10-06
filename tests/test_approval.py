@@ -114,7 +114,12 @@ class ApprovalFlowTests(unittest.TestCase):
         tasks = types.SimpleNamespace(add_task=Mock(return_value="id1"))
         backend = make_backend({"action": "add_todo", "title": "milk"})
         with patch.dict("sys.modules", kira_tasks=tasks):
-            result = commands.process_command(backend, "add todo milk")
+            asked = commands.process_command(backend, "add todo milk")
+            # Pas d'approbation requise : seulement l'annonce d'intention.
+            self.assertFalse(asked.get("needs_approval"))
+            self.assertTrue(asked.get("needs_confirmation"))
+            tasks.add_task.assert_not_called()          # rien n'a encore tourné
+            result = commands.process_command(backend, "yes")
         self.assertTrue(result["success"])
         tasks.add_task.assert_called_once()
         self.assertIsNone(commands.pending_approval())
@@ -124,7 +129,11 @@ class ApprovalFlowTests(unittest.TestCase):
         web = self.share_web()
         with patch.dict(os.environ, {"KIRA_REQUIRE_APPROVAL": "0"}), \
                 patch.dict("sys.modules", kira_web=web):
-            result = commands.process_command(backend, "share knowledge deploy: use the bat script")
+            asked = commands.process_command(backend, "share knowledge deploy: use the bat script")
+            # Porte désactivée : plus de carte d'approbation, mais la
+            # secrétaire annonce toujours où elle va agir.
+            self.assertTrue(asked.get("needs_confirmation"))
+            result = commands.process_command(backend, "yes")
         self.assertTrue(result["success"])
         web.share_project_knowledge.assert_called_once()
 
