@@ -1,0 +1,8 @@
+[atlas] clés cloud réutilisées depuis kira/.env (opt-in KIRA actif).
+============================================================
+  Atlas — agent de recherche web
+  Cerveau : Gemini · gemini-3.6-flash
+  Recherche : DuckDuckGo (tout le web, sans clé API)
+  Interface : http://127.0.0.1:8787
+============================================================
+Atlas prêt sur http://127.0.0.1:8787  (Ctrl+C pour arrêter)

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas — Agent de recherche IA</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img class="logo" src="atlas-logo.png" alt="" width="34" height="34">
+      <div class="brand-text">
+        <strong id="brand-name">Atlas</strong>
+        <span>Agent de recherche web</span>
+      </div>
+    </div>
+    <div class="status" id="status" title="Cerveau et moteur de recherche">connexion…</div>
+  </header>
+
+  <main class="chat" id="chat">
+    <section class="empty" id="empty">
+      <img class="empty-icon" src="atlas-logo.png" alt="" width="96" height="96">
+      <h2>Que voulez-vous savoir&nbsp;?</h2>
+      <p>Atlas cherche sur <strong>tout le web</strong>, lit les meilleures pages et vous
+         répond avec une synthèse approfondie, sourcée et une conclusion claire.
+         Produit, loi, méthode, comparaison… n'importe quel sujet.</p>
+      <div class="chips">
+        <button class="chip" type="button">Comparer les meilleurs ordinateurs portables 2026</button>
+        <button class="chip" type="button">Comment créer une entreprise en France&nbsp;? Étapes et coût</button>
+        <button class="chip" type="button">Explique la loi RGPD et ses obligations</button>
+        <button class="chip" type="button">C'est quoi un agent IA et comment l'utiliser&nbsp;?</button>
+      </div>
+    </section>
+  </main>
+
+  <form class="composer" id="composer" autocomplete="off">
+    <textarea id="input" rows="1"
+      placeholder="Posez votre question… (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)"></textarea>
+    <button id="send" type="submit">Envoyer</button>
+  </form>
+
+  <script src="app.js"></script>
+</body>
+</html>
