@@ -13,6 +13,7 @@ vosk>=0.3.45
 # UI Dependencies
 customtkinter>=5.2.0
 Pillow>=10.0.0
+requests
 
 # Native App Dependencies (pywebview creates the desktop window)
 pywebview>=4.0.0
