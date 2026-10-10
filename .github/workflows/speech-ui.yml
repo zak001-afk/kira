@@ -24,8 +24,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install offline language detector
-        run: pip install langid
+      - name: Install test dependencies (offline; tests patch network + synthesis)
+        run: pip install langid requests edge-tts
       - name: Install linter
         run: pip install -r requirements-dev.txt
       - name: Lint Python

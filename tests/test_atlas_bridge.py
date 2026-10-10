@@ -123,7 +123,9 @@ class HandlerTests(AtlasCliCase):
         # Les sources restent disponibles dans les données du résultat.
         self.assertEqual(result.data["sources"][0]["title"], "Wikipédia")
         argv = run.call_args[0][0]
-        self.assertTrue(argv[0].endswith("python.exe"), argv)
+        # L'interpréteur courant, quel que soit le système (python, python.exe,
+        # python3) : Atlas n'a pas de venv dans le dossier temporaire.
+        self.assertEqual(argv[0], sys.executable, argv)
         self.assertTrue(argv[1].endswith("atlas_cli.py"), argv)
         self.assertEqual(argv[2], "vitamine d")
 

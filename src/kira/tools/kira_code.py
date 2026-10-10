@@ -317,6 +317,13 @@ def list_dir(path=""):
     Empty means the workspace root."""
     if not str(path or "").strip():
         target, failure = workspace_root(), None
+        if target is not None and not target.exists():
+            # A fresh install has no workspace yet: listing the root shows an
+            # empty sandbox (same as list_projects) instead of a not_found.
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+            except OSError as error:
+                return {"ok": False, "error": str(error), "error_code": "list_failed"}
     else:
         target, failure = resolve_path(path)
     if failure:
