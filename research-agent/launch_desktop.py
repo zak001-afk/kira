@@ -140,4 +140,4 @@ if __name__ == "__main__":
         traceback.print_exc()
         _log.write("\n[Atlas] launcher terminé avec une erreur — voir ci-dessus.\n")
         _log.flush()
-        raise SystemExit(1)
+        raise SystemExit(1) from None
