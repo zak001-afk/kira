@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PostPilot — Agent de réseaux sociaux</title>
+<link rel="icon" href="/assets/postpilot-logo.png">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <img src="/assets/postpilot-logo.png" alt="PostPilot" class="logo">
+  <div class="titles">
+    <h1>PostPilot</h1>
+    <p>Agent autonome de gestion et de publication sur vos réseaux sociaux</p>
+  </div>
+  <div class="head-right">
+    <span id="sched-badge" class="badge">programmateur : …</span>
+    <span id="browser-badge" class="badge">navigateur : …</span>
+  </div>
+</header>
+
+<main>
+  <!-- ── En direct des fenêtres (aperçu intégré) ──────────────── -->
+  <aside class="card side">
+    <h2>En direct des fenêtres</h2>
+    <p class="hint">L'agent travaille <b>en arrière-plan</b> : ses fenêtres
+      s'affichent <b>dans cette interface</b> (aperçu en direct), sans
+      pop-up. Cliquez sur <b>Ouvrir</b> pour revoir une fenêtre, ou sur
+      <b>Visible</b> si vous devez vous connecter vous-même.</p>
+    <div id="live" class="live"></div>
+  </aside>
+
+  <!-- ── Comptes ─────────────────────────────────────────────── -->
+  <section class="card">
+    <h2>1. Mes comptes connectés</h2>    <p class="hint">Cliquez sur <b>Ouvrir la fenêtre</b> : elle s'affiche à l'écran, <b>vous vous connectez vous-même</b>. La session reste enregistrée sur le disque E: et l'agent la réutilise ensuite — il travaille alors en arrière-plan, visible dans l'aperçu.<br>
+      <b>Liens (pages &amp; groupes)</b> : ajoutez un lien avec le bouton <b>+</b>, ouvrez la <b>flèche ▾</b> pour cocher les cibles où publier, et cliquez sur <b>X</b> pour retirer un lien de la liste.</p>
+    <div id="accounts" class="accounts"></div>
+  </section>
+
+  <!-- ── Nouvelle tâche ──────────────────────────────────────── -->
+  <section class="card">
+    <h2>2. Programmer une publication</h2>
+    <label class="cmd-label" for="command">Écrivez une commande en français :</label>
+    <div class="cmd-row">
+      <input id="command" type="text"
+             placeholder="Publie ce post toutes les 1 heure sur mon compte Facebook">
+      <button id="create-task" class="primary">Programmer</button>
+    </div>
+    <div id="parse-preview" class="parse-preview hidden"></div>
+
+    <details class="advanced">
+      <summary>Options (contenu, média, groupe, fréquence…)</summary>
+      <div class="grid">
+        <label>Contenu du post
+          <textarea id="f-content" rows="3" placeholder="Texte à publier"></textarea>
+        </label>
+        <label>Plateforme
+          <select id="f-platform">
+            <option value="">(selon la commande)</option>
+            <option value="facebook">Facebook</option>
+            <option value="instagram">Instagram</option>
+            <option value="tiktok">TikTok</option>
+          </select>
+        </label>
+        <label>Type
+          <select id="f-kind">
+            <option value="">(selon la commande)</option>
+            <option value="post">Post</option>
+            <option value="story">Story</option>
+          </select>
+        </label>
+        <div class="field">
+          <span class="flabel">Média (photo / vidéo) — cliquez sur <b>+</b> pour l'insérer</span>
+          <div class="field-row">
+            <input id="f-media" type="text" placeholder="aucun média inséré">
+            <button type="button" id="f-media-add" class="primary small"
+                    title="Insérer un fichier (photo ou vidéo)">+</button>
+            <button type="button" id="f-media-del" class="small danger"
+                    title="Retirer le média">X</button>
+          </div>
+          <input id="f-file" type="file" accept="image/*,video/*" class="hidden">
+        </div>
+        <div class="field">
+          <span class="flabel">Liens par exécution (quota) — les liens cochés sont pris <b>par lots tournants</b></span>
+          <select id="f-quota">
+            <option value="0">Tous les liens cochés</option>
+            <option value="5">5 liens max par exécution</option>
+            <option value="10" selected>10 liens max par exécution</option>
+            <option value="20">20 liens max par exécution</option>
+            <option value="50">50 liens max par exécution</option>
+          </select>
+          <p class="hint">Ex. : 400 groupes cochés + quota 10 → chaque exécution publie sur 10 groupes <b>différents</b>, puis reprend au début — jamais de campagne monstre.</p>
+        </div>
+        <div class="field">
+          <span class="flabel">Fréquence — en <b>minutes</b>, de 1 à 1440 (24 h)</span>
+          <div class="field-row">
+            <input id="f-interval" type="number" min="1" max="1440" step="1"
+                   placeholder="ex. 180">
+            <span class="unit">min</span>
+          </div>
+          <div class="chips" id="interval-chips">
+            <button type="button" class="chip" data-min="30">30 min</button>
+            <button type="button" class="chip" data-min="60">1 h</button>
+            <button type="button" class="chip" data-min="180">3 h</button>
+            <button type="button" class="chip" data-min="720">12 h</button>
+            <button type="button" class="chip" data-min="1440">24 h</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="flabel">Début (date et heure)</span>
+          <input id="f-start" type="datetime-local">
+        </div>
+        <div class="field">
+          <span class="flabel">Fin (date et heure)</span>
+          <input id="f-end" type="datetime-local">
+        </div>
+        <div class="field wide">
+          <span class="flabel">✨ Photos Gemini — à partir de votre photo brute (ex. pot de miel), <b>votre compte Google</b> crée de nouveaux visuels</span>
+          <label class="check-row"><input id="f-pretty" type="checkbox" checked> Utiliser une photo Gemini à chaque post</label>
+          <div class="row">
+            <button type="button" id="f-photo-gen" class="primary small">✨ Générer une photo</button>
+            <span id="photo-count" class="unit">aucune photo générée pour l'instant</span>
+          </div>
+          <div id="photo-gallery" class="photo-gallery hidden"></div>
+          <p class="hint">Insérez votre photo brute dans <b>Média</b> (bouton <b>+</b>) puis cliquez sur <b>Générer</b> : chaque image apparaît ci-dessus avec une <b>X</b> dans le coin pour la retirer — recliquez <b>Générer</b> pour en créer une autre. Quand tout vous convient, programmez la tâche : <b>chaque poste utilisera une photo de la liste</b>, et une nouvelle sera générée automatiquement si la liste est épuisée.</p>
+        </div>
+      </div>
+    </details>
+
+    <details class="advanced" open>
+      <summary>✨ Connexion Gemini — votre compte Google (aucune clé API à coller)</summary>
+      <div id="gemini-panel">
+        <div id="gemini-status" class="gemini-status">Vérification de la connexion…</div>
+        <div class="row">
+          <button type="button" id="gemini-connect" class="primary small">Connecter mon compte Google</button>
+          <button type="button" id="gemini-disconnect" class="small danger hidden">Se déconnecter</button>
+        </div>
+        <p class="hint">PostPilot ouvre la page de connexion Google : vous choisissez votre e-mail, vous autorisez l'application, et la liaison se termine toute seule — plus jamais de clé à recopier.</p>
+        <details class="advanced">
+          <summary>Première connexion ? Réglez Google en 5 minutes (guide)</summary>
+          <ol class="setup-steps">
+            <li>Ouvrez <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a> et connectez-vous avec votre e-mail.</li>
+            <li>Activez l'API Gemini : lien <a href="https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com" target="_blank" rel="noopener">« Generative Language API »</a> → bouton <b>Activer</b>.</li>
+            <li>Écran de consentement : <a href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" rel="noopener">Google Auth platform → Audience</a> — type <b>Externe</b>, puis ajoutez votre e-mail en <b>utilisateurs de test</b>.<br><span class="hint">Astuce : cliquez ensuite sur <b>Publier l'app</b> pour que la connexion ne s'expire pas au bout de 7 jours.</span></li>
+            <li>Identifiant d'application : <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials → Créer des identifiants → Client OAuth</a> → type <b>Application de bureau</b> → <b>Télécharger le JSON</b>.</li>
+            <li>Déposez ce fichier ici :
+              <div class="row" style="margin-top:6px">
+                <input id="f-client-file" type="file" accept=".json,application/json">
+              </div>
+              <p class="hint" id="client-file-state">Aucun fichier déposé.</p>
+            </li>
+          </ol>
+          <p class="hint"><b>La facturation Google est obligatoire pour les images</b> (règle Google, valable pour toute connexion, même par e-mail) : <a href="https://aistudio.google.com/settings/billing" target="_blank" rel="noopener">aistudio.google.com → Billing</a>. Sans elle, Google refuse les images et PostPilot reportera les publications en attendant.</p>
+        </details>
+      </div>
+    </details>
+    <div id="task-msg" class="msg hidden"></div>
+  </section>
+
+  <!-- ── Tâches ──────────────────────────────────────────────── -->
+  <section class="card">
+    <h2>3. Tâches programmées</h2>
+    <div id="tasks" class="tasks"><p class="hint">Aucune tâche pour l'instant.</p></div>
+  </section>
+
+  <!-- ── Liens en difficulté / erreur ────────────────────────── -->
+  <section class="card">
+    <h2>4. Liens en difficulté / erreur</h2>
+    <p class="hint">Quand la publication échoue sur un lien (page introuvable,
+      partage interdit, dialogue non ouvert…), l'agent <b>ne se bloque pas</b> :
+      il note le lien ici puis <b>passe au lien suivant</b>. Un lien qui finit
+      par réussir disparaît de la liste.</p>
+    <div id="link-errors" class="link-errors"></div>
+    <div class="row">
+      <button id="clear-link-errors" class="small">Vider la liste</button>
+    </div>
+    <details class="advanced blacklist-details">
+      <summary>Liste noire — liens bannis (<span id="blacklist-count">0</span>)</summary>
+      <p class="hint">La poubelle 🗑 devant une erreur la supprime <b>et</b> bannit
+        le lien : un futur import Excel (ou ajout manuel) l'ignorera. Vous
+        pouvez aussi <b>enregistrer la liste sur votre PC</b> en fichier Excel.</p>
+      <div class="row">
+        <button id="export-blacklist" class="small">⬇ Enregistrer la liste noire (Excel)</button>
+      </div>
+      <div id="blacklist" class="blacklist"></div>
+    </details>
+  </section>
+
+  <!-- ── Journal ─────────────────────────────────────────────── -->
+  <section class="card">
+    <h2>5. Journal de bord</h2>
+    <div id="journal" class="journal"></div>
+  </section>
+</main>
+
+<footer>PostPilot — projet autonome, entièrement sur <b>E:\postpilot</b></footer>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# ── Environnement Python ──────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ── Données personnelles : NE JAMAIS publier ──────────────────────────
+# sessions navigateur (cookies Facebook/Instagram/TikTok), jetons Google
+# (data/gemini), photos insérées, images générées, tâches, liens, journal
+data/
+
+# ── Journaux ──────────────────────────────────────────────────────────
+*.log
+
+# ── Système ───────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
