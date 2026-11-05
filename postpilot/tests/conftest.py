@@ -29,4 +29,6 @@ config.TASKS_FILE = config.DATA / "tasks.json"
 config.LINKS_FILE = config.DATA / "links.json"
 config.JOURNAL_FILE = config.DATA / "journal.json"
 config.SETTINGS_FILE = config.DATA / "settings.json"
+config.LINK_ERRORS_FILE = config.DATA / "link_errors.json"
+config.BLACKLIST_FILE = config.DATA / "blacklist.json"
 config.ensure_dirs()
